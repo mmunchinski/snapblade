@@ -2,6 +2,8 @@
 
 **A diagram editor whose connectors tidy themselves.**
 
+**[Try it in your browser →](https://mmunchinski.github.io/snapblade/)** Nothing to install. Your diagrams stay in your own browser.
+
 You place the boxes. Snapblade keeps the connectors clean: anchor points evenly spaced along each side, lines straight wherever the boxes allow, bends centered in the gap between boxes, and parallel connectors bundled without crossing. When you resize or move something, everything re-tidies, instead of leaving you to re-glue a dozen arrows by hand.
 
 ![Snapblade showing an application architecture diagram](docs/screenshot.png)
@@ -21,7 +23,7 @@ Manual tools (Visio, draw.io, Lucidchart) give you full control, and then you sp
 
 ## Getting started
 
-Snapblade is a single HTML file with no build step. Open `index.html` in a modern browser (Chrome, Edge, Firefox or Safari). Your diagram is saved in the browser as you work.
+Use it at **https://mmunchinski.github.io/snapblade/**, or open `index.html` from a clone in any modern browser (Chrome, Edge, Firefox or Safari). It's a single HTML file with no build step. Your diagram is saved in the browser as you work.
 
 | Action | How |
 |---|---|
