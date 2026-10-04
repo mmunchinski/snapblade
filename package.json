@@ -1,0 +1,17 @@
+{
+  "name": "snapblade",
+  "version": "0.1.0",
+  "description": "A diagram editor whose connectors tidy themselves: evenly spaced anchors, straight lines where possible, bends centered between boxes.",
+  "license": "AGPL-3.0-only",
+  "author": "Matt Munchinski",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "npm run test:layout && npm run test:browser",
+    "test:layout": "node --test tests/layout.test.mjs",
+    "test:browser": "node --test --test-concurrency=1 tests/browser.test.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  }
+}
