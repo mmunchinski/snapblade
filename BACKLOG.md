@@ -7,9 +7,10 @@ Ideas and deferred work, roughly grouped. Newest requests first within each grou
 - Embed Instrument Sans in PDFs (they use Helvetica today).
 - Recent files list.
 
-## Diagram objects
-- **Legend / key object.** A standardized, reusable legend that explains the colors, line patterns and shapes used in the diagram. Ideally it builds itself from the styles actually in use, and you add the wording.
-- **Attribution object.** A standard block for author, date, version, source and status (draft, final), placed consistently, e.g. in a corner. A title block like an architectural drawing's.
+## Title block and legend (follow-ups)
+- Optional extra title block fields: status (draft, final), source or project, a logo.
+- Legend rows you add by hand, for meanings that aren't a color (e.g. a "⚡ async" note).
+- Reuse a title block and legend setup across diagrams (a template, or "copy from another file").
 
 ## Authoring
 - Text-to-diagram input in the spirit of PlantUML (`Customers -> WAF : HTTPS`), then polish by hand. The auto-layout rules apply to whatever the text creates.

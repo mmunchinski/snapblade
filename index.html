@@ -203,6 +203,38 @@ dl.keys dd { margin: 0; }
 .cur-nw, .cur-se { cursor: nwse-resize; } .cur-ne, .cur-sw { cursor: nesw-resize; }
 .cur-n, .cur-s { cursor: ns-resize; } .cur-e, .cur-w { cursor: ew-resize; }
 
+/* ---------- title block and legend ---------- */
+.ann { cursor: move; }
+.ann-frame { fill: var(--node-bg); stroke: var(--node-stroke); stroke-width: 1.25; }
+.ann.sel .ann-frame { stroke: var(--accent); stroke-width: 2; }
+.ann-rule { stroke: var(--node-stroke); stroke-width: 1; opacity: .45; }
+.ann-title { font: 600 15px var(--ui); fill: var(--ink); }
+.ann-label { font: 600 9.5px var(--ui); fill: var(--ink-3); letter-spacing: .06em; }
+.ann-value { font: 500 12.5px var(--ui); fill: var(--ink); }
+.ann-heading { font: 600 11px var(--ui); fill: var(--ink-2); letter-spacing: .08em; }
+.ann-row { font: 500 12.5px var(--ui); fill: var(--ink); }
+.ann-empty { font: 500 12px var(--ui); fill: var(--ink-3); }
+.ann-ghost { fill: var(--accent-soft); stroke: var(--accent); stroke-dasharray: 5 4; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.sw-line { stroke: var(--ln, var(--edge)); stroke-width: 1.5; stroke-dasharray: var(--dash, none); fill: none; }
+.sw-head { fill: var(--ln, var(--edge)); }
+.field input[type=text] { border: 1px solid var(--line); border-radius: 6px; background: var(--paper); padding: 6px 8px; font-size: 13px; color: var(--ink); width: 100%; min-width: 0; }
+.inline { display: flex; gap: 6px; align-items: end; }
+.inline .field { flex: 1; min-width: 0; }
+.corners { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.corners button { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--paper); border-radius: 6px; padding: 7px 9px; font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+.corners button[aria-pressed="true"] { border-color: var(--accent); color: var(--ink); box-shadow: inset 0 0 0 1px var(--accent); }
+.cicon { width: 18px; height: 13px; border: 1.5px solid currentColor; border-radius: 2px; position: relative; flex: none; }
+.cicon::after { content: ''; position: absolute; width: 6px; height: 4px; background: var(--accent); }
+.cicon.top-left::after { top: 1px; left: 1px; } .cicon.top-right::after { top: 1px; right: 1px; }
+.cicon.bottom-left::after { bottom: 1px; left: 1px; } .cicon.bottom-right::after { bottom: 1px; right: 1px; }
+.legrows { display: flex; flex-direction: column; gap: 6px; }
+.legrow { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.legrow svg { width: 34px; height: 20px; overflow: visible; }
+.legrow.off svg, .legrow.off input { opacity: .4; }
+.legrow input { border: 1px solid var(--line); border-radius: 6px; background: var(--paper); padding: 5px 7px; font-size: 13px; color: var(--ink); min-width: 0; }
+.mini { border: 1px solid var(--line); background: var(--panel); border-radius: 5px; padding: 3px 8px; font-size: 12px; color: var(--ink-2); cursor: pointer; }
+.togglerow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
 /* ---------- document name, file menu, dialogs, toasts ---------- */
 .doc { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .docname { border: 1px solid transparent; background: transparent; font: 500 14px var(--ui); color: var(--ink); padding: 4px 6px; border-radius: 6px; max-width: 28ch; text-overflow: ellipsis; }
@@ -252,7 +284,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 17</span>
+      Snapblade <span class="tag">playground &middot; build 18</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -313,7 +345,7 @@ dl.keys dd { margin: 0; }
 const HEADER = 30, STUB = 20, MIN_GAP = 12, MIN_W = 40, MIN_H = 30;
 const SIDES = ['top', 'right', 'bottom', 'left'];
 const NORMAL = { top: { x: 0, y: -1 }, right: { x: 1, y: 0 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 } };
-const KEY = 'snapblade-playground-v1', OLD_KEY = 'diogramo-playground-v1', META_KEY = 'snapblade-doc-meta';
+const KEY = 'snapblade-playground-v1', OLD_KEY = 'diogramo-playground-v1', META_KEY = 'snapblade-doc-meta', AUTHOR_KEY = 'snapblade-author';
 let doc = { name: 'Untitled diagram', dirty: false };   // the diagram's name, and whether it has unsaved file changes
 
 let S = null;          // { nodes, edges, settings }
@@ -371,6 +403,10 @@ function sample() {
       { ...E('e10', 'pay', 'gw'), label: 'REST\nmTLS', style: { dash: 'dashed' } },
     ],
     settings: { mode: 'straighten', grid: 10, showSlots: true, routing: 'ortho', radius: 6, labelPos: 'start' },
+    title: { ...titleDefaults(), show: true, title: 'Order platform', version: '0.3', date: todayIso() },
+    legend: { ...legendDefaults(), show: true, labels: {
+      'box:blue||pair': 'People and client apps', 'box:green||pair': 'Database', 'box:amber||pair': 'Cache',
+      'box:|dashed|none': 'Third-party service', 'connector:|dashed': 'Leaves our network' } },
   };
 }
 
@@ -404,6 +440,124 @@ function migrateStyle(n) {
   if (c === 'ghost') n.style = { dash: 'dashed', fill: 'none' };
   else if (c && c !== 'plain') n.style = { line: c, fill: 'pair' };
 }
+
+/* ---------- title block and legend ----------
+   Diagram-level blocks placed just outside the diagram in a chosen corner.
+   The legend builds itself from the styles in use; you supply what each one means. */
+const LEGEND_HINT = 'Color a shape or connector to add a row.';
+const CORNERS = [['top-left', 'Top left'], ['top-right', 'Top right'], ['bottom-left', 'Bottom left'], ['bottom-right', 'Bottom right']];
+const ANN = { margin: 28, gap: 16, pad: 12 };
+const titleDefaults = () => ({ show: false, title: '', version: '', date: '', author: '', pos: 'bottom-right' });
+const legendDefaults = () => ({ show: false, heading: 'Legend', pos: 'bottom-left', labels: {}, hidden: [] });
+const kindWord = o => !o.kind ? 'connector' : o.kind === 'group' ? 'container' : 'box';
+// Identifies a visual style: same key, same legend row.
+function styleKey(o) {
+  const st = o.style || {}, parts = [st.line || '', st.dash && st.dash !== 'solid' ? st.dash : ''];
+  if (o.kind) { const f = st.fill || 'pair'; parts.push(f === 'pair' ? (st.line ? 'pair' + (st.tint ?? '') : '') : f); }
+  return kindWord(o) + ':' + parts.join('|');
+}
+const isStyled = o => styleKey(o).split(':')[1].replace(/\|/g, '') !== '';
+// A readable default name for a style, e.g. "Green box", "Dashed connector", "Box, no fill".
+function autoName(o) {
+  const st = o.style || {}, words = [];
+  if (st.line) words.push(isHex(st.line) ? st.line.toUpperCase() : st.line);
+  if (st.dash && st.dash !== 'solid') words.push(st.dash);
+  words.push(kindWord(o));
+  let name = words.join(' '); name = name[0].toUpperCase() + name.slice(1);
+  if (o.kind) { const f = st.fill || 'pair'; if (f === 'none') name += ', no fill'; else if (isHex(f)) name += `, ${f.toUpperCase()} fill`; }
+  return name;
+}
+// One entry per distinct style in use (boxes, then containers, then connectors), in order of first use.
+function legendEntries() {
+  const map = new Map();
+  for (const o of [...S.nodes.filter(n => n.kind === 'box'), ...S.nodes.filter(n => n.kind === 'group'), ...S.edges]) {
+    if (!isStyled(o)) continue;
+    const key = styleKey(o);
+    if (!map.has(key)) map.set(key, { key, sample: o, auto: autoName(o), count: 0 });
+    map.get(key).count++;
+  }
+  return [...map.values()];
+}
+const legendRows = () => legendEntries().filter(e => !S.legend.hidden.includes(e.key)).map(e => ({ ...e, label: (S.legend.labels[e.key] || '').trim() || e.auto }));
+const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
+// Size and place the visible blocks around the content bounds B {x1,y1,x2,y2}.
+// fam: font family used to measure text (the export may use a different font).
+// emptyHint: text shown in a legend with no rows (on the canvas); without it, an empty legend is left out.
+function annotationLayout(B, fam, docName, emptyHint) {
+  const m = (t, w, px) => textWidth(t, `${w} ${px}px ${fam}`), blocks = [];
+  const rows = S.legend?.show ? legendRows() : [];
+  if (S.legend?.show && (rows.length || emptyHint)) {
+    const heading = (S.legend.heading || 'Legend').toUpperCase();
+    const w = Math.ceil(Math.max(170, m(heading, 600, 11) + 30, rows.length ? 0 : m(emptyHint, 500, 12) + 2 * ANN.pad,
+      ...rows.map(r => m(r.label, 500, 12.5) + 30 + 12 + 2 * ANN.pad)));
+    blocks.push({ id: 'legend', pos: S.legend.pos, w, h: 2 * ANN.pad + 16 + 6 + Math.max(1, rows.length) * 22 - 4, heading, rows });
+  }
+  if (S.title?.show) {
+    const t = S.title, title = (t.title || '').trim() || docName || 'Untitled diagram';
+    const cells = [['Version', t.version], ['Date', t.date], ['Author', t.author]].map(([l, v]) => [l, (v || '').trim()]).filter(c => c[1]);
+    const cw = cells.map(([l, v]) => Math.ceil(Math.max(m(l.toUpperCase(), 600, 9.5) * 1.08, m(v, 500, 12.5))) + 24);
+    const w = Math.ceil(Math.max(220, m(title, 600, 15) + 28, cw.reduce((a, b) => a + b, 0)));
+    blocks.push({ id: 'title', pos: t.pos, w, h: 40 + (cells.length ? 40 : 0), title, cells, cw });
+  }
+  // Two blocks in one corner share a width; the legend sits nearer the diagram.
+  const same = blocks.length === 2 && blocks[0].pos === blocks[1].pos;
+  if (same) blocks[0].w = blocks[1].w = Math.max(blocks[0].w, blocks[1].w);
+  const placed = [];
+  for (const b of blocks) {
+    const top = b.pos.startsWith('top'), left = b.pos.endsWith('left');
+    b.x = left ? B.x1 : B.x2 - b.w;
+    b.y = top ? B.y1 - ANN.margin - b.h : B.y2 + ANN.margin;
+    // Move outward past any block already placed on the same side that it would overlap.
+    for (const q of placed) {
+      if (q.pos.startsWith('top') !== top || b.x >= q.x + q.w || q.x >= b.x + b.w) continue;
+      b.y = top ? Math.min(b.y, q.y - ANN.gap - b.h) : Math.max(b.y, q.y + q.h + ANN.gap);
+    }
+    placed.push(b);
+  }
+  return blocks;
+}
+// Draw blocks. `p` supplies how things are painted: CSS classes on the canvas, plain colors in exports.
+function annotationMarkup(blocks, p) {
+  let out = '';
+  for (const b of blocks) {
+    out += `<g ${p.group(b.id)}><rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="4" ${p.frame()}/>`;
+    if (b.id === 'title') {
+      out += `<text x="${b.x + 14}" y="${b.y + 25}" ${p.text('title')}>${esc(b.title)}</text>`;
+      if (b.cells.length) {
+        out += `<line x1="${b.x}" y1="${b.y + 40}" x2="${b.x + b.w}" y2="${b.y + 40}" ${p.rule()}/>`;
+        const extra = (b.w - b.cw.reduce((a, c) => a + c, 0)) / b.cells.length;
+        let cx = b.x;
+        b.cells.forEach(([label, value], i) => {
+          if (i) out += `<line x1="${cx}" y1="${b.y + 40}" x2="${cx}" y2="${b.y + b.h}" ${p.rule()}/>`;
+          out += `<text x="${cx + 12}" y="${b.y + 55}" ${p.text('label')}>${esc(label.toUpperCase())}</text>`
+            + `<text x="${cx + 12}" y="${b.y + 71}" ${p.text('value')}>${esc(value)}</text>`;
+          cx += b.cw[i] + extra;
+        });
+      }
+    } else {
+      out += `<text x="${b.x + ANN.pad}" y="${b.y + ANN.pad + 11}" ${p.text('heading')}>${esc(b.heading)}</text>`;
+      if (!b.rows.length) out += p.empty ? `<text x="${b.x + ANN.pad}" y="${b.y + ANN.pad + 16 + 6 + 14}" ${p.text('empty')}>${p.empty}</text>` : '';
+      b.rows.forEach((r, i) => {
+        const ry = b.y + ANN.pad + 16 + 6 + i * 22;
+        out += p.swatch(r.sample, b.x + ANN.pad, ry + 1, 30, 16)
+          + `<text x="${b.x + ANN.pad + 42}" y="${ry + 13.5}" ${p.text('row')}>${esc(r.label)}</text>`;
+      });
+    }
+    out += '</g>';
+  }
+  return out;
+}
+// Swatch geometry shared by the canvas, the panel and exports. `c` gives line/fill attributes.
+function swatchShape(o, x, y, w, h, c) {
+  if (o.kind) return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${o.kind === 'group' ? 3 : 2}" ${c.body}/>`;
+  const my = y + h / 2;
+  return `<g ${c.group || ''}><line x1="${x}" y1="${my}" x2="${x + w - 6}" y2="${my}" ${c.line}/><path d="M${x + w},${my} L${x + w - 8},${my - 3.6} L${x + w - 8},${my + 3.6} Z" ${c.head}/></g>`;
+}
+// Canvas/panel painting through the app's CSS.
+const canvasSwatch = (o, x, y, w, h) => swatchShape(o, x, y, w, h, {
+  body: `class="${o.kind === 'group' ? 'g-body' : 'b-body'}" style="${styleVars(o)}"`,
+  group: `style="${styleVars(o)}"`, line: 'class="sw-line"', head: 'class="sw-head"' });
 
 /* ---------- containers ---------- */
 function layoutGroup(g) {
@@ -810,6 +964,14 @@ function pointAt(pts, s) {
     acc += len;
   }
 }
+// Bounds of shapes, connectors and connector labels: what the title block and legend sit around.
+function contentBounds(nodes, edges, R, labels) {
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  const grow = (x, y, w = 0, h = 0) => { x1 = Math.min(x1, x); y1 = Math.min(y1, y); x2 = Math.max(x2, x + w); y2 = Math.max(y2, y + h); };
+  for (const n of nodes) grow(n.x, n.y, n.w, n.h);
+  for (const e of edges) { (R[e.id] || []).forEach(p => grow(p.x - 6, p.y - 6, 12, 12)); const l = labels[e.id]; if (l) grow(l.x, l.y, l.w, l.h); }
+  return isFinite(x1) ? { x1, y1, x2, y2 } : { x1: 0, y1: 0, x2: 0, y2: 0 };
+}
 // Every segment of every route as a thin rectangle, tagged with its connector, for label avoidance.
 function routeSegments(R) {
   const segs = [];
@@ -873,7 +1035,7 @@ let svg, stage, panel, statusEl, editor;
 let view = { x: 0, y: 0, k: 1 };
 let sel = null, hover = null, drag = null, dropTarget = null, spaceDown = false;
 let undoStack = [], redoStack = [], fieldUndo = false;
-let lastGeom = { R: {}, labels: {} };
+let lastGeom = { R: {}, labels: {}, annots: [] };
 let lastPress = { t: 0, x: 0, y: 0 };  // for detecting double-clicks ourselves
 let multi = [];                          // node ids when 2+ shapes are selected; the first is the size reference
 let sizeRef = 'first';                   // same-size reference: 'first' selected or 'largest'
@@ -894,6 +1056,8 @@ function save(markDirty = true) {
 function normalize(s) {
   if (!s || !Array.isArray(s.nodes) || !Array.isArray(s.edges)) return null;
   s.settings = { ...sample().settings, ...s.settings };
+  s.title = { ...titleDefaults(), ...s.title };
+  s.legend = { ...legendDefaults(), ...s.legend, labels: { ...(s.legend?.labels || {}) }, hidden: [...(s.legend?.hidden || [])] };
   const ids = new Set(s.nodes.map(n => n.id));
   s.nodes.forEach(n => { if (n.parent && !ids.has(n.parent)) n.parent = null; migrateStyle(n); });
   s.edges = s.edges.filter(e => e.from && e.to && ids.has(e.from.node) && ids.has(e.to.node));
@@ -902,13 +1066,13 @@ function normalize(s) {
 function load() {
   try { return normalize(JSON.parse(localStorage.getItem(KEY) ?? localStorage.getItem(OLD_KEY))); } catch (e) { return null; }
 }
-const snapshot = () => JSON.stringify({ nodes: S.nodes, edges: S.edges });
+const snapshot = () => JSON.stringify({ nodes: S.nodes, edges: S.edges, title: S.title, legend: S.legend });
 function pushUndo() { undoStack.push(snapshot()); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; }
 function restore(from, to) {
   if (!from.length) return;
   to.push(snapshot());
   const s = JSON.parse(from.pop());
-  S.nodes = s.nodes; S.edges = s.edges;
+  S.nodes = s.nodes; S.edges = s.edges; S.title = s.title; S.legend = s.legend;
   multi = multi.filter(id => byId(id)); if (multi.length < 2) multi = [];
   if (sel && !(sel.type === 'node' ? byId(sel.id) : S.edges.find(e => e.id === sel.id))) sel = null;
   refresh(true, true);
@@ -1059,6 +1223,8 @@ function hitEdge(p) {
 }
 function startEditing(initial) {
   if (multi.length) return false;
+  // Title block / legend: their text lives in the side panel.
+  if (sel?.type === 'annot') { const f = panel.querySelector('input[type=text]'); if (f) { f.focus(); f.select(); } return true; }
   if (sel?.type === 'node') openEditor(byId(sel.id));
   else if (sel?.type === 'edge') openEdgeEditor(S.edges.find(x => x.id === sel.id));
   else return false;
@@ -1172,6 +1338,19 @@ function render() {
     </g>`;
   }
 
+  // Title block and legend, placed around everything else.
+  const blocks = annotationLayout(contentBounds(S.nodes, S.edges, R, labelRects), UI_STACK, doc.name, LEGEND_HINT);
+  lastGeom.annots = blocks;
+  h += annotationMarkup(blocks, {
+    group: id => `class="ann${sel?.type === 'annot' && sel.id === id ? ' sel' : ''}" data-role="annot" data-id="${id}"`,
+    frame: () => 'class="ann-frame"', rule: () => 'class="ann-rule"', text: k => `class="ann-${k}"`,
+    swatch: canvasSwatch, empty: LEGEND_HINT,
+  });
+  if (drag?.kind === 'annot' && drag.moved) {
+    const b = blocks.find(q => q.id === drag.id);
+    if (b) h += `<rect class="ann-ghost" x="${drag.cur.x - drag.off.x}" y="${drag.cur.y - drag.off.y}" width="${b.w}" height="${b.h}" rx="4"/>`;
+  }
+
   if (st.showSlots) {
     for (const e of S.edges) {
       const pe = P[e.id]; if (!pe) continue;
@@ -1237,6 +1416,8 @@ function updateStatus(P) {
   if (drag?.kind === 'move' && drag.moved) {
     const n = byId(drag.id), g = dropTarget && byId(dropTarget);
     t = `X ${n.x}  Y ${n.y}  ·  ${g ? 'drop into ' + oneLine(g.label) : 'drop on canvas'}`;
+  } else if (sel?.type === 'annot') {
+    t = `${sel.id === 'title' ? 'Title block' : 'Legend'}  ·  ${(sel.id === 'title' ? S.title : S.legend).pos.replace('-', ' ')}  ·  drag toward a corner to move it`;
   } else if (multi.length) {
     t = `${multi.length} shapes selected  ·  size reference: ${oneLine(byId(multi[0]).label)}`;
   } else if (sel?.type === 'node') {
@@ -1266,12 +1447,58 @@ function renderPanel() {
   if (multi.length) h = multiPanel();
   else if (sel?.type === 'node' && byId(sel.id)) h = nodePanel(byId(sel.id));
   else if (sel?.type === 'edge' && S.edges.some(e => e.id === sel.id)) h = edgePanel(S.edges.find(e => e.id === sel.id));
+  else if (sel?.type === 'annot') h = sel.id === 'title' ? titlePanel() : legendPanel();
   else h = diagramPanel();
   panel.innerHTML = h;
+}
+const cornerPicker = pos => `<div class="corners">${CORNERS.map(([v, l]) =>
+  `<button type="button" data-act="annPos" data-val="${v}" aria-pressed="${pos === v}"><span class="cicon ${v}"></span>${l}</button>`).join('')}</div>`;
+function titlePanel() {
+  const t = S.title;
+  return `<section>
+    <p class="eyebrow">Title block</p>
+    <label class="field"><span>Title</span><input type="text" id="f-ann-title" data-field="ann-title" value="${esc(t.title)}" placeholder="${esc(doc.name)}"></label>
+    <div class="grid2">
+      <label class="field"><span>Version</span><input type="text" id="f-ann-version" data-field="ann-version" value="${esc(t.version)}" placeholder="1.0"></label>
+      <div class="inline"><label class="field"><span>Date</span><input type="text" id="f-ann-date" data-field="ann-date" value="${esc(t.date)}" placeholder="${todayIso()}"></label></div>
+    </div>
+    <div class="row"><button class="mini" type="button" data-act="annToday">Set date to today</button></div>
+    <label class="field"><span>Author</span><input type="text" id="f-ann-author" data-field="ann-author" value="${esc(t.author)}" placeholder="Your name"></label>
+    <p class="desc">An empty title uses the diagram's name. Empty fields are left out. Your name is remembered for new diagrams.</p>
+  </section>
+  <section><p class="eyebrow">Position</p>${cornerPicker(t.pos)}<p class="desc">Or drag the block toward a corner.</p></section>
+  <div class="row"><button class="btn danger" type="button" data-act="annHide">Hide title block</button></div>`;
+}
+function legendPanel() {
+  const L = S.legend, entries = legendEntries();
+  const rows = entries.map(e => {
+    const off = L.hidden.includes(e.key);
+    return `<div class="legrow${off ? ' off' : ''}">
+      <svg viewBox="0 0 34 20" aria-hidden="true">${canvasSwatch(e.sample, 2, 2, 30, 16)}</svg>
+      <input type="text" data-field="leg-label" data-key="${esc(e.key)}" value="${esc(L.labels[e.key] || '')}" placeholder="${esc(e.auto)}" aria-label="Meaning of ${esc(e.auto)}">
+      <button class="mini" type="button" data-act="legToggle" data-val="${esc(e.key)}">${off ? 'Show' : 'Hide'}</button>
+    </div>`;
+  }).join('');
+  return `<section>
+    <p class="eyebrow">Legend</p>
+    <label class="field"><span>Heading</span><input type="text" id="f-leg-heading" data-field="leg-heading" value="${esc(L.heading)}" placeholder="Legend"></label>
+  </section>
+  <section>
+    <p class="eyebrow">Rows · ${entries.length}</p>
+    <p class="desc">${entries.length ? 'Every color and line style in use gets a row automatically. Type what each one means.' : 'Color a shape or connector, or give it a dashed or dotted line, and it gets a row here.'}</p>
+    <div class="legrows">${rows}</div>
+  </section>
+  <section><p class="eyebrow">Position</p>${cornerPicker(L.pos)}<p class="desc">Or drag the legend toward a corner.</p></section>
+  <div class="row"><button class="btn danger" type="button" data-act="annHide">Hide legend</button></div>`;
 }
 function diagramPanel() {
   const st = S.settings, [name, desc] = MODES[st.mode];
   return `
+  <section>
+    <p class="eyebrow">Title block &amp; legend</p>
+    <div class="togglerow"><label class="check"><input type="checkbox" id="f-showTitle" data-field="showTitle"${S.title.show ? ' checked' : ''}> Title block</label>${S.title.show ? '<button class="mini" type="button" data-act="selectAnn" data-val="title">Edit</button>' : ''}</div>
+    <div class="togglerow"><label class="check"><input type="checkbox" id="f-showLegend" data-field="showLegend"${S.legend.show ? ' checked' : ''}> Legend</label>${S.legend.show ? '<button class="mini" type="button" data-act="selectAnn" data-val="legend">Edit</button>' : ''}</div>
+  </section>
   <section>
     <p class="eyebrow">Anchor behavior</p>
     <div class="mode-card"><strong>${name}</strong><p class="desc">${desc}</p></div>
@@ -1502,6 +1729,28 @@ function onField(t) {
   const st = S.settings;
   if (f === 'radius') { st.radius = +t.value; t.previousElementSibling.textContent = `Corner radius · ${st.radius} px`; render(); save(); return; }
   if (f === 'showSlots') { st.showSlots = t.checked; render(); save(); return; }
+  if (f === 'showTitle' || f === 'showLegend') {
+    pushUndo();
+    const blk = f === 'showTitle' ? S.title : S.legend;
+    blk.show = t.checked;
+    if (blk.show && f === 'showTitle') {
+      // Fill in what we can, so the block is useful straight away.
+      if (!S.title.date) S.title.date = todayIso();
+      if (!S.title.author) { try { S.title.author = localStorage.getItem(AUTHOR_KEY) || ''; } catch (e) { /* no storage */ } }
+    }
+    if (blk.show) sel = { type: 'annot', id: f === 'showTitle' ? 'title' : 'legend' }, multi = [];
+    refresh(true, true); return;
+  }
+  if (f.startsWith('ann-') || f.startsWith('leg-')) {
+    if (!fieldUndo) { pushUndo(); fieldUndo = true; }
+    if (f.startsWith('ann-')) {
+      S.title[f.slice(4)] = t.value;
+      if (f === 'ann-author') { try { localStorage.setItem(AUTHOR_KEY, t.value.trim()); } catch (e) { /* no storage */ } }
+    }
+    if (f === 'leg-heading') S.legend.heading = t.value;
+    if (f === 'leg-label') { if (t.value.trim()) S.legend.labels[t.dataset.key] = t.value; else delete S.legend.labels[t.dataset.key]; }
+    refresh(false, true); return;
+  }
   const cm = f.match(/^(line|fill)-(hex|r|g|b)$/);
   if (cm || f === 'tint') {
     let patch;
@@ -1543,10 +1792,20 @@ function onAct(b) {
   if (act === 'grid') { st.grid = +val; refresh(true, true); return; }
   if (act === 'defLabelPos') { st.labelPos = val; refresh(true, true); return; }
   if (act === 'reset') {
-    pushUndo(); const s = sample(); S.nodes = s.nodes; S.edges = s.edges; S.settings.mode = s.settings.mode;
+    pushUndo(); const s = sample(); S.nodes = s.nodes; S.edges = s.edges; S.settings.mode = s.settings.mode; S.title = s.title; S.legend = s.legend;
     sel = null; syncModeButtons(); refresh(true, true); fit(); return;
   }
   if (act === 'delete') { deleteSel(); return; }
+  if (act === 'selectAnn') { select({ type: 'annot', id: val }); render(); return; }
+  if (act === 'annPos' || act === 'annToday' || act === 'annHide' || act === 'legToggle') {
+    pushUndo();
+    const blk = sel?.id === 'title' ? S.title : S.legend;
+    if (act === 'annPos') blk.pos = val;
+    if (act === 'annToday') S.title.date = todayIso();
+    if (act === 'annHide') { blk.show = false; sel = null; }
+    if (act === 'legToggle') { const hd = S.legend.hidden; hd.includes(val) ? hd.splice(hd.indexOf(val), 1) : hd.push(val); }
+    refresh(true, true); return;
+  }
   if (act === 'linePreset' || act === 'dash' || act === 'fillMode') {
     pushUndo();
     if (act === 'linePreset') setStyle({ line: val || null });
@@ -1589,7 +1848,8 @@ function onAct(b) {
 function deleteSel() {
   if (!sel) return;
   pushUndo();
-  if (sel.type === 'node') {
+  if (sel.type === 'annot') (sel.id === 'title' ? S.title : S.legend).show = false;
+  else if (sel.type === 'node') {
     const ids = new Set(selectedIds().flatMap(subtree));
     S.nodes = S.nodes.filter(n => !ids.has(n.id));
     S.edges = S.edges.filter(e => !ids.has(e.from.node) && !ids.has(e.to.node));
@@ -1621,7 +1881,7 @@ function fit() {
   if (!S.nodes.length) return;
   const r = svg.getBoundingClientRect();
   let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
-  for (const n of S.nodes) { x1 = Math.min(x1, n.x); y1 = Math.min(y1, n.y); x2 = Math.max(x2, n.x + n.w); y2 = Math.max(y2, n.y + n.h); }
+  for (const n of [...S.nodes, ...(lastGeom.annots || [])]) { x1 = Math.min(x1, n.x); y1 = Math.min(y1, n.y); x2 = Math.max(x2, n.x + n.w); y2 = Math.max(y2, n.y + n.h); }
   const pad = 48, k = Math.max(0.2, Math.min((r.width - 2 * pad) / (x2 - x1), (r.height - 2 * pad - 30) / (y2 - y1), 1.25));
   view = { k, x: (r.width - (x2 - x1) * k) / 2 - x1 * k, y: (r.height - 30 - (y2 - y1) * k) / 2 - y1 * k };
   render();
@@ -1701,6 +1961,11 @@ function onDown(ev) {
   else if (role === 'connect') drag = { kind: 'connect', from: id, side: t.dataset.side, cur: p, over: null };
   else if (role === 'edge-end') drag = { kind: 'reattach', id, which: t.dataset.which, cur: p, over: null };
   else if (role === 'edge') { select({ type: 'edge', id }); drag = null; }
+  else if (role === 'annot') {
+    select({ type: 'annot', id });
+    const b = lastGeom.annots.find(q => q.id === id);
+    drag = { kind: 'annot', id, start: p, cur: p, off: { x: p.x - b.x, y: p.y - b.y }, moved: false };
+  }
   else if (role === 'node') {
     const n = byId(id), cur = selectedIds();
     if (additive) {
@@ -1725,6 +1990,10 @@ function onMove(ev) {
   }
   if (drag.kind === 'pan') { view.x = drag.vx + ev.clientX - drag.sx; view.y = drag.vy + ev.clientY - drag.sy; render(); return; }
   if (drag.kind === 'marquee') { drag.cur = p; render(); return; }
+  if (drag.kind === 'annot') {
+    if (!drag.moved && Math.hypot(p.x - drag.start.x, p.y - drag.start.y) < 4 / view.k) return;
+    drag.moved = true; drag.cur = p; render(); return;
+  }
   if (drag.kind === 'move') {
     const n = byId(drag.id);
     const single = drag.ids.length === 1;
@@ -1764,6 +2033,16 @@ function onUp(ev) {
   drag = null; svg.classList.remove('panning');
   // Open the editor after the press has finished moving focus around.
   if (d.kind === 'double') { lifted = null; setTimeout(() => doubleAt(d.p), 0); return; }
+  if (d.kind === 'annot') {
+    // Snap to the corner of the diagram nearest the drop point.
+    if (d.moved) {
+      const B = contentBounds(S.nodes, S.edges, lastGeom.R, lastGeom.labels);
+      const pos = `${p.y < (B.y1 + B.y2) / 2 ? 'top' : 'bottom'}-${p.x < (B.x1 + B.x2) / 2 ? 'left' : 'right'}`;
+      const blk = d.id === 'title' ? S.title : S.legend;
+      if (blk.pos !== pos) { pushUndo(); blk.pos = pos; refresh(true, true); return; }
+    }
+    render(); return;
+  }
   if (d.kind === 'marquee') {
     // Shapes entirely inside the box; a container inside the box brings its contents along implicitly.
     const r = rectOf(d.start, p);
@@ -1810,6 +2089,8 @@ function onUp(ev) {
 }
 // Double-click: rename the connector or shape under the pointer, or add a box on bare canvas.
 function doubleAt(p) {
+  const blk = (lastGeom.annots || []).find(b => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
+  if (blk) { select({ type: 'annot', id: blk.id }); render(); startEditing(); return; }
   const eid = hitEdge(p);
   if (eid) { select({ type: 'edge', id: eid }); render(); startEditing(); return; }
   const n = hitNode(p, 0);
@@ -1847,7 +2128,7 @@ function updateDocUi() {
 }
 function serialize() {
   return JSON.stringify({ format: 'snapblade', version: 1, saved: new Date().toISOString(),
-    diagram: { nodes: S.nodes, edges: S.edges, settings: S.settings } }, null, 2);
+    diagram: { nodes: S.nodes, edges: S.edges, settings: S.settings, title: S.title, legend: S.legend } }, null, 2);
 }
 function parseDiagram(text) {
   let d;
@@ -1885,7 +2166,7 @@ async function saveFile(asNew) {
 function loadDiagram(text, filename, handle) {
   let s;
   try { s = parseDiagram(text); } catch (e) { toast(e.message, true); return false; }
-  S.nodes = s.nodes; S.edges = s.edges; S.settings = s.settings;
+  S.nodes = s.nodes; S.edges = s.edges; S.settings = s.settings; S.title = s.title; S.legend = s.legend;
   fileHandle = handle || null;
   doc = { name: String(filename || 'Untitled diagram').replace(/\.(snapblade|json)$/i, ''), dirty: false };
   undoStack.length = 0; redoStack.length = 0;
@@ -1908,7 +2189,7 @@ async function openFile() {
 }
 async function newDiagram() {
   if (!(await confirmDiscard())) return;
-  S.nodes = []; S.edges = [];
+  S.nodes = []; S.edges = []; S.title = { ...titleDefaults(), pos: S.title.pos }; S.legend = { ...legendDefaults(), pos: S.legend.pos };
   fileHandle = null; doc = { name: 'Untitled diagram', dirty: false };
   undoStack.length = 0; redoStack.length = 0; sel = null; multi = [];
   view = { x: 40, y: 40, k: 1 };
@@ -1976,7 +2257,7 @@ function fileCommand(cmd) {
 /* =====================================================================
    Export: a clean, standalone SVG of the diagram, then PNG or PDF from it
    ===================================================================== */
-let exportOpts = { format: 'png', theme: 'light', background: 'white', scale: 2, page: 'fit', scope: 'all' };
+let exportOpts = { format: 'png', theme: 'light', background: 'white', scale: 2, page: 'fit', scope: 'all', annots: 'yes' };
 const PDF_LIBS = ['https://cdn.jsdelivr.net/npm/jspdf@3.0.3/dist/jspdf.umd.min.js', 'https://cdn.jsdelivr.net/npm/svg2pdf.js@2.8.1/dist/svg2pdf.umd.min.js'];
 const FONT_CSS = 'https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@500;600&display=swap';
 const UI_STACK = '"Instrument Sans", "Segoe UI", system-ui, sans-serif';
@@ -2062,11 +2343,11 @@ function buildExportSvg(o) {
     const lb = placeLabel(e, R[e.id], taken, segs, font(500, 12));
     if (lb) { taken.push({ x: lb.x - 3, y: lb.y - 3, w: lb.w + 6, h: lb.h + 6 }); labels[e.id] = lb; }
   }
-  // Bounds of everything drawn, plus a margin.
-  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
-  const grow = (x, y, w = 0, h = 0) => { x1 = Math.min(x1, x); y1 = Math.min(y1, y); x2 = Math.max(x2, x + w); y2 = Math.max(y2, y + h); };
-  for (const n of nodes) grow(n.x, n.y, n.w, n.h);
-  for (const e of edges) { R[e.id].forEach(p => grow(p.x - 6, p.y - 6, 12, 12)); if (labels[e.id]) { const l = labels[e.id]; grow(l.x, l.y, l.w, l.h); } }
+  // Bounds of everything drawn (including the title block and legend), plus a margin.
+  const B = contentBounds(nodes, edges, R, labels);
+  const blocks = o.scope === 'selection' || o.annots === false ? [] : annotationLayout(B, fam, doc.name);
+  let { x1, y1, x2, y2 } = B;
+  for (const b of blocks) { x1 = Math.min(x1, b.x); y1 = Math.min(y1, b.y); x2 = Math.max(x2, b.x + b.w); y2 = Math.max(y2, b.y + b.h); }
   const pad = 32, ox = Math.floor(x1 - pad), oy = Math.floor(y1 - pad), W = Math.ceil(x2 - x1 + 2 * pad), H = Math.ceil(y2 - y1 + 2 * pad);
   const bg = o.background === 'canvas' ? T.paper : o.background === 'white' ? '#ffffff' : null;
   const labelBg = bg || parseColor(T['node-bg']).hex;
@@ -2107,6 +2388,16 @@ function buildExportSvg(o) {
     if (l) out += `<rect x="${r2(l.x)}" y="${r2(l.y)}" width="${l.w}" height="${l.h}" rx="3" fill="${labelBg}"/>`
       + textLines(l.lines, l.x + l.w / 2, l.y + l.h / 2, 12, 500, parseColor(T['ink-2']).hex, LBL.lh);
   }
+  const ink = parseColor(T.ink).hex, frameStroke = parseColor(T['node-stroke']).hex;
+  const textStyle = { title: [15, 600, ink], label: [9.5, 600, parseColor(T['ink-2']).hex, .6], value: [12.5, 500, ink], heading: [11, 600, parseColor(T['ink-2']).hex, .9], row: [12.5, 500, ink] };
+  out += annotationMarkup(blocks, {
+    group: () => '', rule: () => `stroke="${frameStroke}" stroke-opacity=".45"`,
+    frame: () => `fill="${labelBg}" stroke="${frameStroke}" stroke-width="1.25"`,
+    text: k => { const [size, weight, color, ls] = textStyle[k]; return `${fontAttrs(size, weight)} fill="${color}"${ls ? ` letter-spacing="${ls}"` : ''}`; },
+    swatch: (s, x, y, w, h) => { const c = exportColors(s, T), d = dash(s.style), fo = c.fo < 1 ? ` fill-opacity="${c.fo}"` : '';
+      return swatchShape(s, x, y, w, h, { body: `fill="${c.fill}"${fo} stroke="${c.line}" stroke-width="${s.kind === 'group' ? 1.25 : 1.5}"${d}`,
+        line: `stroke="${c.line}" stroke-width="1.5"${d}`, head: `fill="${c.line}"` }); },
+  });
   const svgText = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${ox} ${oy} ${W} ${H}" font-family="${family}">`
     + `<title>${esc(doc.name)}</title>`
     + (o.fontCss ? `<defs><style>${o.fontCss}</style></defs>` : '')
@@ -2154,7 +2445,7 @@ async function svgToPdf(svgText, w, h, page) {
 // Produce the chosen export as a Blob (for download or the clipboard).
 async function exportBlob(opts) {
   const pdf = opts.format === 'pdf';
-  const built = buildExportSvg({ ...opts, pdf, background: pdf && opts.background === 'none' ? 'white' : opts.background, fontCss: pdf ? '' : await embeddedFontCss() });
+  const built = buildExportSvg({ ...opts, annots: opts.annots !== 'no', pdf, background: pdf && opts.background === 'none' ? 'white' : opts.background, fontCss: pdf ? '' : await embeddedFontCss() });
   if (!built) throw new Error('There is nothing to export yet.');
   if (opts.format === 'svg') return { blob: new Blob([built.svg], { type: 'image/svg+xml' }), built };
   if (opts.format === 'png') return { blob: await svgToPng(built.svg, built.w, built.h, opts.scale), built };
@@ -2176,6 +2467,7 @@ function exportDialogHtml() {
         ${o.format === 'png' ? `<div class="field"><span>Size</span>${exSeg('scale', [[1, '1×'], [2, '2×'], [3, '3×']], o.scale)}</div>` : ''}
         ${pdf ? `<div class="field"><span>Page</span>${exSeg('page', [['fit', 'Fit diagram'], ['letter', 'Letter'], ['a4', 'A4']], o.page)}</div>` : ''}
         <div class="field"><span>Include</span>${exSeg('scope', [['all', 'Whole diagram'], ['selection', 'Selection']], hasSel ? o.scope : 'all', hasSel ? [] : ['selection'])}</div>
+        ${(S.title.show || S.legend.show) && !(hasSel && o.scope === 'selection') ? `<div class="field"><span>Title block &amp; legend</span>${exSeg('annots', [['yes', 'Include'], ['no', 'Leave out']], o.annots)}</div>` : ''}
         <p class="meta" id="exInfo"></p>
         ${pdf ? '<p class="desc">PDFs keep lines and text sharp at any zoom. Text uses Helvetica, a font every PDF reader has.</p>' : ''}
         ${framed ? '<div class="note">Downloads are blocked inside this preview. Copy to clipboard may still work, or use the app at mmunchinski.github.io/snapblade.</div>' : ''}
@@ -2190,7 +2482,7 @@ function exportDialogHtml() {
 let previewUrl = null;
 async function refreshExportPreview(box) {
   const o = { ...exportOpts, scope: selectedIds().length ? exportOpts.scope : 'all' };
-  const built = buildExportSvg({ ...o, pdf: o.format === 'pdf', background: o.format === 'pdf' && o.background === 'none' ? 'white' : o.background, fontCss: o.format === 'pdf' ? '' : await embeddedFontCss() });
+  const built = buildExportSvg({ ...o, annots: o.annots !== 'no', pdf: o.format === 'pdf', background: o.format === 'pdf' && o.background === 'none' ? 'white' : o.background, fontCss: o.format === 'pdf' ? '' : await embeddedFontCss() });
   const img = box.querySelector('#exPreview'); if (!img || !built) return;
   if (previewUrl) URL.revokeObjectURL(previewUrl);
   previewUrl = URL.createObjectURL(new Blob([built.svg], { type: 'image/svg+xml' }));
@@ -2219,7 +2511,7 @@ function exportOption(b) {
 }
 async function copyExport(o) {
   if (o.format === 'svg') {
-    const built = buildExportSvg({ ...o, pdf: false, fontCss: await embeddedFontCss() });
+    const built = buildExportSvg({ ...o, annots: o.annots !== 'no', pdf: false, fontCss: await embeddedFontCss() });
     await navigator.clipboard.writeText(built.svg); toast('SVG copied to the clipboard');
   } else {
     // Hand the clipboard a promise so the copy still counts as part of the click.
@@ -2324,7 +2616,7 @@ function init() {
     else if (k === 'Delete' || k === 'Backspace') { if (sel) { ev.preventDefault(); deleteSel(); } }
     else if (k === 'Escape') { select(null); render(); }
     else if ((k === 'F2' || k === 'Enter') && sel) { ev.preventDefault(); startEditing(); }
-    else if (sel && k.length === 1 && k !== ' ' && !mod && !ev.altKey) { ev.preventDefault(); startEditing(k); }
+    else if (sel && sel.type !== 'annot' && k.length === 1 && k !== ' ' && !mod && !ev.altKey) { ev.preventDefault(); startEditing(k); }
     else if (k === ' ') { spaceDown = true; }
     else if (sel?.type === 'node' && k.startsWith('Arrow')) {
       ev.preventDefault();

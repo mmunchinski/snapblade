@@ -326,7 +326,8 @@ async function exportAs(h, choices) {
 
 test('SVG export is clean and standalone', async () => {
   const h = await open();
-  const { name, data } = await exportAs(h, { format: 'svg' }), svg = data.toString();
+  // Without the title block and legend, so the legend's sample arrow isn't counted below.
+  const { name, data } = await exportAs(h, { format: 'svg', annots: 'no' }), svg = data.toString();
   assert.equal(name, 'Untitled diagram.svg');
   assert.ok(svg.startsWith('<svg'));
   for (const bad of ['var(', 'foreignObject', 'data-role', 'url(#gp)']) assert.ok(!svg.includes(bad), `should not contain ${bad}`);
@@ -365,4 +366,60 @@ test('Copy to clipboard puts a PNG on the clipboard', async () => {
   await h.page.click('.modal [data-ex="format"][data-val="png"]');
   await h.page.click('.modal button:text-is("Copy to clipboard")'); await h.page.waitForTimeout(1500);
   assert.ok((await h.ev(async () => (await navigator.clipboard.read()).flatMap(i => i.types))).includes('image/png'));
+});
+
+// ---------- title block and legend ----------
+const blockAt = (h, id) => h.ev(id => { const b = lastGeom.annots.find(q => q.id === id), r = svg.getBoundingClientRect(); return b && { x: r.left + view.x + (b.x + 30) * view.k, y: r.top + view.y + (b.y + 12) * view.k }; }, id);
+
+test('title block: turn on, fills date and remembered author, edits live, survives a file round trip', async () => {
+  const h = await open(), { page } = h;
+  await h.ev(() => { S.title = titleDefaults(); localStorage.setItem('snapblade-author', 'M. Munchinski'); renderPanel(); render(); });
+  await page.click('#f-showTitle');   // the panel switches to the block's settings, so no check() re-verification
+  assert.equal(await h.ev(() => sel?.type + ':' + sel?.id), 'annot:title', 'turning it on opens its settings');
+  assert.deepEqual(await h.ev(() => [S.title.date, S.title.author]), [await h.ev(() => todayIso()), 'M. Munchinski']);
+  await page.fill('#f-ann-title', 'Checkout flow'); await page.fill('#f-ann-version', '2.1');
+  const texts = await h.ev(() => [...document.querySelectorAll('[data-id="title"] text')].map(t => t.textContent));
+  assert.deepEqual(texts, ['Checkout flow', 'VERSION', '2.1', 'DATE', await h.ev(() => todayIso()), 'AUTHOR', 'M. Munchinski']);
+  const restored = await h.ev(() => { const s = parseDiagram(serialize()); return s.title; });
+  assert.equal(restored.title, 'Checkout flow'); assert.equal(restored.version, '2.1');
+  assert.deepEqual(h.errors, []);
+});
+
+test('legend: meanings, hiding rows, corner picker, drag to a corner, delete and undo', async () => {
+  const h = await open(), { page } = h;
+  let p = await blockAt(h, 'legend'); await page.mouse.click(p.x, p.y);
+  assert.equal(await h.ev(() => sel?.id), 'legend');
+  await page.fill('#panel [data-key="box:green||pair"]', 'Relational database');
+  const rows = () => h.ev(() => [...document.querySelectorAll('[data-id="legend"] .ann-row')].map(t => t.textContent));
+  assert.ok((await rows()).includes('Relational database'));
+  await page.click('#panel .legrow:has([data-key="box:amber||pair"]) button');
+  assert.ok(!(await rows()).includes('Cache'), 'hidden row is gone from the legend');
+  await page.click('#panel [data-act="annPos"][data-val="top-left"]');
+  assert.equal(await h.ev(() => S.legend.pos), 'top-left');
+
+  // Drag the legend toward the bottom-right of the diagram: it snaps there.
+  p = await blockAt(h, 'legend'); const target = await h.toScreen(980, 600);
+  await h.drag(p, target);
+  assert.equal(await h.ev(() => S.legend.pos), 'bottom-right');
+
+  p = await blockAt(h, 'legend'); await page.mouse.click(p.x, p.y); await page.keyboard.press('Delete');
+  assert.equal(await h.ev(() => S.legend.show), false, 'Delete hides the block');
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await h.ev(() => [S.legend.show, S.legend.pos]), [true, 'bottom-right'], 'undo brings it back');
+  assert.deepEqual(h.errors, []);
+});
+
+test('double-clicking a block opens its settings with the first field focused', async () => {
+  const h = await open(), { page } = h;
+  const p = await blockAt(h, 'title'); await page.mouse.dblclick(p.x, p.y); await page.waitForTimeout(80);
+  assert.equal(await h.ev(() => document.activeElement?.id), 'f-ann-title');
+  assert.equal(await h.ev(() => S.nodes.length), 13, 'no box was added');
+});
+
+test('exports include the title block and legend unless left out', async () => {
+  const h = await open();
+  const withBlocks = (await exportAs(h, { format: 'svg' })).data.toString();
+  assert.ok(withBlocks.includes('>Order platform<') && withBlocks.includes('>Database<') && withBlocks.includes('>LEGEND<'));
+  const without = (await exportAs(h, { format: 'svg', annots: 'no' })).data.toString();
+  assert.ok(!without.includes('>Order platform<') && !without.includes('>LEGEND<'));
 });

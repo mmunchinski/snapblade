@@ -85,3 +85,32 @@ for (const mode of ['start', 'center', 'end']) {
     }
   });
 }
+
+test('legend finds every style in use and names it readably', () => {
+  run('S = sample()');
+  assert.deepEqual(json('legendEntries().map(e => [e.key, e.auto, e.count])'), [
+    ['box:blue||pair', 'Blue box', 1],
+    ['box:green||pair', 'Green box', 2],
+    ['box:amber||pair', 'Amber box', 1],
+    ['box:|dashed|none', 'Dashed box, no fill', 1],
+    ['connector:|dashed', 'Dashed connector', 1],
+  ]);
+  run(`byId('inv').style = { line: '#ff8000', dash: 'dotted', fill: '#ffffff' }`);
+  assert.ok(json('legendEntries().map(e => e.auto)').includes('#FF8000 dotted box, #FFFFFF fill'));
+});
+
+test('title block and legend never overlap the diagram or each other, in any corners', () => {
+  const corners = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+  for (const a of corners) for (const b of corners) {
+    run(`S = sample(); S.legend.pos = '${a}'; S.title.pos = '${b}'`);
+    const r = json(`(() => {
+      const { R } = routesNow(), B = contentBounds(S.nodes, S.edges, R, {});
+      const blocks = annotationLayout(B, 'sans-serif', 'Diagram');
+      const hit = (p, q) => p.x < q.x2 && q.x1 < p.x + p.w && p.y < q.y2 && q.y1 < p.y + p.h;
+      return { onContent: blocks.some(k => hit(k, B)), onEach: overlaps(blocks[0], blocks[1]), same: blocks[0].w === blocks[1].w };
+    })()`);
+    assert.equal(r.onContent, false, `${a}/${b}: a block overlaps the diagram`);
+    assert.equal(r.onEach, false, `${a}/${b}: the blocks overlap`);
+    if (a === b) assert.ok(r.same, `${a}: blocks sharing a corner should share a width`);
+  }
+});
