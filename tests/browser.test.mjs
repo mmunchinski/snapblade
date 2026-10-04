@@ -330,6 +330,64 @@ test('a hostile file cannot run script: unexpected values are dropped or reset',
   await check(await open({ seed: JSON.stringify(diagram) }));
 });
 
+const dropFile = (h, text, name) => h.ev(([t, name]) => { const dt = new DataTransfer(); dt.items.add(new File([t], name)); stage.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); }, [text, name]);
+const box = (id, o = {}) => ({ id, kind: 'box', label: id, x: 0, y: 0, w: 120, h: 60, parent: null, ...o });
+const link = (id, a, b, o = {}) => ({ id, from: { node: a, side: 'auto' }, to: { node: b, side: 'auto' }, arrow: 'end', ...o });
+
+test('ids that repeat or match built-in names cannot hang or break the app', { timeout: 30000 }, async () => {
+  // Before build 20: the repeated ids hid a container loop (the tab hung), and a connector called
+  // "__proto__" wrote onto every object in the page, after which nothing could be drawn.
+  const diagram = { nodes: [box('a', { parent: 'b' }), box('b', { parent: 'a', x: 300 }), box('a'), box('b'), box('__proto__', { y: 200 }), box('constructor', { x: 300, y: 200 })],
+    edges: [link('__proto__', '__proto__', 'constructor', { label: 'ok' }), link('e', 'a', 'b'), link('e', 'b', 'a')] };
+  const h = await open(), { page } = h;
+  const check = async () => {
+    assert.deepEqual(await h.ev(() => [S.nodes.map(n => n.id), S.edges.map(e => e.id)]), [['a', 'b', '__proto__', 'constructor'], ['__proto__', 'e']]);
+    assert.deepEqual(await h.ev(() => [document.querySelectorAll('#cv [data-role="node"]').length, document.querySelectorAll('#cv [data-role="edge"]').length]), [4, 2]);
+    assert.deepEqual(await h.ev(() => [({}).from, ({}).to].map(v => v === undefined)), [true, true], 'nothing leaks onto other objects');
+    assert.deepEqual(h.errors, []);
+  };
+  await dropFile(h, JSON.stringify({ format: 'snapblade', version: 1, diagram }), 'ids.snapblade'); await page.waitForTimeout(300);
+  assert.match(await page.textContent('#toast'), /Opened ids\.snapblade/);
+  await check();
+  await page.reload(); await page.waitForTimeout(300);
+  await check();
+  // Such shapes can be used like any other: select one and duplicate it.
+  await h.click('__proto__'); await page.keyboard.press('Control+d'); await page.waitForTimeout(50);
+  assert.deepEqual(await h.ev(() => [S.nodes.length, new Set(S.nodes.map(n => n.id)).size, S.nodes.every(n => typeof n.id === 'string')]), [5, 5, true]);
+  assert.deepEqual(h.errors, []);
+});
+
+// Stand-in for a diagram this build can't draw: measuring the connector label "BOOM" throws.
+const cannotDraw = () => { const m = CanvasRenderingContext2D.prototype.measureText;
+  CanvasRenderingContext2D.prototype.measureText = function (t) { if (t === 'BOOM') throw new Error('cannot draw this'); return m.call(this, t); }; };
+const undrawable = { nodes: [box('a'), box('b', { x: 300 })], edges: [link('e', 'a', 'b', { label: 'BOOM' })] };
+
+test('a file that cannot be drawn is refused, and the current diagram stays', async () => {
+  const h = await open({ init: cannotDraw }), { page } = h;
+  await h.ev(() => { byId('users').label = 'Mine'; save(); });
+  const stored = await h.ev(() => localStorage.getItem('snapblade-playground-v1'));
+  await dropFile(h, JSON.stringify({ format: 'snapblade', version: 1, diagram: undrawable }), 'broken.snapblade'); await page.waitForTimeout(100);
+  await page.click('.modal button:text-is("Don\'t save")'); await page.waitForTimeout(200);
+  assert.match(await page.textContent('#toast'), /couldn't be opened/);
+  assert.deepEqual(await h.ev(() => [S.nodes.length, byId('users').label, doc.name, doc.dirty]), [13, 'Mine', 'Untitled diagram', true]);
+  assert.equal(await h.ev(() => localStorage.getItem('snapblade-playground-v1')), stored, 'the saved copy is untouched');
+  // The canvas is still alive: it shows the old diagram and takes edits.
+  await page.click('#addBox'); await page.keyboard.press('Escape');
+  assert.equal(await h.ev(() => document.querySelectorAll('#cv [data-role="node"]').length), 14);
+  assert.deepEqual(h.errors, []);
+});
+
+test('a saved diagram that cannot be drawn is set aside, and the sample loads instead', async () => {
+  const h = await open({ init: cannotDraw, seed: JSON.stringify(undrawable) }), { page } = h;
+  assert.match(await page.textContent('#toast'), /couldn't be drawn/);
+  assert.deepEqual(await h.ev(() => [S.nodes.length, doc.name, document.querySelectorAll('#cv [data-role="node"]').length]), [13, 'Untitled diagram', 13]);
+  assert.deepEqual(await h.ev(() => [JSON.parse(localStorage.getItem('snapblade-set-aside-v1')).edges[0].label, localStorage.getItem('snapblade-playground-v1')]), ['BOOM', null], 'kept, but out of the way');
+  // Work carries on from the sample and is saved as usual.
+  await page.click('#addBox'); await page.keyboard.press('Escape');
+  assert.equal(await h.ev(() => JSON.parse(localStorage.getItem('snapblade-playground-v1')).nodes.length), 14);
+  assert.deepEqual(h.errors, []);
+});
+
 test('dropping a file on the canvas opens it; New empties the canvas', async () => {
   const h = await open(), { page } = h;
   const text = await h.ev(() => { byId('users').label = 'From file'; return serialize(); });

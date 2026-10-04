@@ -114,3 +114,41 @@ test('title block and legend never overlap the diagram or each other, in any cor
     if (a === b) assert.ok(r.same, `${a}: blocks sharing a corner should share a width`);
   }
 });
+
+// ---------- untrusted input ----------
+// Files and the saved copy pass through normalize(); these pin what it must not let through.
+const box = (id, o = {}) => ({ id, kind: 'box', label: id, x: 0, y: 0, w: 120, h: 60, parent: null, ...o });
+const link = (id, a, b, o = {}) => ({ id, from: { node: a, side: 'auto' }, to: { node: b, side: 'auto' }, arrow: 'end', ...o });
+
+test('normalize keeps ids unique, so a container loop cannot hide behind a duplicate', () => {
+  run(`S = normalize(${JSON.stringify({ nodes: [box('a', { parent: 'b' }), box('b', { parent: 'a' }), box('a', { label: 'second a' }), box('b')],
+    edges: [link('e', 'a', 'b'), link('e', 'b', 'a')] })})`);
+  assert.deepEqual(json('S.nodes.map(n => [n.id, n.label])'), [['a', 'a'], ['b', 'b']], 'the first shape with an id wins');
+  assert.deepEqual(json('S.edges.map(e => [e.id, e.from.node])'), [['e', 'a']], 'the first connector with an id wins');
+  assert.equal(json('S.nodes.filter(n => n.parent).length'), 1, 'the loop is broken');
+  assert.deepEqual(json('S.nodes.map(depth)').sort(), [0, 1]);
+});
+
+test('ids that are also built-in property names behave like any other id', () => {
+  const core = loadCore();   // its own sandbox: a failure here must not leak into the other tests
+  core(`S = normalize(${JSON.stringify({ nodes: [box('__proto__'), box('constructor', { x: 400 }), box('toString', { x: 400, y: 200 })],
+    edges: [link('__proto__', '__proto__', 'constructor', { label: 'one' }), link('constructor', 'constructor', 'toString'), link('hasOwnProperty', '__proto__', 'toString')] })})`);
+  const r = JSON.parse(core(`JSON.stringify((() => {
+    const { P, R } = routesNow(), segs = routeSegments(R);
+    return { routed: S.edges.map(e => R[e.id].length >= 2 && !!P[e.id].from && !!P[e.id].to), segs: segs.length > 0,
+      label: !!placeLabel(S.edges[0], R[S.edges[0].id], [], segs),
+      leaked: [({}).from, ({}).to, Object.from, Object.to].filter(v => v !== undefined).length };
+  })())`));
+  assert.deepEqual(r, { routed: [true, true, true], segs: true, label: true, leaked: 0 });
+});
+
+test('normalize bounds positions and sizes, and takes only strings as colors', () => {
+  run(`S = normalize(${JSON.stringify({ nodes: [
+    box('a', { x: -1e308, y: 1e308, w: 1e308, h: 5e9, style: { line: ['#ff0000'], fill: [['#00ff00']], dash: ['dashed'], tint: 20 } }),
+    { id: 'g', kind: 'group', label: 'g', x: 0, y: 0, w: 200, h: 100, parent: null, layout: 'row', pad: -1e9, gap: 1e300 }], edges: [] })})`);
+  assert.deepEqual(json(`[byId('a').x, byId('a').y, byId('a').w, byId('a').h, byId('a').style, byId('g').pad, byId('g').gap]`),
+    [-1e6, 1e6, 1e5, 1e5, { tint: 20 }, 0, 1000]);
+  // Shapes as far apart as a file can put them: the connector between them still gets its label.
+  run(`S = normalize(${JSON.stringify({ nodes: [box('a', { x: -1e308 }), box('b', { x: 1e308 })], edges: [link('e', 'a', 'b', { label: 'far' })] })})`);
+  assert.ok(json(`(() => { const { R } = routesNow(); return placeLabel(S.edges[0], R.e, [], []); })()`));
+});

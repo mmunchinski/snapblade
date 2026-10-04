@@ -284,7 +284,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 19</span>
+      Snapblade <span class="tag">playground &middot; build 20</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -343,15 +343,23 @@ dl.keys dd { margin: 0; }
    Core model: pure functions over state S (no DOM). Testable headless.
    ===================================================================== */
 const HEADER = 30, STUB = 20, MIN_GAP = 12, MIN_W = 40, MIN_H = 30;
+const MAX_POS = 1e6, MAX_SIZE = 1e5, MAX_PAD = 1000;   // bounds on positions, sizes, and container padding and gaps
 const SIDES = ['top', 'right', 'bottom', 'left'];
 const NORMAL = { top: { x: 0, y: -1 }, right: { x: 1, y: 0 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 } };
-const KEY = 'snapblade-playground-v1', OLD_KEY = 'diogramo-playground-v1', META_KEY = 'snapblade-doc-meta', AUTHOR_KEY = 'snapblade-author';
+const KEY = 'snapblade-playground-v1', OLD_KEY = 'diogramo-playground-v1', META_KEY = 'snapblade-doc-meta', AUTHOR_KEY = 'snapblade-author', ASIDE_KEY = 'snapblade-set-aside-v1';
 let doc = { name: 'Untitled diagram', dirty: false };   // the diagram's name, and whether it has unsaved file changes
 
 let S = null;          // { nodes, edges, settings, title, legend }: the diagram
 let lifted = null;     // node being dragged: excluded from its container's layout
 let uid = Date.now() % 1e6;
-const nid = p => p + (++uid).toString(36);
+// A new id that nothing in the diagram uses yet (ids from an opened file can sit in the same range).
+function nid(p) {
+  let id;
+  do id = p + (++uid).toString(36); while (S.nodes.some(n => n.id === id) || S.edges.some(e => e.id === id));
+  return id;
+}
+// A lookup keyed by ids. Ids come from files, so it has no inherited names ("constructor", "__proto__") to collide with.
+const dict = () => Object.create(null);
 
 const byId = id => S.nodes.find(n => n.id === id);
 const kidsOf = id => S.nodes.filter(n => n.parent === id && n.id !== lifted);
@@ -416,7 +424,7 @@ function sample() {
    style.tint: strength of the paired tint in %; style.dash: 'solid' | 'dashed' | 'dotted' */
 const PRESETS = ['slate', 'blue', 'teal', 'green', 'amber', 'orange', 'red', 'violet'];
 const DASH = { solid: 'none', dashed: '6 4', dotted: '1.5 3.5' };
-const isHex = v => /^#[0-9a-f]{6}$/i.test(v || '');
+const isHex = v => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
 const lineCss = (v, fallback) => !v ? fallback : isHex(v) ? v : `var(--p-${v})`;
 const defLineCss = o => !o.kind ? 'var(--edge)' : o.kind === 'group' ? 'var(--group-stroke)' : 'var(--node-stroke)';
 const tintOf = o => o.style?.tint ?? (o.kind === 'group' ? 7 : 16);
@@ -636,7 +644,7 @@ function place(desired, s0, s1) {
 }
 
 function computePorts() {
-  const mode = S.settings.mode, ends = [], out = {};
+  const mode = S.settings.mode, ends = [], out = dict();
   S.edges.forEach((e, idx) => {
     const a = byId(e.from.node), b = byId(e.to.node);
     if (!a || !b) return;
@@ -930,7 +938,7 @@ function tidy(R) {
   }
 }
 function computeRoutes(P) {
-  const R = {}, routing = S.settings.routing;
+  const R = dict(), routing = S.settings.routing;
   const base = routing === 'ortho' ? routingBase() : null;
   for (const e of S.edges) {
     const pe = P[e.id]; if (!pe) continue;
@@ -1057,9 +1065,12 @@ function save(markDirty = true) {
 // from a known type or list of values; anything else is dropped or reset to its default.
 // This also runs on the saved copy at every page load: a new field or option must be added
 // here (cleanNode, cleanEdge, cleanStyle or the settings below), or it vanishes on reload.
+// Ids are kept unique and numbers within bounds, because the layout code relies on both.
 const isId = v => typeof v === 'string' && /^[\w-]{1,64}$/.test(v);
 const oneOf = (v, list, def) => list.includes(v) ? v : def;
-const numOr = (v, def) => Number.isFinite(v) ? v : def;
+const numIn = (v, def, lo, hi) => Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : def;
+// The first shape or connector with an id keeps it; later ones with the same id are dropped.
+const firstById = list => { const seen = new Set(); return list.filter(o => !seen.has(o.id) && seen.add(o.id)); };
 const strOr = (v, def = '') => typeof v === 'string' ? v : def;
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const SIDE_OPTS = ['auto', ...SIDES], LABEL_POS = ['start', 'center', 'end'], CORNER_IDS = CORNERS.map(c => c[0]);
@@ -1068,15 +1079,16 @@ function cleanStyle(st) {
   if (PRESETS.includes(st?.line) || isHex(st?.line)) out.line = st.line;
   if (st?.fill === 'pair' || st?.fill === 'none' || isHex(st?.fill)) out.fill = st.fill;
   if (Number.isFinite(st?.tint)) out.tint = Math.min(100, Math.max(0, st.tint));
-  if (Object.hasOwn(DASH, st?.dash ?? '')) out.dash = st.dash;
+  if (typeof st?.dash === 'string' && Object.hasOwn(DASH, st.dash)) out.dash = st.dash;
   return out;
 }
 function cleanNode(n) {
   migrateStyle(n);
   const out = { id: n.id, kind: oneOf(n.kind, ['box', 'group'], 'box'), label: strOr(n.label),
-    x: numOr(n.x, 0), y: numOr(n.y, 0), w: Math.max(1, numOr(n.w, 120)), h: Math.max(1, numOr(n.h, 60)), parent: isId(n.parent) ? n.parent : null };
+    x: numIn(n.x, 0, -MAX_POS, MAX_POS), y: numIn(n.y, 0, -MAX_POS, MAX_POS), w: numIn(n.w, 120, 1, MAX_SIZE), h: numIn(n.h, 60, 1, MAX_SIZE),
+    parent: isId(n.parent) ? n.parent : null };
   if (out.kind === 'group') Object.assign(out, { layout: oneOf(n.layout, ['free', 'row', 'column'], 'free'),
-    align: oneOf(n.align, ['start', 'center'], 'center'), pad: numOr(n.pad, 20), gap: numOr(n.gap, 30) });
+    align: oneOf(n.align, ['start', 'center'], 'center'), pad: numIn(n.pad, 20, 0, MAX_PAD), gap: numIn(n.gap, 30, 0, MAX_PAD) });
   if (n.style) out.style = cleanStyle(n.style);
   return out;
 }
@@ -1096,14 +1108,14 @@ function normalize(s) {
   const def = sample().settings, st = isObj(s.settings) ? s.settings : {};
   const settings = { mode: oneOf(st.mode, ['fixed', 'even', 'straighten'], def.mode), grid: oneOf(st.grid, [5, 10, 20], def.grid),
     showSlots: typeof st.showSlots === 'boolean' ? st.showSlots : def.showSlots, routing: oneOf(st.routing, ['ortho', 'straight'], def.routing),
-    radius: Math.min(16, Math.max(0, numOr(st.radius, def.radius))), labelPos: oneOf(st.labelPos, LABEL_POS, def.labelPos) };
+    radius: numIn(st.radius, def.radius, 0, 16), labelPos: oneOf(st.labelPos, LABEL_POS, def.labelPos) };
   const ti = isObj(s.title) ? s.title : {}, tdef = titleDefaults();
   const title = { show: ti.show === true, title: strOr(ti.title), version: strOr(ti.version), date: strOr(ti.date), author: strOr(ti.author), pos: oneOf(ti.pos, CORNER_IDS, tdef.pos) };
   const lg = isObj(s.legend) ? s.legend : {}, ldef = legendDefaults();
   const legend = { show: lg.show === true, heading: strOr(lg.heading, ldef.heading), pos: oneOf(lg.pos, CORNER_IDS, ldef.pos),
     labels: Object.fromEntries(Object.entries(isObj(lg.labels) ? lg.labels : {}).filter(([, v]) => typeof v === 'string')),
     hidden: Array.isArray(lg.hidden) ? lg.hidden.filter(k => typeof k === 'string') : [] };
-  const nodes = s.nodes.filter(n => isObj(n) && isId(n.id)).map(cleanNode);
+  const nodes = firstById(s.nodes.filter(n => isObj(n) && isId(n.id))).map(cleanNode);
   const byIdIn = new Map(nodes.map(n => [n.id, n]));
   // A missing parent, or a loop of containers inside each other, puts the shape back on the canvas.
   for (const n of nodes) if (!byIdIn.has(n.parent)) n.parent = null;
@@ -1114,11 +1126,19 @@ function normalize(s) {
       seen.add(c.parent);
     }
   }
-  const edges = s.edges.filter(e => isObj(e) && isId(e.id) && isObj(e.from) && isObj(e.to) && byIdIn.has(e.from.node) && byIdIn.has(e.to.node)).map(cleanEdge);
+  const edges = firstById(s.edges.filter(e => isObj(e) && isId(e.id) && isObj(e.from) && isObj(e.to) && byIdIn.has(e.from.node) && byIdIn.has(e.to.node))).map(cleanEdge);
   return { nodes, edges, settings, title, legend };
 }
 function load() {
   try { return normalize(JSON.parse(localStorage.getItem(KEY) ?? localStorage.getItem(OLD_KEY))); } catch (e) { return null; }
+}
+// Move a saved copy that can't be drawn out of the way. It stays under its own key, in case it was real work.
+function setAside() {
+  try {
+    const raw = localStorage.getItem(KEY) ?? localStorage.getItem(OLD_KEY);
+    if (raw != null) localStorage.setItem(ASIDE_KEY, raw);
+    localStorage.removeItem(KEY); localStorage.removeItem(OLD_KEY); localStorage.removeItem(META_KEY);
+  } catch (e) { /* storage unavailable */ }
 }
 const snapshot = () => JSON.stringify({ nodes: S.nodes, edges: S.edges, title: S.title, legend: S.legend });
 function pushUndo() { undoStack.push(snapshot()); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; }
@@ -1228,7 +1248,7 @@ function paste() {
   if (!clip) return;
   pushUndo();
   pasteN++;
-  const off = pasteN * 2 * S.settings.grid, map = {};
+  const off = pasteN * 2 * S.settings.grid, map = dict();
   for (const n of clip.nodes) map[n.id] = nid(n.kind === 'group' ? 'g' : 'n');
   for (const n of clip.nodes) {
     // Copied with its container: goes in the new copy. Otherwise back into the original container if it's still there.
@@ -1368,7 +1388,7 @@ function render() {
   const arrowFor = new Map();
   for (const e of S.edges) if (e.style?.line) { const c = lineCss(e.style.line); if (!arrowFor.has(c)) arrowFor.set(c, 'ahc' + arrowFor.size); }
   h = h.replace('</defs>', [...arrowFor].map(([c, id]) => `<marker id="${id}" viewBox="0 0 10 10" refX="10" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" style="fill:${c}"/></marker>`).join('') + '</defs>');
-  const R = computeRoutes(P), taken = [], segs = [], labelRects = {};
+  const R = computeRoutes(P), taken = [], segs = [], labelRects = dict();
   lastGeom = { R, labels: labelRects };
   segs.push(...routeSegments(R));
   for (const e of S.edges) {
@@ -1824,12 +1844,12 @@ function onField(t) {
     const n = byId(sel.id), v = parseFloat(t.value);
     if (f === 'label') n.label = t.value;
     else if (isNaN(v)) return;
-    else if (f === 'x') translate(n.id, v - n.x, 0);
-    else if (f === 'y') translate(n.id, 0, v - n.y);
-    else if (f === 'w') n.w = Math.max(MIN_W, v);
-    else if (f === 'h') n.h = Math.max(MIN_H, v);
-    else if (f === 'pad') n.pad = Math.max(0, v);
-    else if (f === 'gap') n.gap = Math.max(0, v);
+    else if (f === 'x') translate(n.id, numIn(v, n.x, -MAX_POS, MAX_POS) - n.x, 0);
+    else if (f === 'y') translate(n.id, 0, numIn(v, n.y, -MAX_POS, MAX_POS) - n.y);
+    else if (f === 'w') n.w = numIn(v, n.w, MIN_W, MAX_SIZE);
+    else if (f === 'h') n.h = numIn(v, n.h, MIN_H, MAX_SIZE);
+    else if (f === 'pad') n.pad = numIn(v, n.pad, 0, MAX_PAD);
+    else if (f === 'gap') n.gap = numIn(v, n.gap, 0, MAX_PAD);
   } else if (sel?.type === 'edge' && f === 'elabel') {
     S.edges.find(x => x.id === sel.id).label = t.value;
   } else if (sel?.type === 'edge') {
@@ -2220,12 +2240,19 @@ async function saveFile(asNew) {
 function loadDiagram(text, filename, handle) {
   let s;
   try { s = parseDiagram(text); } catch (e) { toast(e.message, true); return false; }
-  S.nodes = s.nodes; S.edges = s.edges; S.settings = s.settings; S.title = s.title; S.legend = s.legend;
+  // Draw the new diagram before committing to it. If that fails, put the current one back,
+  // so a file this build can't draw never leaves a dead canvas or reaches the saved copy.
+  const prev = { ...S }, prevSel = [sel, multi, hover];
+  Object.assign(S, s); sel = null; multi = []; hover = null;
+  try { refresh(true, false); }
+  catch (e) {
+    Object.assign(S, prev); [sel, multi, hover] = prevSel; refresh(true, false);
+    toast("That file couldn't be opened. Something in it can't be drawn.", true); return false;
+  }
   fileHandle = handle || null;
   doc = { name: String(filename || 'Untitled diagram').replace(/\.(snapblade|json)$/i, ''), dirty: false };
   undoStack.length = 0; redoStack.length = 0;
-  sel = null; multi = []; hover = null;
-  syncModeButtons(); refresh(true, false); save(false); updateDocUi(); fit();
+  syncModeButtons(); save(false); updateDocUi(); fit();
   toast(`Opened ${filename}`);
   return true;
 }
@@ -2314,7 +2341,7 @@ function fileCommand(cmd) {
 let exportOpts = { format: 'png', theme: 'light', background: 'white', scale: 2, page: 'fit', scope: 'all', annots: 'yes' };
 // Pinned versions with integrity hashes: the browser refuses a file that doesn't match.
 const PDF_LIBS = [
-  ['https://cdn.jsdelivr.net/npm/jspdf@3.0.3/dist/jspdf.umd.min.js', 'sha384-GwHhSt8QjC7J+v0zZ0Flfho/T76YHEcCL9w4rvjTIUHauh6gWJeBSIi3vWXxNhtA'],
+  ['https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js', 'sha384-qovJwSBbRDPP5cEjCp8S0UP66wrvnjaa60XMOGzTNanrThcrGfXfnZkvgY8N1KT3'],
   ['https://cdn.jsdelivr.net/npm/svg2pdf.js@2.8.1/dist/svg2pdf.umd.min.js', 'sha384-7hc/mtl4lyRUMzYFqHxwNbYZwh27MESE5AWa2nEuVChLn8bCQcrn18OgGv9uHgzz'],
 ];
 const FONT_CSS = 'https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@500;600&display=swap';
@@ -2396,7 +2423,7 @@ function buildExportSvg(o) {
   if (!nodes.length) return null;
   const edges = S.edges.filter(e => ids.has(e.from.node) && ids.has(e.to.node));
   layoutAll();
-  const P = computePorts(), R = computeRoutes(P), segs = routeSegments(R), taken = [], labels = {};
+  const P = computePorts(), R = computeRoutes(P), segs = routeSegments(R), taken = [], labels = dict();
   for (const e of S.edges) if (e.label && P[e.id]) {
     const lb = placeLabel(e, R[e.id], taken, segs, font(500, 12));
     if (lb) { taken.push({ x: lb.x - 3, y: lb.y - 3, w: lb.w + 6, h: lb.h + 6 }); labels[e.id] = lb; }
@@ -2583,7 +2610,13 @@ function init() {
   statusEl = document.getElementById('status'); editor = document.getElementById('editor');
   S = load() || sample();
   try { doc = { ...doc, ...JSON.parse(localStorage.getItem(META_KEY)) }; } catch (e) { /* keep defaults */ }
-  layoutAll(); syncModeButtons(); renderPanel(); updateDocUi();
+  // First draw. A saved diagram that can't be drawn must not lock the app: set it aside and start from the sample.
+  try { layoutAll(); fit(); render(); }
+  catch (e) {
+    setAside(); S = sample(); doc = { name: 'Untitled diagram', dirty: false }; layoutAll(); fit();
+    toast("The diagram saved in this browser couldn't be drawn. It was set aside, and the sample loaded instead.", true);
+  }
+  syncModeButtons(); renderPanel(); updateDocUi();
 
   // Files and export
   const docName = document.getElementById('docName');
@@ -2685,7 +2718,6 @@ function init() {
   });
   window.addEventListener('keyup', ev => { if (ev.key === ' ') spaceDown = false; });
   new ResizeObserver(() => render()).observe(stage);
-  requestAnimationFrame(fit);
   document.fonts?.ready.then(() => render());
 }
 
