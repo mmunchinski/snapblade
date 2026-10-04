@@ -159,6 +159,48 @@ test('panning: right-drag, middle-drag and Space+drag; no browser menu on the ca
   assert.equal(await h.ev(() => window.__menus), 0);
 });
 
+test('the diagram panel holds settings only; Help opens from the bar, F1 and ?', async () => {
+  const h = await open();
+  await h.clear();
+  const panelText = () => h.ev(() => panel.textContent);
+  const t = await panelText();
+  for (const s of ['Connector routing', 'Grid snap', 'Corner radius', 'Title block', 'Legend']) assert.ok(t.includes(s), `panel shows ${s}`);
+  for (const s of ['Things to try', 'Ctrl+Z', 'Reload sample', 'Anchor behavior']) assert.ok(!t.includes(s), `panel leaves out ${s}`);
+  assert.ok(await h.ev(() => [...document.querySelectorAll('#modeSeg button')].every(b => b.title.length > 20)), 'anchor modes explain themselves on hover');
+
+  const modalOpen = () => h.ev(() => !document.getElementById('modal').hidden);
+  const modalText = () => h.ev(() => document.querySelector('#modal .modal').textContent);
+  await h.page.click('#helpBtn');
+  assert.ok(await modalOpen());
+  assert.ok((await modalText()).includes('Ctrl+Z'), 'opens on the shortcuts');
+  await h.page.click('#modal button:text-is("How anchors work")');
+  assert.ok((await modalText()).includes('Even spacing, then straighten'));
+  await h.page.click('#modal button:text-is("Things to try")');
+  assert.ok((await modalText()).includes('Load balancer'));
+
+  // The sample button restores the sample and closes Help; undo brings the edit back.
+  await h.page.keyboard.press('Escape'); assert.ok(!(await modalOpen()));
+  await h.click('inv'); await h.page.keyboard.press('Delete');
+  const n0 = await h.ev(() => S.nodes.length);
+  await h.button('Shortcuts and help');
+  assert.ok((await modalText()).includes('Load balancer'), 'reopens on the last tab');
+  await h.page.click('#modal button:text-is("Load the sample diagram")');
+  assert.ok(!(await modalOpen()));
+  assert.equal(await h.ev(() => S.nodes.length), n0 + 1);
+  await h.page.keyboard.press('Control+z');
+  assert.equal(await h.ev(() => S.nodes.length), n0);
+
+  await h.clear();
+  await h.page.keyboard.press('?'); assert.ok(await modalOpen(), '? opens help with nothing selected');
+  await h.page.keyboard.press('Escape');
+  await h.page.keyboard.press('F1'); assert.ok(await modalOpen(), 'F1 opens help');
+  await h.page.keyboard.press('Escape');
+  await h.click('lb'); await h.page.keyboard.press('?');
+  assert.ok(!(await modalOpen()), '? with a box selected types into it');
+  assert.equal((await h.editor()).box, 'lb');
+  assert.deepEqual(h.errors, []);
+});
+
 test('colors: presets, hex, RGB, tint, custom and no fill, patterns, connectors, undo', async () => {
   const h = await open();
   await h.click('inv'); await h.page.click('#panel .sw[title="Teal"]'); await h.clear();

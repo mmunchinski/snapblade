@@ -251,6 +251,10 @@ dl.keys dd { margin: 0; }
 .modal-back { position: fixed; inset: 0; z-index: 50; background: rgba(10, 14, 16, .45); display: flex; align-items: center; justify-content: center; padding: 16px; }
 .modal { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 24px 60px rgba(0, 0, 0, .3); width: min(820px, 100%); max-height: calc(100% - 8px); overflow: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
 .modal.small { width: min(440px, 100%); }
+.modal.help { width: min(640px, 100%); }
+.modal.help > .seg { align-self: flex-start; }
+.help-body { display: flex; flex-direction: column; gap: 12px; min-height: 360px; }
+.help-body .mode-card.current { border-color: var(--accent); }
 .modal h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
 .modal p { margin: 0; color: var(--ink-2); font-size: 13.5px; }
 .modal .actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
@@ -284,7 +288,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 20</span>
+      Snapblade <span class="tag">playground &middot; build 21</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -316,6 +320,7 @@ dl.keys dd { margin: 0; }
         <button type="button" data-mode="even">Even</button>
         <button type="button" data-mode="straighten">Even + straight</button>
       </div>
+      <button class="btn" id="helpBtn" type="button" title="F1">Help</button>
     </div>
   </header>
   <main>
@@ -1566,57 +1571,22 @@ function legendPanel() {
   <div class="row"><button class="btn danger" type="button" data-act="annHide">Hide legend</button></div>`;
 }
 function diagramPanel() {
-  const st = S.settings, [name, desc] = MODES[st.mode];
+  const st = S.settings;
   return `
   <section>
-    <p class="eyebrow">Title block &amp; legend</p>
-    <div class="togglerow"><label class="check"><input type="checkbox" id="f-showTitle" data-field="showTitle"${S.title.show ? ' checked' : ''}> Title block</label>${S.title.show ? '<button class="mini" type="button" data-act="selectAnn" data-val="title">Edit</button>' : ''}</div>
-    <div class="togglerow"><label class="check"><input type="checkbox" id="f-showLegend" data-field="showLegend"${S.legend.show ? ' checked' : ''}> Legend</label>${S.legend.show ? '<button class="mini" type="button" data-act="selectAnn" data-val="legend">Edit</button>' : ''}</div>
-  </section>
-  <section>
-    <p class="eyebrow">Anchor behavior</p>
-    <div class="mode-card"><strong>${name}</strong><p class="desc">${desc}</p></div>
-  </section>
-  <section>
-    <p class="eyebrow">Things to try</p>
-    <ol class="try">
-      <li>Select <b>Load balancer</b> and drag its bottom handle. Its three connectors re-space as it grows.</li>
-      <li>Switch Anchors to <b>Visio-style</b> and resize the same box. Then switch back.</li>
-      <li>Drag <b>Payments API</b> into the Data tier column and drop it between two boxes.</li>
-      <li>Select the <b>Data tier</b> container and change its layout to Row.</li>
-      <li>Hover a box, then drag one of its <b>+</b> handles onto another box to connect them.</li>
-      <li>Click a connector and drag one of its ends onto a different side of a box.</li>
-      <li>Double-click a connector to give it a label. Labels sit away from the arrowhead by default.</li>
-      <li>Drag a box around a few shapes on empty canvas, then make them the same size.</li>
-      <li>Select a box and press Ctrl+D a few times to duplicate it.</li>
-    </ol>
-  </section>
-  <section>
-    <p class="eyebrow">Canvas</p>
+    <p class="eyebrow">Diagram</p>
     <div class="field"><span>Connector routing</span>${seg('routing', [['ortho', 'Right angles'], ['straight', 'Straight']], st.routing)}</div>
     <div class="field"><span>Connector labels sit near</span>${seg('defLabelPos', [['start', 'Start'], ['center', 'Center'], ['end', 'End']], st.labelPos)}</div>
     <div class="field"><span>Grid snap</span>${seg('grid', [['5', '5 px'], ['10', '10 px'], ['20', '20 px']], String(st.grid))}</div>
     <label class="field"><span>Corner radius · ${st.radius} px</span><input id="f-radius" type="range" min="0" max="16" step="1" value="${st.radius}" data-field="radius"></label>
     <label class="check"><input id="f-slots" type="checkbox" data-field="showSlots"${st.showSlots ? ' checked' : ''}> Show anchor points</label>
-    <div class="row"><button class="btn" type="button" data-act="reset">Reload sample diagram</button></div>
   </section>
   <section>
-    <p class="eyebrow">Shortcuts</p>
-    <dl class="keys">
-      <dt>Double-click</dt><dd>Rename a box, container or connector, or add a box on empty canvas</dd>
-      <dt>F2 / Enter</dt><dd>Rename the selection. Or just start typing to replace its text</dd>
-      <dt>Arrow keys</dt><dd>Nudge by one grid step (Shift: 1 px)</dd>
-      <dt>Delete</dt><dd>Remove selection</dd>
-      <dt>Ctrl+Z / Ctrl+Y</dt><dd>Undo / redo</dd>
-      <dt>Drag canvas</dt><dd>Select the shapes inside the box</dd>
-      <dt>Shift/Ctrl+click</dt><dd>Add or remove a shape from the selection</dd>
-      <dt>Ctrl+C / X / V</dt><dd>Copy, cut, paste. Ctrl+D duplicates, Ctrl+A selects all</dd>
-      <dt>Ctrl+S / Ctrl+O</dt><dd>Save to a file / open one (or drop a file on the canvas)</dd>
-      <dt>Ctrl+Shift+C / V</dt><dd>Copy a shape's or connector's colors, paste them onto the selection</dd>
-      <dt>Wheel</dt><dd>Zoom toward the cursor (Shift+wheel scrolls sideways)</dd>
-      <dt>Right-drag</dt><dd>Pan (middle-drag or Space+drag also work)</dd>
-    </dl>
-  </section>`;
+    <p class="eyebrow">Title block &amp; legend</p>
+    <div class="togglerow"><label class="check"><input type="checkbox" id="f-showTitle" data-field="showTitle"${S.title.show ? ' checked' : ''}> Title block</label>${S.title.show ? '<button class="mini" type="button" data-act="selectAnn" data-val="title">Edit</button>' : ''}</div>
+    <div class="togglerow"><label class="check"><input type="checkbox" id="f-showLegend" data-field="showLegend"${S.legend.show ? ' checked' : ''}> Legend</label>${S.legend.show ? '<button class="mini" type="button" data-act="selectAnn" data-val="legend">Edit</button>' : ''}</div>
+  </section>
+  <div class="row"><button class="mini" type="button" data-act="help">Shortcuts and help</button></div>`;
 }
 function portCounts(n) {
   const P = computePorts(), c = { top: 0, right: 0, bottom: 0, left: 0 };
@@ -1865,10 +1835,7 @@ function onAct(b) {
   if (act === 'routing') { st.routing = val; refresh(true, true); return; }
   if (act === 'grid') { st.grid = +val; refresh(true, true); return; }
   if (act === 'defLabelPos') { st.labelPos = val; refresh(true, true); return; }
-  if (act === 'reset') {
-    pushUndo(); const s = sample(); S.nodes = s.nodes; S.edges = s.edges; S.settings.mode = s.settings.mode; S.title = s.title; S.legend = s.legend;
-    sel = null; syncModeButtons(); refresh(true, true); fit(); return;
-  }
+  if (act === 'help') { openHelp(); return; }
   if (act === 'delete') { deleteSel(); return; }
   if (act === 'selectAnn') { select({ type: 'annot', id: val }); render(); return; }
   if (act === 'annPos' || act === 'annToday' || act === 'annHide' || act === 'legToggle') {
@@ -2276,6 +2243,11 @@ async function newDiagram() {
   view = { x: 40, y: 40, k: 1 };
   refresh(true, false); save(false); updateDocUi();
 }
+// Put the sample back (undoable). The "Things to try" steps in Help refer to it.
+function loadSample() {
+  pushUndo(); const s = sample(); S.nodes = s.nodes; S.edges = s.edges; S.settings.mode = s.settings.mode; S.title = s.title; S.legend = s.legend;
+  sel = null; multi = []; syncModeButtons(); refresh(true, true); fit();
+}
 // Before replacing the diagram: if it has changes not saved to a file, ask first.
 async function confirmDiscard() {
   if (!doc.dirty || !S.nodes.length) return true;
@@ -2301,7 +2273,7 @@ function ask(html, size = '', onOpen) {
   return new Promise(res => {
     modalResolve = res;
     onOpen?.(box);
-    (box.querySelector('.primary') || box.querySelector('button'))?.focus();
+    if (!box.contains(document.activeElement)) (box.querySelector('.primary') || box.querySelector('button'))?.focus();
   });
 }
 function closeModal(choice) {
@@ -2315,6 +2287,57 @@ function toast(msg, isError = false) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.classList.toggle('err', isError); t.hidden = false;
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, isError ? 5000 : 2400);
+}
+
+/* ---------- help ---------- */
+let helpTab = 'keys';
+function helpHtml() {
+  const tabs = [['keys', 'Shortcuts'], ['try', 'Things to try'], ['anchors', 'How anchors work']];
+  const body = {
+    keys: `<dl class="keys">
+      <dt>Double-click</dt><dd>Rename a box, container or connector, or add a box on empty canvas</dd>
+      <dt>F2 / Enter</dt><dd>Rename the selection. Or just start typing to replace its text</dd>
+      <dt>Arrow keys</dt><dd>Nudge by one grid step (Shift: 1 px)</dd>
+      <dt>Delete</dt><dd>Remove selection</dd>
+      <dt>Ctrl+Z / Ctrl+Y</dt><dd>Undo / redo</dd>
+      <dt>Drag canvas</dt><dd>Select the shapes inside the box</dd>
+      <dt>Shift/Ctrl+click</dt><dd>Add or remove a shape from the selection</dd>
+      <dt>Ctrl+C / X / V</dt><dd>Copy, cut, paste. Ctrl+D duplicates, Ctrl+A selects all</dd>
+      <dt>Ctrl+S / Ctrl+O</dt><dd>Save to a file / open one (or drop a file on the canvas)</dd>
+      <dt>Ctrl+Shift+C / V</dt><dd>Copy a shape's or connector's colors, paste them onto the selection</dd>
+      <dt>Wheel</dt><dd>Zoom toward the cursor (Shift+wheel scrolls sideways)</dd>
+      <dt>Right-drag</dt><dd>Pan (middle-drag or Space+drag also work)</dd>
+      <dt>F1 / ?</dt><dd>Open this help (? only with nothing selected)</dd>
+    </dl>`,
+    try: `<p>These steps use the sample diagram.</p>
+    <ol class="try">
+      <li>Select <b>Load balancer</b> and drag its bottom handle. Its three connectors re-space as it grows.</li>
+      <li>Switch Anchors to <b>Visio-style</b> and resize the same box. Then switch back.</li>
+      <li>Drag <b>Payments API</b> into the Data tier column and drop it between two boxes.</li>
+      <li>Select the <b>Data tier</b> container and change its layout to Row.</li>
+      <li>Hover a box, then drag one of its <b>+</b> handles onto another box to connect them.</li>
+      <li>Click a connector and drag one of its ends onto a different side of a box.</li>
+      <li>Double-click a connector to give it a label. Labels sit away from the arrowhead by default.</li>
+      <li>Drag a box around a few shapes on empty canvas, then make them the same size.</li>
+      <li>Select a box and press Ctrl+D a few times to duplicate it.</li>
+    </ol>
+    <div class="row"><button class="btn" type="button" data-choice="sample">Load the sample diagram</button><span class="desc">Replaces the canvas. Ctrl+Z undoes it.</span></div>`,
+    anchors: `<p>Choose a mode with the Anchors buttons in the top bar. It decides where connectors attach to a box's side.</p>
+    ${Object.entries(MODES).map(([m, [name, desc]]) => `<div class="mode-card${m === S.settings.mode ? ' current' : ''}">
+      <strong>${name}${m === S.settings.mode ? ' <span class="meta">(current)</span>' : ''}</strong><p class="desc">${desc}</p></div>`).join('')}`,
+  }[helpTab];
+  return `<h2 id="modalTitle">Help</h2>
+    <div class="seg" role="group" aria-label="Help topics">${tabs.map(([v, l]) => `<button type="button" data-help="${v}" aria-pressed="${v === helpTab}">${l}</button>`).join('')}</div>
+    <div class="help-body">${body}</div>
+    <div class="actions"><button class="btn" type="button" data-choice="cancel">Close</button></div>`;
+}
+async function openHelp() {
+  if ((await ask(helpHtml(), 'help', box => box.querySelector('[data-help][aria-pressed="true"]').focus())) === 'sample') loadSample();
+}
+function helpTabSwitch(b) {
+  const box = document.querySelector('#modal .modal');
+  helpTab = b.dataset.help; box.innerHTML = helpHtml();
+  box.querySelector(`[data-help="${helpTab}"]`).focus();
 }
 
 /* ---------- file menu ---------- */
@@ -2633,6 +2656,7 @@ function init() {
   modal.addEventListener('click', ev => {
     if (ev.target === modal) return closeModal('cancel');
     const ex = ev.target.closest('[data-ex]'); if (ex) return exportOption(ex);
+    const hb = ev.target.closest('[data-help]'); if (hb) return helpTabSwitch(hb);
     const b = ev.target.closest('[data-choice]'); if (b) closeModal(b.dataset.choice);
   });
   // Drop a .snapblade file anywhere on the canvas to open it.
@@ -2677,6 +2701,8 @@ function init() {
   panel.addEventListener('focusout', () => { fieldUndo = false; });
   panel.addEventListener('click', ev => { const b = ev.target.closest('[data-act]'); if (b) onAct(b); });
 
+  document.querySelectorAll('#modeSeg button').forEach(b => { b.title = MODES[b.dataset.mode][1]; });
+  document.getElementById('helpBtn').addEventListener('click', () => openHelp());
   document.getElementById('modeSeg').addEventListener('click', ev => { const b = ev.target.closest('[data-mode]'); if (b) setMode(b.dataset.mode); });
   document.getElementById('addBox').addEventListener('click', () => addNode('box'));
   document.getElementById('addGroup').addEventListener('click', () => addNode('group'));
@@ -2694,6 +2720,7 @@ function init() {
     if (k === 'Escape' && !document.getElementById('fileMenu').hidden) { closeMenu(); document.getElementById('fileBtn').focus(); return; }
     if (mod && k.toLowerCase() === 's') { ev.preventDefault(); if (document.activeElement === editor) commitEditor(); saveFile(ev.shiftKey); return; }
     if (mod && k.toLowerCase() === 'o') { ev.preventDefault(); openFile(); return; }
+    if (k === 'F1') { ev.preventDefault(); if (document.activeElement === editor) commitEditor(); openHelp(); return; }
     if (ev.target.matches?.('input, textarea, select')) return;
     if (mod && k.toLowerCase() === 'z') { ev.preventDefault(); ev.shiftKey ? restore(redoStack, undoStack) : restore(undoStack, redoStack); }
     else if (mod && k.toLowerCase() === 'y') { ev.preventDefault(); restore(redoStack, undoStack); }
@@ -2703,6 +2730,7 @@ function init() {
     else if (mod && k.toLowerCase() === 'x') { ev.preventDefault(); cutSel(); }
     else if (mod && k.toLowerCase() === 'v') { ev.preventDefault(); paste(); }
     else if (mod && k.toLowerCase() === 'd') { ev.preventDefault(); duplicateSel(); }
+    else if (k === '?' && !sel && !mod) { ev.preventDefault(); openHelp(); }
     else if (mod && k.toLowerCase() === 'a') { ev.preventDefault(); setMulti(topLevel(S.nodes.map(n => n.id))); render(); }
     else if (k === 'Delete' || k === 'Backspace') { if (sel) { ev.preventDefault(); deleteSel(); } }
     else if (k === 'Escape') { select(null); render(); }
