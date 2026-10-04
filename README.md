@@ -20,6 +20,8 @@ Manual tools (Visio, draw.io, Lucidchart) give you full control, and then you sp
 - **Connector labels.** Placed near the start, center or end, and kept clear of boxes, other labels and other connectors.
 - **Styling.** Line and fill colors from presets, a picker, hex or RGB, with fills that pair automatically as a tint of the line color. Solid, dashed and dotted lines. Light and dark themes.
 - **Fast editing.** Multi-select, make same size, match colors, copy and paste style, copy, paste, duplicate, undo and redo.
+- **Files.** Save and open `.snapblade` files (plain JSON). In Chrome and Edge, Save writes straight back to the same file; other browsers download it. You can also drop a file onto the canvas to open it.
+- **Export.** SVG, PNG (1×, 2× or 3×) and vector PDF (fit to the diagram, Letter or A4), in light or dark, on white, the canvas color or a transparent background, for the whole diagram or just the selection. PNG and SVG can go straight to the clipboard for pasting into slides, chat or wikis.
 
 ## Getting started
 
@@ -34,6 +36,7 @@ Use it at **https://mmunchinski.github.io/snapblade/**, or open `index.html` fro
 | Pan / zoom | Right-drag (or middle-drag, or Space+drag) / mouse wheel |
 | Copy, paste, duplicate | Ctrl+C, Ctrl+V, Ctrl+D |
 | Copy / paste style | Ctrl+Shift+C, Ctrl+Shift+V |
+| Save / open a file | Ctrl+S (Ctrl+Shift+S to save as), Ctrl+O |
 
 ## Development
 
@@ -45,6 +48,8 @@ npm test                          # layout tests (Node) + interaction tests (hea
 
 - `tests/layout.test.mjs` exercises the layout engine (anchors, routing, bundling, labels) without a browser.
 - `tests/browser.test.mjs` drives the real app with mouse and keyboard input.
+
+PDF export loads two open-source libraries ([jsPDF](https://github.com/parallax/jsPDF) and [svg2pdf.js](https://github.com/yWorks/svg2pdf.js)) from jsDelivr the first time you use it, and SVG/PNG exports embed the Instrument Sans font from Google Fonts. Everything else works offline.
 
 Planned work lives in [BACKLOG.md](BACKLOG.md).
 

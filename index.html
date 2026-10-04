@@ -203,7 +203,38 @@ dl.keys dd { margin: 0; }
 .cur-nw, .cur-se { cursor: nwse-resize; } .cur-ne, .cur-sw { cursor: nesw-resize; }
 .cur-n, .cur-s { cursor: ns-resize; } .cur-e, .cur-w { cursor: ew-resize; }
 
+/* ---------- document name, file menu, dialogs, toasts ---------- */
+.doc { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.docname { border: 1px solid transparent; background: transparent; font: 500 14px var(--ui); color: var(--ink); padding: 4px 6px; border-radius: 6px; max-width: 28ch; text-overflow: ellipsis; }
+.docname:hover { border-color: var(--line); }
+.docname:focus { border-color: var(--accent); outline: none; background: var(--paper); }
+.dirty { width: 8px; height: 8px; border-radius: 50%; background: var(--port); flex: none; }
+.menu-wrap { position: relative; }
+.menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 230px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 28px rgba(0, 0, 0, .16); padding: 4px; display: flex; flex-direction: column; }
+.menu button { display: flex; justify-content: space-between; align-items: center; gap: 18px; border: 0; background: transparent; text-align: left; padding: 7px 10px; border-radius: 5px; font-size: 13px; cursor: pointer; color: var(--ink); }
+.menu button:hover, .menu button:focus-visible { background: var(--paper); outline: none; }
+.menu kbd { font: 11px var(--mono); color: var(--ink-3); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { filter: brightness(1.08); }
+.modal-back { position: fixed; inset: 0; z-index: 50; background: rgba(10, 14, 16, .45); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.modal { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 24px 60px rgba(0, 0, 0, .3); width: min(820px, 100%); max-height: calc(100% - 8px); overflow: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+.modal.small { width: min(440px, 100%); }
+.modal h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
+.modal p { margin: 0; color: var(--ink-2); font-size: 13.5px; }
+.modal .actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.export-grid { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 18px; }
+.export-preview { background: repeating-conic-gradient(var(--line) 0 25%, transparent 0 50%) 0 0 / 16px 16px; border: 1px solid var(--line); border-radius: 8px; min-height: 280px; display: flex; align-items: center; justify-content: center; padding: 14px; min-width: 0; }
+.export-preview img { max-width: 100%; max-height: 380px; box-shadow: 0 1px 6px rgba(0, 0, 0, .18); }
+.export-opts { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.export-opts .seg button:disabled { opacity: .4; cursor: default; }
+.note { font-size: 12.5px; color: var(--ink-2); background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.toast { position: absolute; left: 50%; transform: translateX(-50%); bottom: 54px; z-index: 30; max-width: calc(100% - 32px); background: var(--ink); color: var(--panel); padding: 8px 14px; border-radius: 8px; font-size: 13px; box-shadow: 0 6px 18px rgba(0, 0, 0, .22); }
+.toast.err { background: var(--danger); color: #fff; }
+.empty-hint { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; color: var(--ink-3); font-size: 14px; text-align: center; padding: 16px; }
+.stage.dropping::after { content: 'Drop a .snapblade file to open it'; position: absolute; inset: 10px; border: 2px dashed var(--accent); border-radius: 12px; background: var(--accent-soft); display: flex; align-items: center; justify-content: center; font-weight: 600; color: var(--accent); pointer-events: none; }
+
 @media (max-width: 760px) {
+  .export-grid { grid-template-columns: minmax(0, 1fr); }
   main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
   .panel { border-left: 0; border-top: 1px solid var(--line); max-height: 42vh; }
   .modes { margin-left: 0; }
@@ -221,9 +252,24 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 16</span>
+      Snapblade <span class="tag">playground &middot; build 17</span>
+    </div>
+    <div class="doc">
+      <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
+      <span id="dirtyDot" class="dirty" title="Not saved to a file yet" role="img" aria-label="Unsaved changes" hidden></span>
     </div>
     <div class="tools">
+      <div class="menu-wrap">
+        <button class="btn" id="fileBtn" type="button" aria-haspopup="menu" aria-expanded="false">File &#9662;</button>
+        <div class="menu" id="fileMenu" role="menu" hidden>
+          <button type="button" role="menuitem" data-file="new">New diagram</button>
+          <button type="button" role="menuitem" data-file="open">Open&hellip;<kbd>Ctrl+O</kbd></button>
+          <button type="button" role="menuitem" data-file="save">Save<kbd>Ctrl+S</kbd></button>
+          <button type="button" role="menuitem" data-file="saveas">Save as&hellip;<kbd>Ctrl+Shift+S</kbd></button>
+        </div>
+      </div>
+      <button class="btn" id="exportBtn" type="button">Export&hellip;</button>
+      <span class="sep"></span>
       <button class="btn" id="addBox" type="button">+ Box</button>
       <button class="btn" id="addGroup" type="button">+ Container</button>
       <span class="sep"></span>
@@ -244,6 +290,8 @@ dl.keys dd { margin: 0; }
     <div class="stage" id="stage">
       <svg id="cv" aria-label="Diagram canvas"></svg>
       <textarea id="editor" hidden aria-label="Edit label"></textarea>
+      <div class="empty-hint" id="emptyHint" hidden>Double-click anywhere to add a box, or drop a .snapblade file here to open it.</div>
+      <div class="toast" id="toast" role="status" hidden></div>
       <div class="status" id="status"></div>
       <div class="zoom">
         <button type="button" id="zout" aria-label="Zoom out">−</button>
@@ -254,6 +302,8 @@ dl.keys dd { margin: 0; }
     <aside class="panel" id="panel" aria-label="Inspector"></aside>
   </main>
 </div>
+<div class="modal-back" id="modal" hidden><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"></div></div>
+<input type="file" id="fileInput" accept=".snapblade,.json,application/json" hidden>
 
 <script>
 'use strict';
@@ -263,7 +313,8 @@ dl.keys dd { margin: 0; }
 const HEADER = 30, STUB = 20, MIN_GAP = 12, MIN_W = 40, MIN_H = 30;
 const SIDES = ['top', 'right', 'bottom', 'left'];
 const NORMAL = { top: { x: 0, y: -1 }, right: { x: 1, y: 0 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 } };
-const KEY = 'snapblade-playground-v1', OLD_KEY = 'diogramo-playground-v1';
+const KEY = 'snapblade-playground-v1', OLD_KEY = 'diogramo-playground-v1', META_KEY = 'snapblade-doc-meta';
+let doc = { name: 'Untitled diagram', dirty: false };   // the diagram's name, and whether it has unsaved file changes
 
 let S = null;          // { nodes, edges, settings }
 let lifted = null;     // node being dragged: excluded from its container's layout
@@ -741,10 +792,10 @@ function computeRoutes(P) {
    connector until it is on a straight stretch and clear of boxes and other labels. */
 const LBL = { font: '500 12px "Instrument Sans", "Segoe UI", system-ui, sans-serif', lh: 15, px: 5, py: 2, gap: 8, arrow: 12, step: 6 };
 let measureCtx = null;
-function textWidth(s) {
+function textWidth(s, font = LBL.font) {
   if (typeof document === 'undefined') return s.length * 6.4;
   measureCtx ||= document.createElement('canvas').getContext('2d');
-  measureCtx.font = LBL.font;
+  measureCtx.font = font;
   return measureCtx.measureText(s).width;
 }
 const polyLen = pts => pts.slice(1).reduce((t, q, i) => t + Math.abs(q.x - pts[i].x) + Math.abs(q.y - pts[i].y), 0);
@@ -759,10 +810,16 @@ function pointAt(pts, s) {
     acc += len;
   }
 }
+// Every segment of every route as a thin rectangle, tagged with its connector, for label avoidance.
+function routeSegments(R) {
+  const segs = [];
+  for (const id in R) R[id].slice(1).forEach((q, i) => { const a = R[id][i]; segs.push({ id, x: Math.min(a.x, q.x) - 0.5, y: Math.min(a.y, q.y) - 0.5, w: Math.abs(q.x - a.x) + 1, h: Math.abs(q.y - a.y) + 1 }); });
+  return segs;
+}
 const overlaps = (r, q) => r.x < q.x + q.w && q.x < r.x + r.w && r.y < q.y + q.h && q.y < r.y + r.h;
-function placeLabel(e, pts, taken, lines_ = []) {
+function placeLabel(e, pts, taken, lines_ = [], font = LBL.font) {
   const lines = String(e.label).split('\n');
-  const w = Math.ceil(Math.max(...lines.map(textWidth))) + 2 * LBL.px, h = lines.length * LBL.lh + 2 * LBL.py;
+  const w = Math.ceil(Math.max(...lines.map(t => textWidth(t, font)))) + 2 * LBL.px, h = lines.length * LBL.lh + 2 * LBL.py;
   const L = polyLen(pts); if (L < 1) return null;
   const mode = e.labelPos || S.settings.labelPos || 'start';
   // Same clearance from the box at both ends, whether or not that end has an arrowhead.
@@ -827,19 +884,23 @@ const snap = v => { const g = S.settings.grid; return Math.round(v / g) * g; };
 const oneLine = s => String(s).replace(/\s*\n\s*/g, ' ');
 const cap = s => s[0].toUpperCase() + s.slice(1);
 
-function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* storage unavailable */ } }
+// Every change is kept in this browser as you work. Separately, `doc.dirty` tracks whether
+// the diagram has changes that haven't been saved to a file.
+function save(markDirty = true) {
+  if (markDirty && doc) setDirty(true);
+  try { localStorage.setItem(KEY, JSON.stringify(S)); localStorage.setItem(META_KEY, JSON.stringify(doc)); } catch (e) { /* storage unavailable */ }
+}
+// Check and repair a diagram from storage or a file; null if it isn't one.
+function normalize(s) {
+  if (!s || !Array.isArray(s.nodes) || !Array.isArray(s.edges)) return null;
+  s.settings = { ...sample().settings, ...s.settings };
+  const ids = new Set(s.nodes.map(n => n.id));
+  s.nodes.forEach(n => { if (n.parent && !ids.has(n.parent)) n.parent = null; migrateStyle(n); });
+  s.edges = s.edges.filter(e => e.from && e.to && ids.has(e.from.node) && ids.has(e.to.node));
+  return s;
+}
 function load() {
-  try {
-    const s = JSON.parse(localStorage.getItem(KEY) ?? localStorage.getItem(OLD_KEY));
-    if (s && Array.isArray(s.nodes) && Array.isArray(s.edges)) {
-      s.settings = { ...sample().settings, ...s.settings };
-      const ids = new Set(s.nodes.map(n => n.id));
-      s.nodes.forEach(n => { if (n.parent && !ids.has(n.parent)) n.parent = null; migrateStyle(n); });
-      s.edges = s.edges.filter(e => ids.has(e.from.node) && ids.has(e.to.node));
-      return s;
-    }
-  } catch (e) { /* ignore */ }
-  return null;
+  try { return normalize(JSON.parse(localStorage.getItem(KEY) ?? localStorage.getItem(OLD_KEY))); } catch (e) { return null; }
 }
 const snapshot = () => JSON.stringify({ nodes: S.nodes, edges: S.edges });
 function pushUndo() { undoStack.push(snapshot()); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; }
@@ -1089,7 +1150,7 @@ function render() {
   h = h.replace('</defs>', [...arrowFor].map(([c, id]) => `<marker id="${id}" viewBox="0 0 10 10" refX="10" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" style="fill:${c}"/></marker>`).join('') + '</defs>');
   const R = computeRoutes(P), taken = [], segs = [], labelRects = {};
   lastGeom = { R, labels: labelRects };
-  for (const id in R) R[id].slice(1).forEach((q, i) => { const a = R[id][i]; segs.push({ id, x: Math.min(a.x, q.x) - 0.5, y: Math.min(a.y, q.y) - 0.5, w: Math.abs(q.x - a.x) + 1, h: Math.abs(q.y - a.y) + 1 }); });
+  segs.push(...routeSegments(R));
   for (const e of S.edges) {
     const pe = P[e.id]; if (!pe) continue;
     const isSel = sel?.type === 'edge' && sel.id === e.id;
@@ -1249,6 +1310,7 @@ function diagramPanel() {
       <dt>Drag canvas</dt><dd>Select the shapes inside the box</dd>
       <dt>Shift/Ctrl+click</dt><dd>Add or remove a shape from the selection</dd>
       <dt>Ctrl+C / X / V</dt><dd>Copy, cut, paste. Ctrl+D duplicates, Ctrl+A selects all</dd>
+      <dt>Ctrl+S / Ctrl+O</dt><dd>Save to a file / open one (or drop a file on the canvas)</dd>
       <dt>Ctrl+Shift+C / V</dt><dd>Copy a shape's or connector's colors, paste them onto the selection</dd>
       <dt>Wheel</dt><dd>Zoom toward the cursor (Shift+wheel scrolls sideways)</dd>
       <dt>Right-drag</dt><dd>Pan (middle-drag or Space+drag also work)</dd>
@@ -1760,11 +1822,445 @@ function onCancel() {
   refresh(true, true);
 }
 
+/* =====================================================================
+   Files: the .snapblade format, New / Open / Save / Save as
+   ===================================================================== */
+const FILE_EXT = '.snapblade';
+const FILE_TYPES = [{ description: 'Snapblade diagram', accept: { 'application/json': [FILE_EXT] } }];
+let fileHandle = null;                                  // Chrome/Edge: the file on disk that Save writes to
+const framed = typeof window !== 'undefined' && window.self !== window.top;   // inside another site's preview frame
+const canPickFiles = () => !framed && 'showSaveFilePicker' in window;
+const fileBase = () => (doc.name || 'Untitled diagram').replace(/[\\/:*?"<>|]+/g, '-').trim() || 'diagram';
+
+// Size the name field to its text, so the unsaved dot sits right beside the name.
+function fitDocName(input) { input.style.width = Math.ceil(Math.max(80, textWidth(input.value, '500 14px ' + UI_STACK)) + 16) + 'px'; }
+function setDirty(v) { doc.dirty = v; updateDocUi(); }
+function updateDocUi() {
+  const input = document.getElementById('docName'), dot = document.getElementById('dirtyDot');
+  if (!input) return;
+  if (document.activeElement !== input) input.value = doc.name;
+  fitDocName(input);
+  dot.hidden = !doc.dirty;
+  dot.title = fileHandle ? 'Unsaved changes' : 'Not saved to a file yet';
+  document.title = `${doc.dirty ? '• ' : ''}${doc.name} · Snapblade`;
+  document.getElementById('emptyHint').hidden = S.nodes.length > 0;
+}
+function serialize() {
+  return JSON.stringify({ format: 'snapblade', version: 1, saved: new Date().toISOString(),
+    diagram: { nodes: S.nodes, edges: S.edges, settings: S.settings } }, null, 2);
+}
+function parseDiagram(text) {
+  let d;
+  try { d = JSON.parse(text); } catch (e) { throw new Error("That file isn't a Snapblade diagram (it isn't valid JSON)."); }
+  if (d?.format === 'snapblade' && d.version > 1) throw new Error('That file was made by a newer version of Snapblade. Update the app to open it.');
+  const s = normalize(d?.format === 'snapblade' ? d.diagram : d);
+  if (!s) throw new Error("That file isn't a Snapblade diagram.");
+  return s;
+}
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
+async function saveFile(asNew) {
+  const blob = new Blob([serialize()], { type: 'application/json' });
+  if (canPickFiles()) {
+    try {
+      if (!fileHandle || asNew) fileHandle = await window.showSaveFilePicker({ suggestedName: fileBase() + FILE_EXT, types: FILE_TYPES });
+      const w = await fileHandle.createWritable(); await w.write(blob); await w.close();
+      doc.name = fileHandle.name.replace(/\.(snapblade|json)$/i, '');
+    } catch (e) {
+      if (e.name === 'AbortError') return false;
+      toast(`Couldn't save: ${e.message}`, true); return false;
+    }
+  } else {
+    if (framed) { toast('Saving files is blocked inside this preview. Use the app at mmunchinski.github.io/snapblade.', true); return false; }
+    download(blob, fileBase() + FILE_EXT);
+  }
+  setDirty(false); save(false);
+  toast(`Saved ${fileBase()}${FILE_EXT}`);
+  return true;
+}
+function loadDiagram(text, filename, handle) {
+  let s;
+  try { s = parseDiagram(text); } catch (e) { toast(e.message, true); return false; }
+  S.nodes = s.nodes; S.edges = s.edges; S.settings = s.settings;
+  fileHandle = handle || null;
+  doc = { name: String(filename || 'Untitled diagram').replace(/\.(snapblade|json)$/i, ''), dirty: false };
+  undoStack.length = 0; redoStack.length = 0;
+  sel = null; multi = []; hover = null;
+  syncModeButtons(); refresh(true, false); save(false); updateDocUi(); fit();
+  toast(`Opened ${filename}`);
+  return true;
+}
+async function openFile() {
+  if (!(await confirmDiscard())) return;
+  if (canPickFiles()) {
+    try {
+      const [h] = await window.showOpenFilePicker({ types: FILE_TYPES, excludeAcceptAllOption: false });
+      const f = await h.getFile();
+      loadDiagram(await f.text(), f.name, h);
+      return;
+    } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  document.getElementById('fileInput').click();
+}
+async function newDiagram() {
+  if (!(await confirmDiscard())) return;
+  S.nodes = []; S.edges = [];
+  fileHandle = null; doc = { name: 'Untitled diagram', dirty: false };
+  undoStack.length = 0; redoStack.length = 0; sel = null; multi = [];
+  view = { x: 40, y: 40, k: 1 };
+  refresh(true, false); save(false); updateDocUi();
+}
+// Before replacing the diagram: if it has changes not saved to a file, ask first.
+async function confirmDiscard() {
+  if (!doc.dirty || !S.nodes.length) return true;
+  const choice = await ask(`
+    <h2 id="modalTitle">Save changes to “${esc(doc.name)}”?</h2>
+    <p>Your work is kept in this browser, but these changes haven't been saved to a file.</p>
+    <div class="actions">
+      <button class="btn" type="button" data-choice="cancel">Cancel</button>
+      <button class="btn" type="button" data-choice="discard">Don't save</button>
+      <button class="btn primary" type="button" data-choice="save">Save</button>
+    </div>`, 'small');
+  if (choice === 'save') return saveFile(false);
+  return choice === 'discard';
+}
+
+/* ---------- dialogs and toasts ---------- */
+let modalResolve = null;
+// Show a dialog; resolves with the data-choice of the button pressed ('cancel' on Esc or backdrop).
+function ask(html, size = '', onOpen) {
+  const back = document.getElementById('modal'), box = back.firstElementChild;
+  box.className = 'modal ' + size; box.innerHTML = html; back.hidden = false;
+  closeMenu();
+  return new Promise(res => {
+    modalResolve = res;
+    onOpen?.(box);
+    (box.querySelector('.primary') || box.querySelector('button'))?.focus();
+  });
+}
+function closeModal(choice) {
+  const back = document.getElementById('modal');
+  if (back.hidden) return;
+  back.hidden = true; back.firstElementChild.innerHTML = '';
+  const r = modalResolve; modalResolve = null; r?.(choice);
+}
+let toastTimer = null;
+function toast(msg, isError = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.toggle('err', isError); t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, isError ? 5000 : 2400);
+}
+
+/* ---------- file menu ---------- */
+function closeMenu() {
+  const m = document.getElementById('fileMenu');
+  if (m && !m.hidden) { m.hidden = true; document.getElementById('fileBtn').setAttribute('aria-expanded', 'false'); }
+}
+function toggleMenu() {
+  const m = document.getElementById('fileMenu'), open = m.hidden;
+  m.hidden = !open; document.getElementById('fileBtn').setAttribute('aria-expanded', String(open));
+  if (open) m.querySelector('button').focus();
+}
+function fileCommand(cmd) {
+  closeMenu();
+  if (cmd === 'new') newDiagram();
+  if (cmd === 'open') openFile();
+  if (cmd === 'save') saveFile(false);
+  if (cmd === 'saveas') saveFile(true);
+}
+
+/* =====================================================================
+   Export: a clean, standalone SVG of the diagram, then PNG or PDF from it
+   ===================================================================== */
+let exportOpts = { format: 'png', theme: 'light', background: 'white', scale: 2, page: 'fit', scope: 'all' };
+const PDF_LIBS = ['https://cdn.jsdelivr.net/npm/jspdf@3.0.3/dist/jspdf.umd.min.js', 'https://cdn.jsdelivr.net/npm/svg2pdf.js@2.8.1/dist/svg2pdf.umd.min.js'];
+const FONT_CSS = 'https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@500;600&display=swap';
+const UI_STACK = '"Instrument Sans", "Segoe UI", system-ui, sans-serif';
+
+// Theme colors as plain values, read by briefly forcing the requested theme on the page.
+function themeColors(theme) {
+  const root = document.documentElement, prev = root.getAttribute('data-theme');
+  root.setAttribute('data-theme', theme);
+  const cs = getComputedStyle(root), T = {};
+  for (const t of ['paper', 'node-bg', 'node-stroke', 'group-bg', 'group-stroke', 'edge', 'ink', 'ink-2', ...PRESETS.map(p => 'p-' + p)]) T[t] = cs.getPropertyValue('--' + t).trim();
+  prev == null ? root.removeAttribute('data-theme') : root.setAttribute('data-theme', prev);
+  return T;
+}
+// '#abc', '#aabbcc' or 'rgba(r, g, b, a)' -> { hex, a }
+function parseColor(c) {
+  c = String(c).trim();
+  if (/^#[0-9a-f]{3}$/i.test(c)) c = '#' + [...c.slice(1)].map(x => x + x).join('');
+  if (isHex(c)) return { hex: c.toLowerCase(), a: 1 };
+  const m = c.match(/[\d.]+/g) || [0, 0, 0];
+  return { hex: rgbToHex(+m[0], +m[1], +m[2]), a: m[3] != null ? +m[3] : 1 };
+}
+function exportColors(o, T) {
+  const st = o.style || {};
+  const def = !o.kind ? T.edge : o.kind === 'group' ? T['group-stroke'] : T['node-stroke'];
+  const line = parseColor(!st.line ? def : isHex(st.line) ? st.line : T['p-' + st.line]).hex;
+  if (!o.kind) return { line };
+  const fill = st.fill || 'pair';
+  if (fill === 'none') return { line, fill: 'none', fo: 1 };
+  if (isHex(fill)) return { line, fill: fill.toLowerCase(), fo: 1 };
+  if (st.line) return { line, fill: mixHex(line, parseColor(o.kind === 'group' ? T.paper : T['node-bg']).hex, tintOf(o)), fo: 1 };
+  const c = parseColor(o.kind === 'group' ? T['group-bg'] : T['node-bg']);
+  return { line, fill: c.hex, fo: c.a };
+}
+function wrapText(text, maxW, font) {
+  const out = [];
+  for (const para of String(text).split('\n')) {
+    const words = para.split(/\s+/).filter(Boolean);
+    if (!words.length) { out.push(''); continue; }
+    let line = words[0];
+    for (const w of words.slice(1)) { const t = line + ' ' + w; if (textWidth(t, font) <= maxW) line = t; else { out.push(line); line = w; } }
+    out.push(line);
+  }
+  return out;
+}
+let fontCssCache = null;
+// The app font as embedded @font-face rules, so exported SVG/PNG look the same on any machine.
+async function embeddedFontCss() {
+  if (fontCssCache != null) return fontCssCache;
+  try {
+    const css = await (await fetch(FONT_CSS)).text();
+    const latin = css.split('@font-face').slice(1).filter(b => /U\+0000-00FF/.test(b));
+    const files = {};
+    let out = '';
+    for (const b of latin) {
+      const url = b.match(/url\((https:[^)]+)\)/)[1], weight = b.match(/font-weight:\s*(\d+)/)[1];
+      if (!files[url]) {
+        const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+        let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+        files[url] = btoa(bin);
+      }
+      out += `@font-face{font-family:'Instrument Sans';font-weight:${weight};src:url(data:font/woff2;base64,${files[url]}) format('woff2');}`;
+    }
+    fontCssCache = out;
+  } catch (e) { fontCssCache = ''; }   // offline or blocked: fall back to system fonts
+  return fontCssCache;
+}
+
+// Build the export SVG. Returns { svg, w, h }, or null if there is nothing to export.
+// o: { theme, background: 'canvas'|'white'|'none', scope: 'all'|'selection', pdf, fontCss }
+function buildExportSvg(o) {
+  const T = themeColors(o.theme);
+  const fam = o.pdf ? 'Helvetica, Arial' : UI_STACK;
+  const family = o.pdf ? 'helvetica' : "'Instrument Sans', 'Segoe UI', Helvetica, Arial, sans-serif";
+  const font = (w, px) => `${w} ${px}px ${fam}`;
+  let ids = new Set(S.nodes.map(n => n.id));
+  if (o.scope === 'selection' && selectedIds().length) ids = new Set(topLevel(selectedIds()).flatMap(subtree));
+  const nodes = S.nodes.filter(n => ids.has(n.id));
+  if (!nodes.length) return null;
+  const edges = S.edges.filter(e => ids.has(e.from.node) && ids.has(e.to.node));
+  layoutAll();
+  const P = computePorts(), R = computeRoutes(P), segs = routeSegments(R), taken = [], labels = {};
+  for (const e of S.edges) if (e.label && P[e.id]) {
+    const lb = placeLabel(e, R[e.id], taken, segs, font(500, 12));
+    if (lb) { taken.push({ x: lb.x - 3, y: lb.y - 3, w: lb.w + 6, h: lb.h + 6 }); labels[e.id] = lb; }
+  }
+  // Bounds of everything drawn, plus a margin.
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  const grow = (x, y, w = 0, h = 0) => { x1 = Math.min(x1, x); y1 = Math.min(y1, y); x2 = Math.max(x2, x + w); y2 = Math.max(y2, y + h); };
+  for (const n of nodes) grow(n.x, n.y, n.w, n.h);
+  for (const e of edges) { R[e.id].forEach(p => grow(p.x - 6, p.y - 6, 12, 12)); if (labels[e.id]) { const l = labels[e.id]; grow(l.x, l.y, l.w, l.h); } }
+  const pad = 32, ox = Math.floor(x1 - pad), oy = Math.floor(y1 - pad), W = Math.ceil(x2 - x1 + 2 * pad), H = Math.ceil(y2 - y1 + 2 * pad);
+  const bg = o.background === 'canvas' ? T.paper : o.background === 'white' ? '#ffffff' : null;
+  const labelBg = bg || parseColor(T['node-bg']).hex;
+  const r2 = v => Math.round(v * 100) / 100;
+  const dash = st => st?.dash && st.dash !== 'solid' ? ` stroke-dasharray="${DASH[st.dash]}"` : '';
+  // Font set on every text element: the PDF converter doesn't inherit it from the root <svg>.
+  // PDFs use Helvetica, whose weights are just regular and bold.
+  const fontAttrs = (size, weight) => `font-family="${family}" font-size="${size}" font-weight="${o.pdf ? (weight >= 600 ? 'bold' : 'normal') : weight}"`;
+  const textLines = (lines, cx, cy, size, weight, color, lh) => lines.map((t, i) =>
+    `<text x="${r2(cx)}" y="${r2(cy + (i - (lines.length - 1) / 2) * lh + size * 0.35)}" text-anchor="middle" ${fontAttrs(size, weight)} fill="${color}">${esc(t)}</text>`).join('');
+
+  let out = '';
+  const order = nodes.map((n, i) => ({ n, i, d: depth(n), gk: n.kind === 'group' ? 0 : 1 })).sort((a, b) => a.d - b.d || a.gk - b.gk || a.i - b.i);
+  for (const { n } of order) {
+    const c = exportColors(n, T), fo = c.fo < 1 ? ` fill-opacity="${c.fo}"` : '';
+    if (n.kind === 'group') {
+      const title = n.style?.line ? c.line : parseColor(T['ink-2']).hex;
+      out += `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="6" fill="${c.fill}"${fo} stroke="${c.line}" stroke-width="1.25"${dash(n.style)}/>`
+        + `<line x1="${n.x}" y1="${n.y + HEADER}" x2="${n.x + n.w}" y2="${n.y + HEADER}" stroke="${c.line}" stroke-opacity=".55"/>`
+        + `<text x="${n.x + 12}" y="${n.y + 19}" ${fontAttrs(11.5, 600)} letter-spacing=".8" fill="${title}">${esc(oneLine(n.label).toUpperCase())}</text>`;
+    } else {
+      out += `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="3" fill="${c.fill}"${fo} stroke="${c.line}" stroke-width="1.5"${dash(n.style)}/>`
+        + textLines(wrapText(n.label, n.w - 16, font(500, 13)), n.x + n.w / 2, n.y + n.h / 2, 13, 500, parseColor(T.ink).hex, 16.25);
+    }
+  }
+  for (const e of edges) {
+    const pts = R[e.id], c = exportColors(e, T);
+    out += `<path d="${pathD(pts.map(p => ({ x: r2(p.x), y: r2(p.y) })), S.settings.radius)}" fill="none" stroke="${c.line}" stroke-width="1.5" stroke-linejoin="round"${dash(e.style)}/>`;
+    // Arrowheads as plain triangles (more portable than SVG markers).
+    const head = (tip, from) => {
+      const dx = tip.x - from.x, dy = tip.y - from.y, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
+      const bx = tip.x - ux * 11, by = tip.y - uy * 11;
+      return `<path d="M${r2(tip.x)},${r2(tip.y)} L${r2(bx - uy * 4.4)},${r2(by + ux * 4.4)} L${r2(bx + uy * 4.4)},${r2(by - ux * 4.4)} Z" fill="${c.line}"/>`;
+    };
+    if (e.arrow !== 'none') out += head(pts[pts.length - 1], pts[pts.length - 2]);
+    if (e.arrow === 'both') out += head(pts[0], pts[1]);
+    const l = labels[e.id];
+    if (l) out += `<rect x="${r2(l.x)}" y="${r2(l.y)}" width="${l.w}" height="${l.h}" rx="3" fill="${labelBg}"/>`
+      + textLines(l.lines, l.x + l.w / 2, l.y + l.h / 2, 12, 500, parseColor(T['ink-2']).hex, LBL.lh);
+  }
+  const svgText = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${ox} ${oy} ${W} ${H}" font-family="${family}">`
+    + `<title>${esc(doc.name)}</title>`
+    + (o.fontCss ? `<defs><style>${o.fontCss}</style></defs>` : '')
+    + (bg ? `<rect x="${ox}" y="${oy}" width="${W}" height="${H}" fill="${bg}"/>` : '')
+    + out + '</svg>';
+  return { svg: svgText, w: W, h: H };
+}
+
+async function svgToPng(svgText, w, h, scale) {
+  const url = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml' }));
+  try {
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('Could not render the image.')); img.src = url; });
+    await new Promise(r => setTimeout(r, 60));   // let embedded fonts finish decoding before drawing
+    const c = document.createElement('canvas');
+    c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return await new Promise(r => c.toBlob(r, 'image/png'));
+  } finally { URL.revokeObjectURL(url); }
+}
+const scriptLoads = {};
+function loadScript(src) {
+  return scriptLoads[src] ||= new Promise((res, rej) => {
+    const el = document.createElement('script'); el.src = src; el.onload = res;
+    el.onerror = () => { delete scriptLoads[src]; rej(new Error('Could not load the PDF library. Check your internet connection.')); };
+    document.head.appendChild(el);
+  });
+}
+async function svgToPdf(svgText, w, h, page) {
+  for (const src of PDF_LIBS) await loadScript(src);
+  const { jsPDF } = window.jspdf, pt = 0.75;   // CSS px -> PDF points
+  let pw = w * pt, ph = h * pt, margin = 0;
+  if (page !== 'fit') { const [a, b] = page === 'letter' ? [792, 612] : [841.89, 595.28]; [pw, ph] = w >= h ? [a, b] : [b, a]; margin = 36; }
+  const pdf = new jsPDF({ unit: 'pt', format: [pw, ph], orientation: pw >= ph ? 'landscape' : 'portrait' });
+  const s = Math.min((pw - 2 * margin) / (w * pt), (ph - 2 * margin) / (h * pt));
+  const host = document.createElement('div');
+  host.style.cssText = 'position:fixed;left:-100000px;top:0;';
+  host.innerHTML = svgText; document.body.appendChild(host);
+  try {
+    await pdf.svg(host.querySelector('svg'), { x: (pw - w * pt * s) / 2, y: (ph - h * pt * s) / 2, width: w * pt * s, height: h * pt * s });
+  } finally { host.remove(); }
+  pdf.setProperties({ title: doc.name, creator: 'Snapblade' });
+  return pdf.output('blob');
+}
+// Produce the chosen export as a Blob (for download or the clipboard).
+async function exportBlob(opts) {
+  const pdf = opts.format === 'pdf';
+  const built = buildExportSvg({ ...opts, pdf, background: pdf && opts.background === 'none' ? 'white' : opts.background, fontCss: pdf ? '' : await embeddedFontCss() });
+  if (!built) throw new Error('There is nothing to export yet.');
+  if (opts.format === 'svg') return { blob: new Blob([built.svg], { type: 'image/svg+xml' }), built };
+  if (opts.format === 'png') return { blob: await svgToPng(built.svg, built.w, built.h, opts.scale), built };
+  return { blob: await svgToPdf(built.svg, built.w, built.h, opts.page), built };
+}
+
+function exportDialogHtml() {
+  const o = exportOpts, hasSel = selectedIds().length > 0, pdf = o.format === 'pdf';
+  const exSeg = (key, opts, cur, disabled = []) => `<div class="seg" role="group">${opts.map(([v, l]) =>
+    `<button type="button" data-ex="${key}" data-val="${v}" aria-pressed="${String(v) === String(cur)}"${disabled.includes(v) ? ' disabled' : ''}>${l}</button>`).join('')}</div>`;
+  return `
+    <h2 id="modalTitle">Export</h2>
+    <div class="export-grid">
+      <div class="export-preview"><img id="exPreview" alt="Preview of the export"></div>
+      <div class="export-opts">
+        <div class="field"><span>Format</span>${exSeg('format', [['svg', 'SVG'], ['png', 'PNG'], ['pdf', 'PDF']], o.format)}</div>
+        <div class="field"><span>Theme</span>${exSeg('theme', [['light', 'Light'], ['dark', 'Dark']], o.theme)}</div>
+        <div class="field"><span>Background</span>${exSeg('background', [['white', 'White'], ['canvas', 'Canvas'], ['none', 'None']], pdf && o.background === 'none' ? 'white' : o.background, pdf ? ['none'] : [])}</div>
+        ${o.format === 'png' ? `<div class="field"><span>Size</span>${exSeg('scale', [[1, '1×'], [2, '2×'], [3, '3×']], o.scale)}</div>` : ''}
+        ${pdf ? `<div class="field"><span>Page</span>${exSeg('page', [['fit', 'Fit diagram'], ['letter', 'Letter'], ['a4', 'A4']], o.page)}</div>` : ''}
+        <div class="field"><span>Include</span>${exSeg('scope', [['all', 'Whole diagram'], ['selection', 'Selection']], hasSel ? o.scope : 'all', hasSel ? [] : ['selection'])}</div>
+        <p class="meta" id="exInfo"></p>
+        ${pdf ? '<p class="desc">PDFs keep lines and text sharp at any zoom. Text uses Helvetica, a font every PDF reader has.</p>' : ''}
+        ${framed ? '<div class="note">Downloads are blocked inside this preview. Copy to clipboard may still work, or use the app at mmunchinski.github.io/snapblade.</div>' : ''}
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn" type="button" data-choice="cancel">Close</button>
+      ${pdf ? '' : '<button class="btn" type="button" data-choice="copy">Copy to clipboard</button>'}
+      <button class="btn primary" type="button" data-choice="download">Download</button>
+    </div>`;
+}
+let previewUrl = null;
+async function refreshExportPreview(box) {
+  const o = { ...exportOpts, scope: selectedIds().length ? exportOpts.scope : 'all' };
+  const built = buildExportSvg({ ...o, pdf: o.format === 'pdf', background: o.format === 'pdf' && o.background === 'none' ? 'white' : o.background, fontCss: o.format === 'pdf' ? '' : await embeddedFontCss() });
+  const img = box.querySelector('#exPreview'); if (!img || !built) return;
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = URL.createObjectURL(new Blob([built.svg], { type: 'image/svg+xml' }));
+  img.src = previewUrl;
+  const info = box.querySelector('#exInfo');
+  const size = o.format === 'png' ? `${Math.round(built.w * o.scale)} × ${Math.round(built.h * o.scale)} px` : `${built.w} × ${built.h}`;
+  info.textContent = `${fileBase()}.${o.format}  ·  ${size}`;
+}
+async function openExport() {
+  if (!S.nodes.length) { toast('There is nothing to export yet.', true); return; }
+  if (!selectedIds().length) exportOpts.scope = 'all';
+  const choice = await ask(exportDialogHtml(), '', refreshExportPreview);
+  if (choice !== 'download' && choice !== 'copy') return;
+  const o = { ...exportOpts, scope: selectedIds().length ? exportOpts.scope : 'all' }, name = `${fileBase()}.${o.format}`;
+  try {
+    if (choice === 'copy') await copyExport(o);
+    else { const { blob } = await exportBlob(o); download(blob, name); toast(`Exported ${name}`); }
+  } catch (e) { toast(e.message || 'Export failed.', true); }
+}
+// An option in the export dialog was clicked: update and redraw the dialog in place.
+function exportOption(b) {
+  if (b.disabled) return;
+  exportOpts[b.dataset.ex] = b.dataset.ex === 'scale' ? +b.dataset.val : b.dataset.val;
+  const box = document.getElementById('modal').firstElementChild;
+  box.innerHTML = exportDialogHtml(); refreshExportPreview(box);
+}
+async function copyExport(o) {
+  if (o.format === 'svg') {
+    const built = buildExportSvg({ ...o, pdf: false, fontCss: await embeddedFontCss() });
+    await navigator.clipboard.writeText(built.svg); toast('SVG copied to the clipboard');
+  } else {
+    // Hand the clipboard a promise so the copy still counts as part of the click.
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': exportBlob(o).then(r => r.blob) })]);
+    toast('Image copied. Paste it into Slack, PowerPoint, Confluence…');
+  }
+}
+
 function init() {
   svg = document.getElementById('cv'); stage = document.getElementById('stage'); panel = document.getElementById('panel');
   statusEl = document.getElementById('status'); editor = document.getElementById('editor');
   S = load() || sample();
-  layoutAll(); syncModeButtons(); renderPanel();
+  try { doc = { ...doc, ...JSON.parse(localStorage.getItem(META_KEY)) }; } catch (e) { /* keep defaults */ }
+  layoutAll(); syncModeButtons(); renderPanel(); updateDocUi();
+
+  // Files and export
+  const docName = document.getElementById('docName');
+  docName.addEventListener('input', () => { fitDocName(docName); doc.name = docName.value.trim() || 'Untitled diagram'; updateDocUi(); save(false); });
+  docName.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === 'Escape') { ev.preventDefault(); docName.blur(); } });
+  docName.addEventListener('blur', () => { docName.value = doc.name; });
+  document.getElementById('fileBtn').addEventListener('click', ev => { ev.stopPropagation(); toggleMenu(); });
+  document.getElementById('fileMenu').addEventListener('click', ev => { const b = ev.target.closest('[data-file]'); if (b) fileCommand(b.dataset.file); });
+  document.addEventListener('click', ev => { if (!ev.target.closest('.menu-wrap')) closeMenu(); });
+  document.getElementById('exportBtn').addEventListener('click', openExport);
+  const fileInput = document.getElementById('fileInput');
+  fileInput.addEventListener('change', async () => { const f = fileInput.files[0]; fileInput.value = ''; if (f) loadDiagram(await f.text(), f.name, null); });
+  const modal = document.getElementById('modal');
+  modal.addEventListener('click', ev => {
+    if (ev.target === modal) return closeModal('cancel');
+    const ex = ev.target.closest('[data-ex]'); if (ex) return exportOption(ex);
+    const b = ev.target.closest('[data-choice]'); if (b) closeModal(b.dataset.choice);
+  });
+  // Drop a .snapblade file anywhere on the canvas to open it.
+  stage.addEventListener('dragover', ev => { if ([...ev.dataTransfer.types].includes('Files')) { ev.preventDefault(); stage.classList.add('dropping'); } });
+  stage.addEventListener('dragleave', ev => { if (ev.target === stage || !stage.contains(ev.relatedTarget)) stage.classList.remove('dropping'); });
+  stage.addEventListener('drop', async ev => {
+    ev.preventDefault(); stage.classList.remove('dropping');
+    const f = ev.dataTransfer.files[0]; if (!f) return;
+    const text = await f.text();
+    if (await confirmDiscard()) loadDiagram(text, f.name, null);
+  });
 
   svg.addEventListener('pointerdown', onDown);
   svg.addEventListener('contextmenu', ev => ev.preventDefault());   // right button is for panning
@@ -1810,8 +2306,12 @@ function init() {
   document.getElementById('zlbl').addEventListener('click', () => zc(1 / view.k));
 
   window.addEventListener('keydown', ev => {
-    if (ev.target.matches?.('input, textarea, select')) return;
     const mod = ev.ctrlKey || ev.metaKey, k = ev.key;
+    if (!document.getElementById('modal').hidden) { if (k === 'Escape') { ev.preventDefault(); closeModal('cancel'); } return; }
+    if (k === 'Escape' && !document.getElementById('fileMenu').hidden) { closeMenu(); document.getElementById('fileBtn').focus(); return; }
+    if (mod && k.toLowerCase() === 's') { ev.preventDefault(); if (document.activeElement === editor) commitEditor(); saveFile(ev.shiftKey); return; }
+    if (mod && k.toLowerCase() === 'o') { ev.preventDefault(); openFile(); return; }
+    if (ev.target.matches?.('input, textarea, select')) return;
     if (mod && k.toLowerCase() === 'z') { ev.preventDefault(); ev.shiftKey ? restore(redoStack, undoStack) : restore(undoStack, redoStack); }
     else if (mod && k.toLowerCase() === 'y') { ev.preventDefault(); restore(redoStack, undoStack); }
     else if (mod && ev.shiftKey && k.toLowerCase() === 'c') { ev.preventDefault(); copyStyle(); }

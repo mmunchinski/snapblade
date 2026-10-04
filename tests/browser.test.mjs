@@ -18,7 +18,9 @@ after(async () => { await browser?.close(); server?.close(); });
 
 // A fresh page with the sample diagram and helpers for driving it.
 async function open(opts = {}) {
-  const page = await browser.newPage({ viewport: { width: 1400, height: 1000 }, colorScheme: opts.scheme || 'light' });
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, colorScheme: opts.scheme || 'light', acceptDownloads: true, permissions: opts.permissions || [] });
+  if (opts.init) await ctx.addInitScript(opts.init);
+  const page = await ctx.newPage();
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.goto(base);
   await page.evaluate(seed => { localStorage.clear(); if (seed) localStorage.setItem('snapblade-playground-v1', seed); }, opts.seed || null);
@@ -240,4 +242,127 @@ test('saved diagrams load, including old formats (Diogramo key, named colors) in
     assert.equal(r.stroke, rgb(scheme === 'light' ? '#3a63c4' : '#7f9ef0'));
     await page.close();
   }
+});
+
+// ---------- files ----------
+// Firefox/Safari path: Save downloads the file, Open uses a file chooser.
+const noFilePickers = () => { delete window.showSaveFilePicker; delete window.showOpenFilePicker; };
+
+test('save downloads a .snapblade file; reopening restores it; unsaved changes are protected', async () => {
+  const h = await open({ init: noFilePickers }), { page } = h;
+  const tmp = await import('node:os').then(os => os.tmpdir());
+  await page.fill('#docName', 'Order platform'); await page.keyboard.press('Enter');
+  await h.dblclick('lb'); await page.keyboard.press('Control+A'); await page.keyboard.type('Front door'); await page.keyboard.press('Enter');
+  assert.equal(await h.ev(() => doc.dirty), true);
+  assert.equal(await page.isVisible('#dirtyDot'), true, 'unsaved dot shows');
+
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.keyboard.press('Control+s')]);
+  assert.equal(dl.suggestedFilename(), 'Order platform.snapblade');
+  const file = `${tmp}/snapblade-test.snapblade`; await dl.saveAs(file);
+  const saved = JSON.parse(readFileSync(file, 'utf8'));
+  assert.equal(saved.format, 'snapblade'); assert.equal(saved.version, 1);
+  assert.equal(saved.diagram.nodes.find(n => n.id === 'lb').label, 'Front door');
+  assert.equal(await h.ev(() => doc.dirty), false, 'saving clears the unsaved state');
+
+  await h.click('gw'); await page.keyboard.press('Delete');
+  await page.click('#fileBtn'); await page.click('#fileMenu [data-file="open"]');
+  assert.ok(await page.isVisible('.modal h2:has-text("Save changes")'), 'asks before replacing unsaved work');
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('.modal button:text-is("Don\'t save")')]);
+  await chooser.setFiles(file); await page.waitForTimeout(150);
+  assert.deepEqual(await h.ev(() => [S.nodes.length, !!byId('gw'), byId('lb').label, doc.name, doc.dirty, undoStack.length]), [13, true, 'Front door', 'snapblade-test', false, 0]);
+  assert.deepEqual(h.errors, []);
+});
+
+test('a file that is not a diagram is rejected without touching the current one', async () => {
+  const h = await open({ init: noFilePickers }), { page } = h;
+  const tmp = await import('node:os').then(os => os.tmpdir()), bad = `${tmp}/not-a-diagram.snapblade`;
+  (await import('node:fs')).writeFileSync(bad, '{"hello": 1}');
+  await page.click('#fileBtn');
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('#fileMenu [data-file="open"]')]);
+  await chooser.setFiles(bad); await page.waitForTimeout(100);
+  assert.match(await page.textContent('#toast'), /isn't a Snapblade diagram/);
+  assert.equal(await h.ev(() => S.nodes.length), 13);
+});
+
+test('dropping a file on the canvas opens it; New empties the canvas', async () => {
+  const h = await open(), { page } = h;
+  const text = await h.ev(() => { byId('users').label = 'From file'; return serialize(); });
+  await h.ev(() => { byId('users').label = 'Edited'; save(); });
+  await h.ev(t => { const dt = new DataTransfer(); dt.items.add(new File([t], 'dropped.snapblade')); stage.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); }, text);
+  await page.waitForTimeout(100);
+  await page.click('.modal button:text-is("Don\'t save")'); await page.waitForTimeout(100);
+  assert.deepEqual(await h.ev(() => [doc.name, byId('users').label]), ['dropped', 'From file']);
+  await page.click('#fileBtn'); await page.click('#fileMenu [data-file="new"]'); await page.waitForTimeout(50);
+  assert.deepEqual(await h.ev(() => [S.nodes.length, doc.name]), [0, 'Untitled diagram']);
+  assert.ok(await page.isVisible('#emptyHint'));
+});
+
+test('Chrome/Edge: Save writes back to the same file; Save as asks for a new one', async () => {
+  // Stand-in for the browser's file picker that records what gets written.
+  const h = await open({ init: () => {
+    window.__picks = 0; window.__writes = [];
+    window.showSaveFilePicker = async ({ suggestedName }) => { window.__picks++; return {
+      name: window.__picks === 1 ? suggestedName : 'copy.snapblade',
+      createWritable: async () => ({ write: async b => window.__writes.push(await b.text()), close: async () => {} }) }; };
+  } }), { page } = h;
+  await page.keyboard.press('Control+s'); await page.waitForTimeout(100);
+  await h.ev(() => { byId('users').label = 'Second save'; save(); });
+  await page.keyboard.press('Control+s'); await page.waitForTimeout(100);
+  assert.deepEqual(await h.ev(() => [window.__picks, window.__writes.length]), [1, 2], 'second Save reuses the file');
+  assert.match(await h.ev(() => window.__writes[1]), /Second save/);
+  await page.keyboard.press('Control+Shift+S'); await page.waitForTimeout(100);
+  assert.deepEqual(await h.ev(() => [window.__picks, doc.name]), [2, 'copy']);
+});
+
+// ---------- export ----------
+async function exportAs(h, choices) {
+  await h.page.click('#exportBtn'); await h.page.waitForTimeout(200);
+  for (const [k, v] of Object.entries(choices)) await h.page.click(`.modal [data-ex="${k}"][data-val="${v}"]`);
+  const [dl] = await Promise.all([h.page.waitForEvent('download', { timeout: 30000 }), h.page.click('.modal button:text-is("Download")')]);
+  const tmp = await import('node:os').then(os => os.tmpdir()), file = `${tmp}/${dl.suggestedFilename()}`;
+  await dl.saveAs(file);
+  return { name: dl.suggestedFilename(), data: readFileSync(file) };
+}
+
+test('SVG export is clean and standalone', async () => {
+  const h = await open();
+  const { name, data } = await exportAs(h, { format: 'svg' }), svg = data.toString();
+  assert.equal(name, 'Untitled diagram.svg');
+  assert.ok(svg.startsWith('<svg'));
+  for (const bad of ['var(', 'foreignObject', 'data-role', 'url(#gp)']) assert.ok(!svg.includes(bad), `should not contain ${bad}`);
+  assert.ok(svg.includes('>Load balancer</text>'), 'labels are real text');
+  assert.equal((svg.match(/ Z" fill=/g) || []).length, 10, 'one arrowhead per connector');
+});
+
+test('PNG export is the size the dialog promises; dark theme and selection-only work', async () => {
+  const h = await open();
+  await h.page.click('#exportBtn'); await h.page.waitForTimeout(200);
+  await h.page.click('.modal [data-ex="format"][data-val="png"]'); await h.page.click('.modal [data-ex="scale"][data-val="3"]'); await h.page.waitForTimeout(200);
+  const info = await h.page.textContent('#exInfo'); await h.page.click('.modal button:text-is("Close")');
+  const { data } = await exportAs(h, { format: 'png', scale: 3 });
+  assert.equal(data.subarray(1, 4).toString(), 'PNG');
+  assert.ok(info.includes(`${data.readUInt32BE(16)} × ${data.readUInt32BE(20)}`), `${info} vs ${data.readUInt32BE(16)}×${data.readUInt32BE(20)}`);
+
+  const dark = (await exportAs(h, { format: 'svg', theme: 'dark', background: 'none' })).data.toString();
+  assert.ok(dark.includes('#7f9ef0'), 'dark palette used');
+  await h.ev(() => { setMulti(['orders', 'inv', 'pay']); render(); });
+  const part = (await exportAs(h, { theme: 'light', background: 'white', scope: 'selection' })).data.toString();
+  assert.ok(part.includes('>Orders API<') && !part.includes('>Customers<'));
+});
+
+test('PDF export is a vector PDF using Helvetica (needs internet for the PDF library)', async () => {
+  const h = await open();
+  const { name, data } = await exportAs(h, { format: 'pdf', page: 'letter' });
+  assert.equal(name, 'Untitled diagram.pdf');
+  assert.equal(data.subarray(0, 5).toString(), '%PDF-');
+  assert.match(data.toString('latin1'), /\/MediaBox \[0 0 792\.?\d* 612\.?\d*\]/, 'US Letter landscape');
+  assert.deepEqual(h.errors, []);
+});
+
+test('Copy to clipboard puts a PNG on the clipboard', async () => {
+  const h = await open({ permissions: ['clipboard-read', 'clipboard-write'] });
+  await h.page.click('#exportBtn'); await h.page.waitForTimeout(200);
+  await h.page.click('.modal [data-ex="format"][data-val="png"]');
+  await h.page.click('.modal button:text-is("Copy to clipboard")'); await h.page.waitForTimeout(1500);
+  assert.ok((await h.ev(async () => (await navigator.clipboard.read()).flatMap(i => i.types))).includes('image/png'));
 });

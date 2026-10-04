@@ -2,10 +2,10 @@
 
 Ideas and deferred work, roughly grouped. Newest requests first within each group.
 
-## In progress
-- Save and open diagram files
-- Export for sharing: SVG, PNG, PDF
-- Publish the project to a GitHub repo
+## Files and export (follow-ups)
+- Remember the open file across page reloads in Chrome/Edge, so Ctrl+S after a reload saves without asking again.
+- Embed Instrument Sans in PDFs (they use Helvetica today).
+- Recent files list.
 
 ## Diagram objects
 - **Legend / key object.** A standardized, reusable legend that explains the colors, line patterns and shapes used in the diagram. Ideally it builds itself from the styles actually in use, and you add the wording.
