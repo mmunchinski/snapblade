@@ -2,3 +2,8 @@ node_modules/
 test-results/
 *.log
 .DS_Store
+
+# Local Claude Code notes (kept out of the repo)
+CLAUDE.md
+CLAUDE.local.md
+.claude/

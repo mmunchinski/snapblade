@@ -348,7 +348,7 @@ const NORMAL = { top: { x: 0, y: -1 }, right: { x: 1, y: 0 }, bottom: { x: 0, y:
 const KEY = 'snapblade-playground-v1', OLD_KEY = 'diogramo-playground-v1', META_KEY = 'snapblade-doc-meta', AUTHOR_KEY = 'snapblade-author';
 let doc = { name: 'Untitled diagram', dirty: false };   // the diagram's name, and whether it has unsaved file changes
 
-let S = null;          // { nodes, edges, settings }
+let S = null;          // { nodes, edges, settings, title, legend }: the diagram
 let lifted = null;     // node being dragged: excluded from its container's layout
 let uid = Date.now() % 1e6;
 const nid = p => p + (++uid).toString(36);
@@ -1035,11 +1035,11 @@ let svg, stage, panel, statusEl, editor;
 let view = { x: 0, y: 0, k: 1 };
 let sel = null, hover = null, drag = null, dropTarget = null, spaceDown = false;
 let undoStack = [], redoStack = [], fieldUndo = false;
-let lastGeom = { R: {}, labels: {}, annots: [] };
+let lastGeom = { R: {}, labels: {}, annots: [] };   // routes, label boxes and title/legend blocks from the last render, for hit testing
 let lastPress = { t: 0, x: 0, y: 0 };  // for detecting double-clicks ourselves
 let multi = [];                          // node ids when 2+ shapes are selected; the first is the size reference
 let sizeRef = 'first';                   // same-size reference: 'first' selected or 'largest'
-let clip = null, pasteN = 0;             // copied shapes, and how many times they've been pasted   // connector routes and label boxes from the last render, for hit testing
+let clip = null, pasteN = 0;             // copied shapes, and how many times they've been pasted
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const snap = v => { const g = S.settings.grid; return Math.round(v / g) * g; };

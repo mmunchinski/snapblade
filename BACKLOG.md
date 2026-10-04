@@ -2,6 +2,13 @@
 
 Ideas and deferred work, roughly grouped. Newest requests first within each group.
 
+## Next up
+1. **Text-to-diagram input, PlantUML style.** Type `Customers -> WAF : HTTPS` and get boxes and labeled connectors, laid out with the existing rules, then polish by hand. Also worth considering: importing existing PlantUML or Mermaid files. This is the feature most likely to bring in other architects.
+2. **Align and distribute** for a multi-selection (lefts, centers, rights, tops, middles, bottoms; even spacing), next to "Make the same size" in the selection panel.
+
+## Done so far (build 18)
+Self-tidying anchors and routing, bundles, containers, connector labels, colors with paired fills, multi-select with same size and match colors, copy/paste (shapes and styles), save/open `.snapblade` files, export to SVG/PNG/PDF, title block and legend. Published on GitHub Pages.
+
 ## Files and export (follow-ups)
 - Remember the open file across page reloads in Chrome/Edge, so Ctrl+S after a reload saves without asking again.
 - Embed Instrument Sans in PDFs (they use Helvetica today).
@@ -13,8 +20,6 @@ Ideas and deferred work, roughly grouped. Newest requests first within each grou
 - Reuse a title block and legend setup across diagrams (a template, or "copy from another file").
 
 ## Authoring
-- Text-to-diagram input in the spirit of PlantUML (`Customers -> WAF : HTTPS`), then polish by hand. The auto-layout rules apply to whatever the text creates.
-- Align (lefts, centers, rights, tops, middles, bottoms) and distribute (even spacing) for a multi-selection.
 - Default style for new boxes ("use this box's style for new boxes").
 - System clipboard copy/paste, so shapes can move between tabs and documents.
 - Dragging several shapes at once into or out of a container.
