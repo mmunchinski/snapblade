@@ -284,7 +284,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 18</span>
+      Snapblade <span class="tag">playground &middot; build 19</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -1053,15 +1053,69 @@ function save(markDirty = true) {
   try { localStorage.setItem(KEY, JSON.stringify(S)); localStorage.setItem(META_KEY, JSON.stringify(doc)); } catch (e) { /* storage unavailable */ }
 }
 // Check and repair a diagram from storage or a file; null if it isn't one.
+// Files are untrusted and parts of them reach the canvas markup, so every field is rebuilt
+// from a known type or list of values; anything else is dropped or reset to its default.
+// This also runs on the saved copy at every page load: a new field or option must be added
+// here (cleanNode, cleanEdge, cleanStyle or the settings below), or it vanishes on reload.
+const isId = v => typeof v === 'string' && /^[\w-]{1,64}$/.test(v);
+const oneOf = (v, list, def) => list.includes(v) ? v : def;
+const numOr = (v, def) => Number.isFinite(v) ? v : def;
+const strOr = (v, def = '') => typeof v === 'string' ? v : def;
+const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+const SIDE_OPTS = ['auto', ...SIDES], LABEL_POS = ['start', 'center', 'end'], CORNER_IDS = CORNERS.map(c => c[0]);
+function cleanStyle(st) {
+  const out = {};
+  if (PRESETS.includes(st?.line) || isHex(st?.line)) out.line = st.line;
+  if (st?.fill === 'pair' || st?.fill === 'none' || isHex(st?.fill)) out.fill = st.fill;
+  if (Number.isFinite(st?.tint)) out.tint = Math.min(100, Math.max(0, st.tint));
+  if (Object.hasOwn(DASH, st?.dash ?? '')) out.dash = st.dash;
+  return out;
+}
+function cleanNode(n) {
+  migrateStyle(n);
+  const out = { id: n.id, kind: oneOf(n.kind, ['box', 'group'], 'box'), label: strOr(n.label),
+    x: numOr(n.x, 0), y: numOr(n.y, 0), w: Math.max(1, numOr(n.w, 120)), h: Math.max(1, numOr(n.h, 60)), parent: isId(n.parent) ? n.parent : null };
+  if (out.kind === 'group') Object.assign(out, { layout: oneOf(n.layout, ['free', 'row', 'column'], 'free'),
+    align: oneOf(n.align, ['start', 'center'], 'center'), pad: numOr(n.pad, 20), gap: numOr(n.gap, 30) });
+  if (n.style) out.style = cleanStyle(n.style);
+  return out;
+}
+function cleanEdge(e) {
+  const end = p => ({ node: p.node, side: oneOf(p.side, SIDE_OPTS, 'auto') });
+  const out = { id: e.id, from: end(e.from), to: end(e.to), arrow: oneOf(e.arrow, ['none', 'end', 'both'], 'end') };
+  if (typeof e.label === 'string') out.label = e.label;
+  if (LABEL_POS.includes(e.labelPos)) out.labelPos = e.labelPos;
+  if (e.style) out.style = cleanStyle(e.style);
+  const pin = p => isObj(p) && SIDES.includes(p.side) && Number.isFinite(p.frac) ? { side: p.side, frac: Math.min(1, Math.max(0, p.frac)) } : null;
+  const f = pin(e.fixed?.from), t = pin(e.fixed?.to);
+  if (f && t) out.fixed = { from: f, to: t };
+  return out;
+}
 function normalize(s) {
-  if (!s || !Array.isArray(s.nodes) || !Array.isArray(s.edges)) return null;
-  s.settings = { ...sample().settings, ...s.settings };
-  s.title = { ...titleDefaults(), ...s.title };
-  s.legend = { ...legendDefaults(), ...s.legend, labels: { ...(s.legend?.labels || {}) }, hidden: [...(s.legend?.hidden || [])] };
-  const ids = new Set(s.nodes.map(n => n.id));
-  s.nodes.forEach(n => { if (n.parent && !ids.has(n.parent)) n.parent = null; migrateStyle(n); });
-  s.edges = s.edges.filter(e => e.from && e.to && ids.has(e.from.node) && ids.has(e.to.node));
-  return s;
+  if (!isObj(s) || !Array.isArray(s.nodes) || !Array.isArray(s.edges)) return null;
+  const def = sample().settings, st = isObj(s.settings) ? s.settings : {};
+  const settings = { mode: oneOf(st.mode, ['fixed', 'even', 'straighten'], def.mode), grid: oneOf(st.grid, [5, 10, 20], def.grid),
+    showSlots: typeof st.showSlots === 'boolean' ? st.showSlots : def.showSlots, routing: oneOf(st.routing, ['ortho', 'straight'], def.routing),
+    radius: Math.min(16, Math.max(0, numOr(st.radius, def.radius))), labelPos: oneOf(st.labelPos, LABEL_POS, def.labelPos) };
+  const ti = isObj(s.title) ? s.title : {}, tdef = titleDefaults();
+  const title = { show: ti.show === true, title: strOr(ti.title), version: strOr(ti.version), date: strOr(ti.date), author: strOr(ti.author), pos: oneOf(ti.pos, CORNER_IDS, tdef.pos) };
+  const lg = isObj(s.legend) ? s.legend : {}, ldef = legendDefaults();
+  const legend = { show: lg.show === true, heading: strOr(lg.heading, ldef.heading), pos: oneOf(lg.pos, CORNER_IDS, ldef.pos),
+    labels: Object.fromEntries(Object.entries(isObj(lg.labels) ? lg.labels : {}).filter(([, v]) => typeof v === 'string')),
+    hidden: Array.isArray(lg.hidden) ? lg.hidden.filter(k => typeof k === 'string') : [] };
+  const nodes = s.nodes.filter(n => isObj(n) && isId(n.id)).map(cleanNode);
+  const byIdIn = new Map(nodes.map(n => [n.id, n]));
+  // A missing parent, or a loop of containers inside each other, puts the shape back on the canvas.
+  for (const n of nodes) if (!byIdIn.has(n.parent)) n.parent = null;
+  for (const n of nodes) {
+    const seen = new Set([n.id]);
+    for (let c = n; c.parent; c = byIdIn.get(c.parent)) {
+      if (seen.has(c.parent)) { c.parent = null; break; }
+      seen.add(c.parent);
+    }
+  }
+  const edges = s.edges.filter(e => isObj(e) && isId(e.id) && isObj(e.from) && isObj(e.to) && byIdIn.has(e.from.node) && byIdIn.has(e.to.node)).map(cleanEdge);
+  return { nodes, edges, settings, title, legend };
 }
 function load() {
   try { return normalize(JSON.parse(localStorage.getItem(KEY) ?? localStorage.getItem(OLD_KEY))); } catch (e) { return null; }
@@ -1296,14 +1350,14 @@ function render() {
   for (const { n } of order) {
     const cls = ['node', n.kind, selSet.has(n.id) ? 'sel' : '', multi[0] === n.id ? 'primary' : '', over === n.id ? 'target' : '', dropTarget === n.id ? 'drop' : '', drag?.id === n.id && moving ? 'lifted' : ''].join(' ');
     if (n.kind === 'group') {
-      h += `<g class="${cls}" data-role="node" data-id="${n.id}" style="${styleVars(n)}">
+      h += `<g class="${cls}" data-role="node" data-id="${esc(n.id)}" style="${styleVars(n)}">
         <rect class="g-body" x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="6"/>
         <line class="g-rule" x1="${n.x}" x2="${n.x + n.w}" y1="${n.y + HEADER}" y2="${n.y + HEADER}"/>
         <text class="g-label" x="${n.x + 12}" y="${n.y + 19}">${esc(oneLine(n.label))}</text>
         ${n.layout !== 'free' ? `<text class="g-meta" x="${n.x + n.w - 10}" y="${n.y + 19}" text-anchor="end">${n.layout === 'row' ? '→ row' : '↓ column'}</text>` : ''}
       </g>`;
     } else {
-      h += `<g class="${cls}" data-role="node" data-id="${n.id}" style="${styleVars(n)}">
+      h += `<g class="${cls}" data-role="node" data-id="${esc(n.id)}" style="${styleVars(n)}">
         <rect class="b-body" x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="3"/>
         <foreignObject class="lblwrap" x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}"><div xmlns="http://www.w3.org/1999/xhtml" class="lbl">${esc(n.label)}</div></foreignObject>
       </g>`;
@@ -1331,7 +1385,7 @@ function render() {
       lbl = `<g class="elabel"><rect class="elabel-bg" x="${lb.x}" y="${lb.y}" width="${lb.w}" height="${lb.h}" rx="3"/>` +
         lb.lines.map((t, i) => `<text class="elabel-t" x="${lb.x + lb.w / 2}" y="${lb.y + LBL.py + LBL.lh * (i + 0.5)}">${esc(t)}</text>`).join('') + '</g>';
     }
-    h += `<g class="edge${isSel ? ' sel' : ''}${ghost ? ' ghosted' : ''}" data-role="edge" data-id="${e.id}" style="${styleVars(e)}">
+    h += `<g class="edge${isSel ? ' sel' : ''}${ghost ? ' ghosted' : ''}" data-role="edge" data-id="${esc(e.id)}" style="${styleVars(e)}">
       <path class="hit" d="${d}"/>
       <path class="line" d="${d}"${e.arrow !== 'none' ? ` marker-end="${mk}"` : ''}${e.arrow === 'both' ? ` marker-start="${mk}"` : ''}/>
       ${lbl}
@@ -1370,13 +1424,13 @@ function render() {
       for (const dir of ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']) {
         const v = dir.includes('n') ? 'n' : dir.includes('s') ? 's' : '';
         const hz = dir.includes('w') ? 'w' : dir.includes('e') ? 'e' : '';
-        h += `<rect class="rh cur-${dir}" data-role="resize" data-id="${n.id}" data-dir="${dir}" x="${hx[hz] - hs}" y="${hy[v] - hs}" width="${s}" height="${s}" rx="${sw(1.5)}"/>`;
+        h += `<rect class="rh cur-${dir}" data-role="resize" data-id="${esc(n.id)}" data-dir="${dir}" x="${hx[hz] - hs}" y="${hy[v] - hs}" width="${s}" height="${s}" rx="${sw(1.5)}"/>`;
       }
     }
   }
   if (sel?.type === 'edge' && !drag) {
     const pe = P[sel.id];
-    if (pe) for (const w of ['from', 'to']) h += `<circle class="eh" data-role="edge-end" data-id="${sel.id}" data-which="${w}" cx="${pe[w].x}" cy="${pe[w].y}" r="${sw(5.5)}"/>`;
+    if (pe) for (const w of ['from', 'to']) h += `<circle class="eh" data-role="edge-end" data-id="${esc(sel.id)}" data-which="${w}" cx="${pe[w].x}" cy="${pe[w].y}" r="${sw(5.5)}"/>`;
   }
   const connFor = drag ? null : (hover || (sel?.type === 'node' && !multi.length ? sel.id : null));
   if (drag?.kind === 'marquee') {
@@ -1390,7 +1444,7 @@ function render() {
       const pts = { top: [n.x + n.w / 2, n.y - o], right: [n.x + n.w + o, n.y + n.h / 2], bottom: [n.x + n.w / 2, n.y + n.h + o], left: [n.x - o, n.y + n.h / 2] };
       for (const side of SIDES) {
         const [cx, cy] = pts[side];
-        h += `<g class="conn" data-role="connect" data-id="${n.id}" data-side="${side}"><title>Drag to connect from the ${side} side</title><circle cx="${cx}" cy="${cy}" r="${rr}"/><path d="M${cx - a},${cy} H${cx + a} M${cx},${cy - a} V${cy + a}"/></g>`;
+        h += `<g class="conn" data-role="connect" data-id="${esc(n.id)}" data-side="${side}"><title>Drag to connect from the ${side} side</title><circle cx="${cx}" cy="${cy}" r="${rr}"/><path d="M${cx - a},${cy} H${cx + a} M${cx},${cy - a} V${cy + a}"/></g>`;
       }
     }
   }
@@ -2258,7 +2312,11 @@ function fileCommand(cmd) {
    Export: a clean, standalone SVG of the diagram, then PNG or PDF from it
    ===================================================================== */
 let exportOpts = { format: 'png', theme: 'light', background: 'white', scale: 2, page: 'fit', scope: 'all', annots: 'yes' };
-const PDF_LIBS = ['https://cdn.jsdelivr.net/npm/jspdf@3.0.3/dist/jspdf.umd.min.js', 'https://cdn.jsdelivr.net/npm/svg2pdf.js@2.8.1/dist/svg2pdf.umd.min.js'];
+// Pinned versions with integrity hashes: the browser refuses a file that doesn't match.
+const PDF_LIBS = [
+  ['https://cdn.jsdelivr.net/npm/jspdf@3.0.3/dist/jspdf.umd.min.js', 'sha384-GwHhSt8QjC7J+v0zZ0Flfho/T76YHEcCL9w4rvjTIUHauh6gWJeBSIi3vWXxNhtA'],
+  ['https://cdn.jsdelivr.net/npm/svg2pdf.js@2.8.1/dist/svg2pdf.umd.min.js', 'sha384-7hc/mtl4lyRUMzYFqHxwNbYZwh27MESE5AWa2nEuVChLn8bCQcrn18OgGv9uHgzz'],
+];
 const FONT_CSS = 'https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@500;600&display=swap';
 const UI_STACK = '"Instrument Sans", "Segoe UI", system-ui, sans-serif';
 
@@ -2419,15 +2477,15 @@ async function svgToPng(svgText, w, h, scale) {
   } finally { URL.revokeObjectURL(url); }
 }
 const scriptLoads = {};
-function loadScript(src) {
+function loadScript([src, integrity]) {
   return scriptLoads[src] ||= new Promise((res, rej) => {
-    const el = document.createElement('script'); el.src = src; el.onload = res;
+    const el = document.createElement('script'); el.src = src; el.integrity = integrity; el.crossOrigin = 'anonymous'; el.onload = res;
     el.onerror = () => { delete scriptLoads[src]; rej(new Error('Could not load the PDF library. Check your internet connection.')); };
     document.head.appendChild(el);
   });
 }
 async function svgToPdf(svgText, w, h, page) {
-  for (const src of PDF_LIBS) await loadScript(src);
+  for (const lib of PDF_LIBS) await loadScript(lib);
   const { jsPDF } = window.jspdf, pt = 0.75;   // CSS px -> PDF points
   let pw = w * pt, ph = h * pt, margin = 0;
   if (page !== 'fit') { const [a, b] = page === 'letter' ? [792, 612] : [841.89, 595.28]; [pw, ph] = w >= h ? [a, b] : [b, a]; margin = 36; }

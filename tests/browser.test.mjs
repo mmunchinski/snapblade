@@ -284,6 +284,52 @@ test('a file that is not a diagram is rejected without touching the current one'
   assert.equal(await h.ev(() => S.nodes.length), 13);
 });
 
+test('a hostile file cannot run script: unexpected values are dropped or reset', { timeout: 60000 }, async () => {
+  const pwn = '"><img src=x onerror="window.__pwn=1">';
+  const node = o => ({ id: 'a', kind: 'box', label: 'A', x: 0, y: 0, w: 120, h: 60, parent: null, ...o });
+  const diagram = {
+    nodes: [
+      node({ id: 'bad' + pwn }),
+      node({ id: 'a', kind: 'box' + pwn, x: '0' + pwn, style: { line: 'x)' + pwn, fill: pwn, dash: 'toString', tint: pwn } }),
+      node({ id: 'b', x: 300, style: { line: 'green', dash: 'dashed' } }),
+      { id: 'g', kind: 'group', label: 'G', x: 0, y: 200, w: 200, h: 100, parent: 'g2', layout: pwn, pad: pwn, gap: 30, align: pwn },
+      { id: 'g2', kind: 'group', label: 'G2', x: 0, y: 200, w: 200, h: 100, parent: 'g', layout: 'free' },
+    ],
+    edges: [
+      { id: 'e1', from: { node: 'a', side: pwn }, to: { node: 'b', side: 'left' }, arrow: pwn, labelPos: pwn, label: 'ok', style: { line: pwn },
+        fixed: { from: { side: pwn, frac: 0.5 }, to: { side: 'left', frac: 0.5 } } },
+      { id: 'e2' + pwn, from: { node: 'a', side: 'auto' }, to: { node: 'b', side: 'auto' }, arrow: 'end' },
+    ],
+    settings: { mode: pwn, grid: pwn, radius: pwn, routing: pwn, labelPos: pwn },
+    title: { show: true, title: 'T', pos: pwn }, legend: { show: true, pos: pwn, labels: { k: { x: pwn } }, hidden: [{}] },
+  };
+  const file = JSON.stringify({ format: 'snapblade', version: 1, diagram });
+  const check = async h => {
+    assert.equal(await h.ev(() => window.__pwn), undefined);
+    assert.equal(await h.ev(() => document.querySelectorAll('img').length), 0);
+    assert.deepEqual(h.errors, []);
+    assert.deepEqual(await h.ev(() => S.nodes.map(n => n.id)), ['a', 'b', 'g', 'g2']);
+    assert.deepEqual(await h.ev(() => S.edges.map(e => e.id)), ['e1']);
+    assert.deepEqual(await h.ev(() => ({ ...byId('a'), x: 0 })), { id: 'a', kind: 'box', label: 'A', x: 0, y: 0, w: 120, h: 60, parent: null, style: {} });
+    assert.deepEqual(await h.ev(() => byId('b').style), { line: 'green', dash: 'dashed' });
+    assert.deepEqual(await h.ev(() => [byId('g').layout, byId('g').pad, byId('g').align, byId('g').parent === null || byId('g2').parent === null]), ['free', 20, 'center', true]);
+    assert.deepEqual(await h.ev(() => S.edges[0]), { id: 'e1', from: { node: 'a', side: 'auto' }, to: { node: 'b', side: 'left' }, arrow: 'end', label: 'ok', style: {} });
+    assert.deepEqual(await h.ev(() => [S.settings, S.title.pos, S.legend.pos, S.legend.labels, S.legend.hidden]),
+      [{ mode: 'straighten', grid: 10, showSlots: true, routing: 'ortho', radius: 6, labelPos: 'start' }, 'bottom-right', 'bottom-left', {}, []]);
+    const svg = await h.ev(() => buildExportSvg({ theme: 'light', background: 'white', scope: 'all' }).svg);
+    assert.doesNotMatch(svg, /onerror|<img/);
+  };
+  // Dropped on the canvas, then reloaded from storage.
+  const h = await open();
+  await h.ev(t => { const dt = new DataTransfer(); dt.items.add(new File([t], 'hostile.snapblade')); stage.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); }, file);
+  await h.page.waitForTimeout(200);
+  await check(h);
+  await h.page.reload(); await h.page.waitForTimeout(300);
+  await check(h);
+  // Already in storage from an earlier visit.
+  await check(await open({ seed: JSON.stringify(diagram) }));
+});
+
 test('dropping a file on the canvas opens it; New empties the canvas', async () => {
   const h = await open(), { page } = h;
   const text = await h.ev(() => { byId('users').label = 'From file'; return serialize(); });
