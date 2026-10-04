@@ -52,8 +52,6 @@ npm test                          # layout tests (Node) + interaction tests (hea
 
 PDF export loads two open-source libraries ([jsPDF](https://github.com/parallax/jsPDF) and [svg2pdf.js](https://github.com/yWorks/svg2pdf.js)) from jsDelivr the first time you use it, and SVG/PNG exports embed the Instrument Sans font from Google Fonts. Everything else works offline.
 
-Planned work lives in [BACKLOG.md](BACKLOG.md).
-
 ## License
 
 Copyright (C) 2026 Matt Munchinski.
