@@ -152,3 +152,39 @@ test('normalize bounds positions and sizes, and takes only strings as colors', (
   run(`S = normalize(${JSON.stringify({ nodes: [box('a', { x: -1e308 }), box('b', { x: 1e308 })], edges: [link('e', 'a', 'b', { label: 'far' })] })})`);
   assert.ok(json(`(() => { const { R } = routesNow(); return placeLabel(S.edges[0], R.e, [], []); })()`));
 });
+
+// ---------- round trip ----------
+// The other side of normalize(): it must keep everything the app can set. Every value comes from the
+// lists the panels draw their controls from, so a new option is covered as soon as it is added there.
+// (A new field still needs adding here; the browser test "every control in every panel..." walks the
+// controls themselves and catches that too.)
+test('every option the panels offer survives a reload and a file round trip', () => {
+  const trips = json(`(() => {
+    const trips = [], trip = what => trips.push([what, JSON.parse(JSON.stringify(S)), normalize(JSON.parse(JSON.stringify(S))), parseDiagram(serialize())]);
+    const box = (id, o) => ({ id, kind: 'box', label: id, x: 0, y: 0, w: 120, h: 60, parent: null, ...o });
+    S = normalize(sample());
+    let i = 0;
+    for (const line of [...PRESETS, '#3a7bd5']) for (const fill of ['pair', 'none', '#2a9d8f']) for (const [dash] of DASHES)
+      S.nodes.push(box('s' + i++, { x: i * 10, y: 900, style: { line, fill, tint: 31, dash } }));
+    for (const [layout] of LAYOUTS) for (const [align] of ALIGNS)
+      S.nodes.push({ id: 'g' + i++, kind: 'group', label: 'g', x: i * 10, y: 1200, w: 200, h: 100, parent: null, layout, align, pad: 7, gap: 11 },
+        box('k' + i++, { parent: 'g' + (i - 2), x: 0, y: 1200, w: 90.5, h: 47 }));
+    for (const from of SIDE_OPTS) for (const to of SIDE_OPTS) for (const [arrow] of ARROWS)
+      S.edges.push({ id: 'c' + i++, from: { node: 's0', side: from }, to: { node: 's1', side: to }, arrow, label: from + to, style: { line: 'teal', dash: 'dotted' } });
+    for (const labelPos of LABEL_POS) for (const side of SIDES)
+      S.edges.push({ id: 'c' + i++, from: { node: 's2', side: 'auto' }, to: { node: 's3', side }, arrow: 'end', labelPos, fixed: { from: { side, frac: 0.25 }, to: { side, frac: 1 } } });
+    S.title = { show: true, title: 'Order platform', version: '2.1', date: '2026-10-04', author: 'A. Architect', pos: 'top-left' };
+    S.legend = { show: true, heading: 'Key', pos: 'top-right', labels: { 'box:teal||pair31': 'Service' }, hidden: ['connector:teal|dotted'] };
+    trip('shapes, connectors, title block and legend');
+    for (const [pos] of CORNERS) { S.title.pos = pos; S.legend.pos = pos; trip('corner ' + pos); }
+    S.title.show = S.legend.show = false; trip('blocks hidden');
+    const settings = { mode: Object.keys(MODES), grid: valuesOf(GRIDS), routing: valuesOf(ROUTINGS), labelPos: LABEL_POS, radius: [0, 9, 16], showSlots: [false, true] };
+    for (const k in settings) for (const v of settings[k]) { S.settings[k] = v; trip('settings.' + k + ' = ' + v); }
+    return trips;
+  })()`);
+  assert.ok(trips.length > 20);
+  for (const [what, now, reloaded, reopened] of trips) {
+    assert.deepStrictEqual(reloaded, now, `${what}: a reload changes the diagram`);
+    assert.deepStrictEqual(reopened, now, `${what}: saving and reopening changes the diagram`);
+  }
+});

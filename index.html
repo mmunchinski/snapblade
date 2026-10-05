@@ -288,7 +288,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 21</span>
+      Snapblade <span class="tag">playground &middot; build 22</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -1078,7 +1078,22 @@ const numIn = (v, def, lo, hi) => Number.isFinite(v) ? Math.min(hi, Math.max(lo,
 const firstById = list => { const seen = new Set(); return list.filter(o => !seen.has(o.id) && seen.add(o.id)); };
 const strOr = (v, def = '') => typeof v === 'string' ? v : def;
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
-const SIDE_OPTS = ['auto', ...SIDES], LABEL_POS = ['start', 'center', 'end'], CORNER_IDS = CORNERS.map(c => c[0]);
+// The values each control offers, as [value, label]. The panels draw their buttons from these lists and
+// normalize() accepts exactly these values, so a new option is added here and nowhere else.
+const MODES = {
+  fixed: ['Visio-style fixed points', 'Each connector is glued to a point stored as a fraction of the side. Resize a box and the points slide proportionally, so lines that were straight pick up jogs and spacing goes uneven.'],
+  even: ['Even spacing', 'Connectors on each side are spread evenly and re-spaced whenever you resize, add or remove one. They are ordered by where the other end sits, so lines don\'t cross.'],
+  straighten: ['Even spacing, then straighten', 'The busiest side of each box keeps even spacing. Lighter sides slide their anchors to line up with it, so lines run straight wherever the boxes overlap.'],
+};
+const ROUTINGS = [['ortho', 'Right angles'], ['straight', 'Straight']];
+const GRIDS = [[5, '5 px'], [10, '10 px'], [20, '20 px']];
+const LABEL_SPOTS = [['start', 'Start'], ['center', 'Center'], ['end', 'End']];
+const ARROWS = [['none', 'None'], ['end', 'End'], ['both', 'Both']];
+const LAYOUTS = [['free', 'Free'], ['row', 'Row'], ['column', 'Column']];
+const ALIGNS = [['start', 'Start'], ['center', 'Center']];
+const DASHES = Object.keys(DASH).map(d => [d, cap(d)]);
+const valuesOf = list => list.map(o => o[0]);
+const SIDE_OPTS = ['auto', ...SIDES], LABEL_POS = valuesOf(LABEL_SPOTS), CORNER_IDS = valuesOf(CORNERS);
 function cleanStyle(st) {
   const out = {};
   if (PRESETS.includes(st?.line) || isHex(st?.line)) out.line = st.line;
@@ -1092,14 +1107,14 @@ function cleanNode(n) {
   const out = { id: n.id, kind: oneOf(n.kind, ['box', 'group'], 'box'), label: strOr(n.label),
     x: numIn(n.x, 0, -MAX_POS, MAX_POS), y: numIn(n.y, 0, -MAX_POS, MAX_POS), w: numIn(n.w, 120, 1, MAX_SIZE), h: numIn(n.h, 60, 1, MAX_SIZE),
     parent: isId(n.parent) ? n.parent : null };
-  if (out.kind === 'group') Object.assign(out, { layout: oneOf(n.layout, ['free', 'row', 'column'], 'free'),
-    align: oneOf(n.align, ['start', 'center'], 'center'), pad: numIn(n.pad, 20, 0, MAX_PAD), gap: numIn(n.gap, 30, 0, MAX_PAD) });
+  if (out.kind === 'group') Object.assign(out, { layout: oneOf(n.layout, valuesOf(LAYOUTS), 'free'),
+    align: oneOf(n.align, valuesOf(ALIGNS), 'center'), pad: numIn(n.pad, 20, 0, MAX_PAD), gap: numIn(n.gap, 30, 0, MAX_PAD) });
   if (n.style) out.style = cleanStyle(n.style);
   return out;
 }
 function cleanEdge(e) {
   const end = p => ({ node: p.node, side: oneOf(p.side, SIDE_OPTS, 'auto') });
-  const out = { id: e.id, from: end(e.from), to: end(e.to), arrow: oneOf(e.arrow, ['none', 'end', 'both'], 'end') };
+  const out = { id: e.id, from: end(e.from), to: end(e.to), arrow: oneOf(e.arrow, valuesOf(ARROWS), 'end') };
   if (typeof e.label === 'string') out.label = e.label;
   if (LABEL_POS.includes(e.labelPos)) out.labelPos = e.labelPos;
   if (e.style) out.style = cleanStyle(e.style);
@@ -1111,8 +1126,8 @@ function cleanEdge(e) {
 function normalize(s) {
   if (!isObj(s) || !Array.isArray(s.nodes) || !Array.isArray(s.edges)) return null;
   const def = sample().settings, st = isObj(s.settings) ? s.settings : {};
-  const settings = { mode: oneOf(st.mode, ['fixed', 'even', 'straighten'], def.mode), grid: oneOf(st.grid, [5, 10, 20], def.grid),
-    showSlots: typeof st.showSlots === 'boolean' ? st.showSlots : def.showSlots, routing: oneOf(st.routing, ['ortho', 'straight'], def.routing),
+  const settings = { mode: oneOf(st.mode, Object.keys(MODES), def.mode), grid: oneOf(st.grid, valuesOf(GRIDS), def.grid),
+    showSlots: typeof st.showSlots === 'boolean' ? st.showSlots : def.showSlots, routing: oneOf(st.routing, valuesOf(ROUTINGS), def.routing),
     radius: numIn(st.radius, def.radius, 0, 16), labelPos: oneOf(st.labelPos, LABEL_POS, def.labelPos) };
   const ti = isObj(s.title) ? s.title : {}, tdef = titleDefaults();
   const title = { show: ti.show === true, title: strOr(ti.title), version: strOr(ti.version), date: strOr(ti.date), author: strOr(ti.author), pos: oneOf(ti.pos, CORNER_IDS, tdef.pos) };
@@ -1512,11 +1527,6 @@ function updateStatus(P) {
 }
 
 /* ---------- inspector ---------- */
-const MODES = {
-  fixed: ['Visio-style fixed points', 'Each connector is glued to a point stored as a fraction of the side. Resize a box and the points slide proportionally, so lines that were straight pick up jogs and spacing goes uneven.'],
-  even: ['Even spacing', 'Connectors on each side are spread evenly and re-spaced whenever you resize, add or remove one. They are ordered by where the other end sits, so lines don\'t cross.'],
-  straighten: ['Even spacing, then straighten', 'The busiest side of each box keeps even spacing. Lighter sides slide their anchors to line up with it, so lines run straight wherever the boxes overlap.'],
-};
 const seg = (act, opts, cur) => `<div class="seg" role="group">${opts.map(([v, l]) => `<button type="button" data-act="${act}" data-val="${v}" aria-pressed="${v === cur}">${l}</button>`).join('')}</div>`;
 const num = (f, v, label, dis) => `<label class="num"><span>${label}</span><input id="f-${f}" type="number" data-field="${f}" value="${Math.round(v)}"${dis ? ' disabled' : ''}></label>`;
 
@@ -1575,9 +1585,9 @@ function diagramPanel() {
   return `
   <section>
     <p class="eyebrow">Diagram</p>
-    <div class="field"><span>Connector routing</span>${seg('routing', [['ortho', 'Right angles'], ['straight', 'Straight']], st.routing)}</div>
-    <div class="field"><span>Connector labels sit near</span>${seg('defLabelPos', [['start', 'Start'], ['center', 'Center'], ['end', 'End']], st.labelPos)}</div>
-    <div class="field"><span>Grid snap</span>${seg('grid', [['5', '5 px'], ['10', '10 px'], ['20', '20 px']], String(st.grid))}</div>
+    <div class="field"><span>Connector routing</span>${seg('routing', ROUTINGS, st.routing)}</div>
+    <div class="field"><span>Connector labels sit near</span>${seg('defLabelPos', LABEL_SPOTS, st.labelPos)}</div>
+    <div class="field"><span>Grid snap</span>${seg('grid', GRIDS, st.grid)}</div>
     <label class="field"><span>Corner radius · ${st.radius} px</span><input id="f-radius" type="range" min="0" max="16" step="1" value="${st.radius}" data-field="radius"></label>
     <label class="check"><input id="f-slots" type="checkbox" data-field="showSlots"${st.showSlots ? ' checked' : ''}> Show anchor points</label>
   </section>
@@ -1620,7 +1630,7 @@ function fillHexOf(n) {
   return st.line ? mixHex(lineHexOf(n), base, tintOf(n)) : resolveHex(n.kind === 'group' ? 'var(--group-bg)' : 'var(--node-bg)');
 }
 const styleTargets = () => sel?.type === 'edge' ? S.edges.filter(e => e.id === sel.id) : selectedIds().map(byId).filter(Boolean);
-function setStyle(patch) { for (const t of styleTargets()) t.style = { ...(t.style || {}), ...patch }; }
+function setStyle(patch) { for (const t of styleTargets()) t.style = tidyStyle({ ...(t.style || {}), ...patch }); }
 function colorInputs(kind, hex) {
   const rgb = hexToRgb(hex);
   return `<div class="colorrow">
@@ -1652,7 +1662,7 @@ function styleSections(targets) {
     <p class="eyebrow">Line${targets.length > 1 ? ` · ${targets.length} shapes` : ''}</p>
     <div class="swatches">${['', ...PRESETS].map(swatch).join('')}</div>
     ${colorInputs('line', lineHexOf(o))}
-    <div class="field"><span>Pattern</span>${seg('dash', [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted']], st.dash || 'solid')}</div>
+    <div class="field"><span>Pattern</span>${seg('dash', DASHES, st.dash || 'solid')}</div>
   </section>`;
   const painter = targets.length === 1 ? `<div class="row">
     <button class="btn" type="button" data-act="copyStyle" title="Ctrl+Shift+C">Copy style</button>
@@ -1713,9 +1723,9 @@ function nodePanel(n) {
   if (isG) {
     h += `<section>
       <p class="eyebrow">Layout</p>
-      ${seg('layout', [['free', 'Free'], ['row', 'Row'], ['column', 'Column']], n.layout)}
+      ${seg('layout', LAYOUTS, n.layout)}
       <p class="desc">${n.layout === 'free' ? 'Children sit where you put them. The container grows to keep them inside.' : `Children are stacked in a ${n.layout} with even gaps. The container sizes itself to fit.`}</p>
-      ${n.layout !== 'free' ? `<div class="field"><span>Align</span>${seg('align', [['start', 'Start'], ['center', 'Center']], n.align)}</div>` : ''}
+      ${n.layout !== 'free' ? `<div class="field"><span>Align</span>${seg('align', ALIGNS, n.align)}</div>` : ''}
       <div class="grid2">${num('pad', n.pad, 'Padding')}${n.layout !== 'free' ? num('gap', n.gap, 'Gap') : ''}</div>
     </section>`;
     const inner = boxesIn(n).length;
@@ -1746,7 +1756,7 @@ function edgePanel(e) {
     <p class="eyebrow">Connector</p>
     <p class="ends"><b>${esc(oneLine(byId(e.from.node).label))}</b> → <b>${esc(oneLine(byId(e.to.node).label))}</b></p>
     <label class="field"><span>Label</span><textarea id="f-elabel" data-field="elabel" rows="2" placeholder="No label">${esc(e.label || '')}</textarea></label>
-    <div class="field"><span>Label sits near${e.labelPos ? '' : ' · diagram default'}</span>${seg('labelPos', [['start', 'Start'], ['center', 'Center'], ['end', 'End']], e.labelPos || S.settings.labelPos)}</div>
+    <div class="field"><span>Label sits near${e.labelPos ? '' : ' · diagram default'}</span>${seg('labelPos', LABEL_SPOTS, e.labelPos || S.settings.labelPos)}</div>
     ${e.labelPos ? '<div class="row"><button class="btn" type="button" data-act="labelPos" data-val="">Use diagram default</button></div>' : ''}
     <label class="field"><span>Leaves from side</span>${sideSel('from')}</label>
     <label class="field"><span>Arrives at side</span>${sideSel('to')}</label>
@@ -1754,7 +1764,7 @@ function edgePanel(e) {
   </section>
   <section>
     <p class="eyebrow">Arrowheads</p>
-    ${seg('arrow', [['none', 'None'], ['end', 'End'], ['both', 'Both']], e.arrow)}
+    ${seg('arrow', ARROWS, e.arrow)}
   </section>
   ${styleSections([e])}
   <div class="row"><button class="btn" type="button" data-act="reverse">Reverse direction</button><button class="btn danger" type="button" data-act="delete">Delete</button></div>`;

@@ -201,6 +201,81 @@ test('the diagram panel holds settings only; Help opens from the bar, F1 and ?',
   assert.deepEqual(h.errors, []);
 });
 
+// normalize() keeps only the fields it knows, so a setting it hasn't been told about works until the page
+// is reloaded or the file reopened. This walks the controls on screen rather than a list of fields, so a
+// new control is covered as soon as it exists: each one is used, then the diagram must come back unchanged
+// from what a reload reads (load()) and from a save and reopen (parseDiagram(serialize())).
+test('every control in every panel survives a reload and a file round trip', { timeout: 180000 }, async () => {
+  const h = await open();
+  const SKIP = new Set(['delete', 'duplicate', 'help', 'annHide']);   // remove or add shapes, or open a dialog
+  const contexts = [
+    ['diagram', 'sel = null; multi = []'],
+    ['title block', "S.title.show = true; sel = { type: 'annot', id: 'title' }; multi = []"],
+    ['legend', "S.legend.show = true; sel = { type: 'annot', id: 'legend' }; multi = []"],
+    ['box', "sel = { type: 'node', id: 'users' }; multi = []"],
+    ['box in a column', "sel = { type: 'node', id: 'lb' }; multi = []"],
+    ['container', "sel = { type: 'node', id: 'app' }; multi = []"],
+    ['connector', "sel = { type: 'edge', id: 'e3' }; multi = []"],
+    ['connector, Visio-style', "setMode('fixed'); sel = { type: 'edge', id: 'e4' }; multi = []"],
+    ['several shapes', "multi = ['orders', 'inv', 'pay']; sel = { type: 'node', id: 'orders' }"],
+  ];
+  const controls = () => h.ev(() => [...document.querySelectorAll('#panel [data-act], #panel [data-field], #modeSeg [data-mode]')]
+    .filter(el => !el.disabled && el.offsetParent !== null)
+    .map(el => ({
+      key: (el.closest('#modeSeg') ? '#modeSeg ' : '#panel ') + (el.id ? '#' + el.id : el.tagName.toLowerCase() +
+        ['data-act', 'data-field', 'data-mode', 'data-val', 'data-scope', 'data-key'].filter(k => el.hasAttribute(k)).map(k => `[${k}="${CSS.escape(el.getAttribute(k))}"]`).join('')),
+      act: el.dataset.act || null, field: el.dataset.field || null, tag: el.tagName, type: el.type, pressed: el.getAttribute('aria-pressed') === 'true',
+    })));
+  const check = async label => {
+    const [now, reloaded, reopened] = await h.ev(() => [S, load(), parseDiagram(serialize())].map(x => JSON.parse(JSON.stringify(x))));
+    assert.deepStrictEqual(reloaded, now, `${label}: a reload changes the diagram`);
+    assert.deepStrictEqual(reopened, now, `${label}: saving and reopening changes the diagram`);
+  };
+  const use = async (c, label) => {
+    const el = h.page.locator(c.key);
+    if (c.tag === 'SELECT') {
+      for (const v of await el.evaluate(s => [...s.options].filter(o => !o.selected).map(o => o.value))) {
+        await h.page.locator(c.key).selectOption(v); await check(`${label} = ${v}`);
+      }
+      return;
+    }
+    if (c.tag === 'BUTTON' || c.type === 'checkbox') await el.click();
+    else if (c.type === 'color') await el.fill('#2a9d8f');
+    else if (c.type === 'range') await el.evaluate(r => { r.value = +r.min + (r.value - r.min + 5) % (r.max - r.min + 1); r.dispatchEvent(new Event('input', { bubbles: true })); });
+    else if (c.type === 'number') { const v = +(await el.inputValue()); await el.fill(String(/-[rgb]$/.test(c.field) ? (v + 97) % 256 : v + 13)); }
+    else await el.fill(c.field.endsWith('-hex') ? '#3a7bd5' : `Round trip ${c.field}`);
+    await check(label);
+  };
+
+  const visited = new Set();
+  for (const [name, setup] of contexts) {
+    const reselect = () => h.ev(`(() => { ${setup}; renderPanel(); render(); })()`);
+    await reselect();
+    let queue = [];
+    for (;;) {
+      const now = await controls(), fresh = c => !visited.has(name + c.key) && !SKIP.has(c.act) && !c.pressed;
+      // Controls that a change just revealed (a fill color after "Custom", Gap after "Row") go first, before another change hides them.
+      const next = queue.map(k => now.find(c => c.key === k)).find(c => c && fresh(c)) || now.find(fresh);
+      if (!next) break;
+      visited.add(name + next.key);
+      await use(next, `${name}: ${next.key}`);
+      await reselect();
+      const after = await controls();
+      queue = [...after.filter(c => !now.some(o => o.key === c.key)).map(c => c.key), ...queue];
+    }
+  }
+  const seen = [...visited].join(' ');
+  for (const k of ['f-tint', 'f-fill-hex', 'f-line-r', 'data-act="align"', 'f-gap', 'f-fromSide', 'data-mode="fixed"', 'data-field="leg-label"', 'f-ann-author', 'data-act="annPos"', 'f-radius'])
+    assert.ok(seen.includes(k), `the walk reached ${k}`);
+  assert.ok(visited.size > 120, `walked ${visited.size} controls`);
+
+  // And for real: reload the page and compare.
+  const before = await h.ev(() => JSON.parse(JSON.stringify(S)));
+  await h.page.reload(); await h.page.waitForTimeout(300);
+  assert.deepStrictEqual(await h.ev(() => JSON.parse(JSON.stringify(S))), before);
+  assert.deepStrictEqual(h.errors, []);
+});
+
 test('colors: presets, hex, RGB, tint, custom and no fill, patterns, connectors, undo', async () => {
   const h = await open();
   await h.click('inv'); await h.page.click('#panel .sw[title="Teal"]'); await h.clear();
