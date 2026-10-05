@@ -159,6 +159,19 @@ dl.keys dd { margin: 0; }
 .ends b { font-weight: 600; }
 .mode-card { border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 6px; background: var(--paper); }
 .mode-card strong { font-size: 14px; }
+.arr { display: grid; grid-template-columns: 66px minmax(0, 1fr); gap: 8px 10px; align-items: center; }
+.arr > .k { font-size: 12px; font-weight: 500; color: var(--ink-2); }
+.arr .row { gap: 6px; }
+.arr .btn { padding: 5px 9px; }
+.arr .num { flex-direction: row; align-items: center; gap: 4px; }
+.arr .num input { width: 58px; }
+.icons { display: flex; gap: 4px; flex-wrap: wrap; }
+.ib { width: 34px; height: 30px; display: grid; place-items: center; border: 1px solid var(--line); background: var(--panel); border-radius: 6px; cursor: pointer; color: var(--ink); padding: 0; }
+.ib:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.ib:disabled { opacity: .4; cursor: default; }
+.ib svg { width: 20px; height: 16px; }
+.ib .gd { stroke: var(--port); stroke-width: 1.4; }
+.ib .br { fill: none; stroke: currentColor; stroke-width: 1.3; }
 
 /* ---------- canvas (SVG) ---------- */
 .gdot { fill: var(--grid-dot); }
@@ -288,7 +301,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 22</span>
+      Snapblade <span class="tag">playground &middot; build 23</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -1041,6 +1054,119 @@ function pathD(pts, r) {
   return d + ` L${z.x},${z.y}`;
 }
 
+/* ---------- arrange ----------
+   Row/Column line-up, spacing and Straighten for a selection. The first pick stays put and the others line up
+   with it. A free container picked first, followed only by shapes inside it, is the reference instead: the
+   shapes line up with its inner area and the container stays put. */
+const ARRANGE_MIN = 20;   // the smallest gap Keep and Even leave between shapes
+const LINE_UP = {
+  top:    { label: 'Tops',    axis: 'y', pos: n => n.y },
+  middle: { label: 'Middles', axis: 'y', pos: n => n.y + n.h / 2 },
+  bottom: { label: 'Bottoms', axis: 'y', pos: n => n.y + n.h },
+  left:   { label: 'Lefts',   axis: 'x', pos: n => n.x },
+  center: { label: 'Centers', axis: 'x', pos: n => n.x + n.w / 2 },
+  right:  { label: 'Rights',  axis: 'x', pos: n => n.x + n.w },
+};
+// Shapes a row/column container places can't be moved by hand, so Arrange leaves them alone.
+const placedByContainer = n => { const p = n.parent && byId(n.parent); return !!p && p.layout !== 'free'; };
+function insideRef(ids) {
+  const g = byId(ids[0]);
+  if (!g || g.kind !== 'group' || g.layout !== 'free' || ids.length < 2) return null;
+  const inner = subtree(g.id);
+  return ids.slice(1).every(id => inner.includes(id)) ? g : null;
+}
+const innerArea = g => ({ x: [g.x + g.pad, g.x + g.w - g.pad], y: [g.y + HEADER + g.pad, g.y + g.h - g.pad] });
+function arrangeTargets(ids) {
+  const g = insideRef(ids), top = topLevel(g ? ids.slice(1) : ids);
+  return { g, top, ns: top.map(byId).filter(n => n && !placedByContainer(n)) };
+}
+function moveTo(n, axis, to) { const d = Math.round(to) - n[axis]; axis === 'x' ? translate(n.id, d, 0) : translate(n.id, 0, d); }
+// Space shapes along one axis in their current order. Keep only pushes apart shapes that would touch;
+// Even keeps the outer edges (or the container's inner edges) and makes the gaps equal; Fixed packs them.
+function spaceOut(ns, axis, spacing, bounds) {
+  const len = axis === 'x' ? 'w' : 'h', o = [...ns].sort((a, b) => center(a)[axis] - center(b)[axis]);
+  if (o.length < 2) return;
+  if (spacing.mode === 'keep') {
+    for (let i = 1; i < o.length; i++) { const min = o[i - 1][axis] + o[i - 1][len] + ARRANGE_MIN; if (o[i][axis] < min) moveTo(o[i], axis, min); }
+    return;
+  }
+  const lo = bounds ? bounds[0] : Math.min(...o.map(n => n[axis])), hi = bounds ? bounds[1] : Math.max(...o.map(n => n[axis] + n[len]));
+  const gap = spacing.mode === 'fixed' ? spacing.gap : Math.max(ARRANGE_MIN, (hi - lo - o.reduce((t, n) => t + n[len], 0)) / (o.length - 1));
+  let cur = spacing.mode === 'fixed' ? o[0][axis] : lo;
+  for (const n of o) { moveTo(n, axis, cur); cur += n[len] + gap; }
+}
+// Line up as a row (tops, middles, bottoms) or a column (lefts, centers, rights), then space along it.
+// Shapes keep their order and never end up on top of each other.
+function lineUp(ids, kind, spacing = { mode: 'keep', gap: 40 }) {
+  const { g, top, ns } = arrangeTargets(ids), L = LINE_UP[kind], skipped = top.length - ns.length;
+  if (ns.length < (g ? 1 : 2)) return { moved: 0, skipped, inside: g, ref: null };
+  const A = g && innerArea(g), along = L.axis === 'y' ? 'x' : 'y', before = ns.map(n => [n.x, n.y]);
+  const v = g ? { top: A.y[0], middle: (A.y[0] + A.y[1]) / 2, bottom: A.y[1], left: A.x[0], center: (A.x[0] + A.x[1]) / 2, right: A.x[1] }[kind] : L.pos(ns[0]);
+  for (const n of ns) moveTo(n, L.axis, n[L.axis] + v - L.pos(n));
+  spaceOut(ns, along, spacing, A && A[along]);
+  layoutAll();
+  return { moved: ns.filter((n, i) => n.x !== before[i][0] || n.y !== before[i][1]).length, skipped, inside: g, ref: g || ns[0] };
+}
+// Straighten: move a shape along one axis so its connectors run straight. Candidates and the score use evenly
+// spaced anchors (or the pins in Visio-style mode), so "straight" means centered, not squeezed into a corner.
+function portsIn(mode) { const m = S.settings.mode; S.settings.mode = mode; try { return computePorts(); } finally { S.settings.mode = m; } }
+const straightMode = () => S.settings.mode === 'fixed' ? 'fixed' : 'even';
+const isStraight = p => !!(p?.from && p?.to) && axisOf(p.from.side) === axisOf(p.to.side) &&
+  (axisOf(p.from.side) === 'y' ? Math.abs(p.from.y - p.to.y) < 0.5 : Math.abs(p.from.x - p.to.x) < 0.5);
+const linksTo = (e, id, set) => (e.from.node === id && set.has(e.to.node)) || (e.to.node === id && set.has(e.from.node));
+const neighbors = n => S.edges.flatMap(e => e.from.node === n.id ? [e.to.node] : e.to.node === n.id ? [e.from.node] : []);
+const nested = (a, b) => a === b || subtree(a.id).includes(b.id) || subtree(b.id).includes(a.id);
+const crowds = n => S.nodes.some(m => !nested(n, m) && n.x < m.x + m.w + CLEAR && m.x < n.x + n.w + CLEAR && n.y < m.y + m.h + CLEAR && m.y < n.y + n.h + CLEAR);
+function straightCount(n, partners) { const P = portsIn(straightMode()); return S.edges.filter(e => linksTo(e, n.id, partners) && isStraight(P[e.id])).length; }
+function straightenOne(n, partners) {
+  const es = S.edges.filter(e => linksTo(e, n.id, partners));
+  if (!es.length || placedByContainer(n)) return false;
+  const P = portsIn(straightMode()), cands = [[0, 0]];
+  for (const e of es) {
+    const p = P[e.id]; if (!p) continue;
+    const mine = e.from.node === n.id ? p.from : p.to, other = e.from.node === n.id ? p.to : p.from;
+    if (axisOf(mine.side) === axisOf(other.side)) cands.push(axisOf(mine.side) === 'y' ? [0, Math.round(other.y - mine.y)] : [Math.round(other.x - mine.x), 0]);
+  }
+  let best = null;
+  for (const [dx, dy] of cands) {
+    const saved = S.nodes.map(m => [m, m.x, m.y, m.w, m.h]);
+    translate(n.id, dx, dy); layoutAll();
+    const score = (!dx && !dy) || !crowds(n) ? straightCount(n, partners) : -1;
+    for (const [m, x, y, w, h] of saved) Object.assign(m, { x, y, w, h });
+    if (!best || score > best.score || (score === best.score && Math.abs(dx + dy) < Math.abs(best.dx + best.dy))) best = { dx, dy, score };
+  }
+  translate(n.id, best.dx, best.dy); layoutAll();
+  return !!(best.dx || best.dy);
+}
+function straighten(ids) {
+  const ref = insideRef(ids), ns = topLevel(ref ? ids.slice(1) : ids).map(byId).filter(Boolean), name = n => oneLine(n.label);
+  let moved = 0;
+  if (ref) {
+    for (const n of ns) if (straightenOne(n, new Set(neighbors(n)))) moved++;
+    return { moved, text: moved ? `Straightened ${moved} shape${moved > 1 ? 's' : ''} inside ${name(ref)}` : 'Nothing to straighten without overlapping another shape.' };
+  }
+  if (ns.length === 1) {
+    const n = ns[0], ps = new Set(neighbors(n));
+    if (straightenOne(n, ps)) return { moved: 1, text: `Straightened ${name(n)}` };
+    return { moved: 0, text: !ps.size ? `${name(n)} has no connectors.` : straightCount(n, ps) ? `The connectors on ${name(n)} are already straight.` : `Can't straighten ${name(n)} without overlapping another shape.` };
+  }
+  // Several shapes: the first pick stays put and the others follow, one hop at a time through their connectors.
+  const inSel = new Set(ns.map(n => n.id)), done = new Set();
+  for (const root of ns) {
+    if (done.has(root.id)) continue;
+    done.add(root.id);
+    const queue = [root];
+    while (queue.length) {
+      for (const id of neighbors(queue.shift())) {
+        if (!inSel.has(id) || done.has(id)) continue;
+        if (straightenOne(byId(id), done)) moved++;
+        done.add(id); queue.push(byId(id));
+      }
+    }
+  }
+  return { moved, text: moved ? `Straightened from ${name(ns[0])} outward: ${moved} shape${moved > 1 ? 's' : ''} moved` : 'Nothing to straighten without overlapping another shape.' };
+}
+
 /* =====================================================================
    UI
    ===================================================================== */
@@ -1050,8 +1176,9 @@ let sel = null, hover = null, drag = null, dropTarget = null, spaceDown = false;
 let undoStack = [], redoStack = [], fieldUndo = false;
 let lastGeom = { R: {}, labels: {}, annots: [] };   // routes, label boxes and title/legend blocks from the last render, for hit testing
 let lastPress = { t: 0, x: 0, y: 0 };  // for detecting double-clicks ourselves
-let multi = [];                          // node ids when 2+ shapes are selected; the first is the size reference
+let multi = [];                          // node ids when 2+ shapes are selected; the first is the reference for Arrange
 let sizeRef = 'first';                   // same-size reference: 'first' selected or 'largest'
+let spaceMode = 'keep', spaceGap = 40;   // Arrange spacing: keep, even or fixed (px)
 let clip = null, pasteN = 0;             // copied shapes, and how many times they've been pasted
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -1248,8 +1375,24 @@ function pasteStyle() {
   return true;
 }
 let flashTimer = null;
-function statusFlash(msg) { if (!statusEl) return; statusEl.textContent = msg; clearTimeout(flashTimer); flashTimer = setTimeout(() => render(), 1200); }
+function statusFlash(msg, ms = 1200) { if (!statusEl) return; statusEl.textContent = msg; clearTimeout(flashTimer); flashTimer = setTimeout(() => render(), ms); }
 const boxesIn = g => S.nodes.filter(n => n.parent === g.id && n.kind === 'box').map(n => n.id);
+
+/* ---------- arrange (panel actions) ---------- */
+// Runs an Arrange step as one undo step, and only records it if something moved.
+function arrange(fn) {
+  const before = snapshot(), r = fn();
+  if (snapshot() !== before) { undoStack.push(before); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; refresh(true, true); }
+  return r;
+}
+function arrangeLineUp(kind) {
+  const r = arrange(() => lineUp(multi, kind, { mode: spaceMode, gap: spaceGap })), L = LINE_UP[kind];
+  const msg = !r.ref ? 'Line up needs two shapes that can move. Shapes in a row or column container are placed by it.'
+    : !r.moved ? 'Already lined up. Nothing moved.'
+    : `${L.axis === 'y' ? 'Row' : 'Column'}: ${L.label.toLowerCase()} lined up ${r.inside ? 'inside' : 'with'} ${oneLine(r.ref.label)}${r.skipped ? `. ${r.skipped} placed by a container left alone` : ''}`;
+  statusFlash(msg, 2600);
+}
+function arrangeStraighten() { statusFlash(arrange(() => straighten(selectedIds())).text, 2600); }
 
 /* ---------- copy / paste ---------- */
 function copySel() {
@@ -1513,7 +1656,7 @@ function updateStatus(P) {
   } else if (sel?.type === 'annot') {
     t = `${sel.id === 'title' ? 'Title block' : 'Legend'}  ·  ${(sel.id === 'title' ? S.title : S.legend).pos.replace('-', ' ')}  ·  drag toward a corner to move it`;
   } else if (multi.length) {
-    t = `${multi.length} shapes selected  ·  size reference: ${oneLine(byId(multi[0]).label)}`;
+    t = `${multi.length} shapes selected  ·  first pick: ${oneLine(byId(multi[0]).label)}`;
   } else if (sel?.type === 'node') {
     const n = byId(sel.id);
     t = n ? `${n.kind === 'group' ? 'Container' : 'Box'}  ·  X ${n.x}  Y ${n.y}  ·  W ${n.w} × H ${n.h}` : '';
@@ -1685,6 +1828,49 @@ const sizeButtons = scope => `<div class="row">
     <button class="btn" type="button" data-act="size" data-scope="${scope}" data-val="w">Same width</button>
     <button class="btn" type="button" data-act="size" data-scope="${scope}" data-val="h">Same height</button>
     <button class="btn" type="button" data-act="size" data-scope="${scope}" data-val="wh">Same size</button></div>`;
+const ARRANGE_ICONS = {
+  top: '<line class="gd" x1="0" y1="2.5" x2="20" y2="2.5"/><rect class="br" x="1.5" y="2.5" width="4.5" height="9" rx="1"/><rect class="br" x="8" y="2.5" width="4.5" height="12" rx="1"/><rect class="br" x="14.5" y="2.5" width="4.5" height="6" rx="1"/>',
+  middle: '<line class="gd" x1="0" y1="8" x2="20" y2="8"/><rect class="br" x="1.5" y="3.5" width="4.5" height="9" rx="1"/><rect class="br" x="8" y="2" width="4.5" height="12" rx="1"/><rect class="br" x="14.5" y="5" width="4.5" height="6" rx="1"/>',
+  bottom: '<line class="gd" x1="0" y1="13.5" x2="20" y2="13.5"/><rect class="br" x="1.5" y="4.5" width="4.5" height="9" rx="1"/><rect class="br" x="8" y="1.5" width="4.5" height="12" rx="1"/><rect class="br" x="14.5" y="7.5" width="4.5" height="6" rx="1"/>',
+  left: '<line class="gd" x1="3.5" y1="0" x2="3.5" y2="16"/><rect class="br" x="3.5" y="0.5" width="9" height="3.5" rx="1"/><rect class="br" x="3.5" y="6.2" width="14" height="3.5" rx="1"/><rect class="br" x="3.5" y="12" width="6" height="3.5" rx="1"/>',
+  center: '<line class="gd" x1="10" y1="0" x2="10" y2="16"/><rect class="br" x="5.5" y="0.5" width="9" height="3.5" rx="1"/><rect class="br" x="3" y="6.2" width="14" height="3.5" rx="1"/><rect class="br" x="7" y="12" width="6" height="3.5" rx="1"/>',
+  right: '<line class="gd" x1="16.5" y1="0" x2="16.5" y2="16"/><rect class="br" x="7.5" y="0.5" width="9" height="3.5" rx="1"/><rect class="br" x="2.5" y="6.2" width="14" height="3.5" rx="1"/><rect class="br" x="10.5" y="12" width="6" height="3.5" rx="1"/>',
+};
+const lineUpBtn = (k, dis) => {
+  const L = LINE_UP[k], t = `${L.axis === 'y' ? 'Row' : 'Column'}: line up ${L.label.toLowerCase()}`;
+  return `<button class="ib" type="button" data-act="lineUp" data-val="${k}" title="${t}" aria-label="${t}"${dis ? ' disabled' : ''}><svg viewBox="0 0 20 16" aria-hidden="true">${ARRANGE_ICONS[k]}</svg></button>`;
+};
+function arrangeSection(first) {
+  const { g, ns } = arrangeTargets(multi), can = ns.length >= (g ? 1 : 2);
+  const spacing = {
+    keep: 'Row and Column keep the spacing and only push apart shapes that would touch.',
+    even: g ? 'Row and Column spread the shapes evenly across the inside of the container.' : 'Row and Column keep the outer shapes and make the gaps between them equal.',
+    fixed: `Row and Column pack shapes ${spaceGap} px apart, from the leftmost or topmost.`,
+  }[spaceMode];
+  return `<section>
+    <p class="eyebrow">Arrange</p>
+    <p class="desc">${g ? `Lines up inside <b>${esc(oneLine(g.label))}</b>, the container you picked first. It stays put.` : `Lines up with <b>${esc(oneLine(first.label))}</b>, the first shape you picked (thick outline).`}</p>
+    <div class="arr">
+      <span class="k">Same size</span>
+      <div class="row">
+        <button class="btn" type="button" data-act="size" data-scope="selection" data-val="w">Width</button>
+        <button class="btn" type="button" data-act="size" data-scope="selection" data-val="h">Height</button>
+        <button class="btn" type="button" data-act="size" data-scope="selection" data-val="wh">Both</button>
+      </div>
+      <span class="k">Match</span>
+      <div>${seg('sizeRef', [['first', 'First selected'], ['largest', 'Largest']], sizeRef)}</div>
+      <span class="k">Row</span>
+      <div class="icons">${['top', 'middle', 'bottom'].map(k => lineUpBtn(k, !can)).join('')}</div>
+      <span class="k">Column</span>
+      <div class="icons">${['left', 'center', 'right'].map(k => lineUpBtn(k, !can)).join('')}</div>
+      <span class="k">Spacing</span>
+      <div class="row">${seg('spaceMode', [['keep', 'Keep'], ['even', 'Even'], ['fixed', 'Fixed']], spaceMode)}${spaceMode === 'fixed' ? `<label class="num"><input id="f-spaceGap" type="number" min="0" max="400" step="10" data-field="spaceGap" value="${spaceGap}" aria-label="Gap in pixels">px</label>` : ''}</div>
+      <span class="k">Connectors</span>
+      <div><button class="btn" type="button" data-act="straighten">Straighten</button></div>
+    </div>
+    <p class="desc">${spacing} ${g ? 'Straighten moves each shape inside until its connectors run straight. Same size matches the shapes inside, not the container.' : 'Straighten keeps the first pick still and moves the others until their connectors run straight.'}</p>
+  </section>`;
+}
 function multiPanel() {
   const first = byId(multi[0]);
   return `<section>
@@ -1692,12 +1878,7 @@ function multiPanel() {
     <h2>${multi.length} shapes</h2>
     <p class="desc">Shift- or Ctrl-click to add or remove shapes. Drag any of them to move them together.</p>
   </section>
-  <section>
-    <p class="eyebrow">Make the same size</p>
-    <div class="field"><span>Match</span>${seg('sizeRef', [['first', 'First selected'], ['largest', 'Largest']], sizeRef)}</div>
-    <p class="desc">${sizeRef === 'first' ? `Matches <b>${esc(oneLine(first.label))}</b>, the first shape you picked (thick outline).` : 'Matches the widest and tallest of the selected shapes.'} Each shape keeps its center.</p>
-    ${sizeButtons('selection')}
-  </section>
+  ${arrangeSection(first)}
   <section>
     <p class="eyebrow">Match colors</p>
     <p class="desc">Copies from <b>${esc(oneLine(first.label))}</b>, the first shape you picked.</p>
@@ -1737,8 +1918,11 @@ function nodePanel(n) {
     </section>`;
   }
   h += styleSections([n]);
+  const linked = S.edges.some(e => e.from.node === n.id || e.to.node === n.id);
   h += `<section>
     <p class="eyebrow">Connectors per side</p>
+    ${linked && !inLayout ? `<div class="row"><button class="btn" type="button" data-act="straighten">Straighten connectors</button></div>
+      <p class="desc">Moves this ${isG ? 'container' : 'box'} just enough that its connectors run straight. The shapes it connects to stay put.</p>` : ''}
     <div class="ports">${SIDES.map(s => `<div class="${pc[s] ? 'hot' : ''}"><b>${pc[s]}</b>${s}</div>`).join('')}</div>
   </section>
   <div class="row"><button class="btn" type="button" data-act="duplicate">Duplicate</button><button class="btn danger" type="button" data-act="delete">Delete ${isG ? 'container and contents' : 'box'}</button></div>`;
@@ -1781,6 +1965,7 @@ function syncPanelValues() {
 function onField(t) {
   const f = t.dataset.field; if (!f) return;
   const st = S.settings;
+  if (f === 'spaceGap') { const v = Math.round(+t.value); if (Number.isFinite(v)) spaceGap = Math.min(400, Math.max(0, v)); return; }
   if (f === 'radius') { st.radius = +t.value; t.previousElementSibling.textContent = `Corner radius · ${st.radius} px`; render(); save(); return; }
   if (f === 'showSlots') { st.showSlots = t.checked; render(); save(); return; }
   if (f === 'showTitle' || f === 'showLegend') {
@@ -1866,9 +2051,12 @@ function onAct(b) {
   }
   if (act === 'duplicate') { duplicateSel(); return; }
   if (act === 'sizeRef') { sizeRef = val; renderPanel(); return; }
+  if (act === 'spaceMode') { spaceMode = val; renderPanel(); return; }
+  if (act === 'lineUp') { arrangeLineUp(val); return; }
+  if (act === 'straighten') { arrangeStraighten(); return; }
   if (act === 'size') {
     if (b.dataset.scope === 'children') matchSize(boxesIn(byId(sel.id)), val, 'largest');
-    else matchSize(multi, val, sizeRef);
+    else matchSize(insideRef(multi) ? multi.slice(1) : multi, val, sizeRef);   // a container picked first isn't resized
     return;
   }
   if (act === 'matchStyle') { matchStyle(multi, val); return; }
@@ -2328,7 +2516,9 @@ function helpHtml() {
       <li>Hover a box, then drag one of its <b>+</b> handles onto another box to connect them.</li>
       <li>Click a connector and drag one of its ends onto a different side of a box.</li>
       <li>Double-click a connector to give it a label. Labels sit away from the arrowhead by default.</li>
-      <li>Drag a box around a few shapes on empty canvas, then make them the same size.</li>
+      <li>Drag a box around the three APIs on empty canvas. Under Arrange, make them the same size, or line them up with the Column icons.</li>
+      <li>Click the <b>Application tier</b> header, Shift-click an API, and click the right-hand Column icon: the box lines up inside the container.</li>
+      <li>Drag <b>Customers</b> down a little, then click Straighten connectors in its panel.</li>
       <li>Select a box and press Ctrl+D a few times to duplicate it.</li>
     </ol>
     <div class="row"><button class="btn" type="button" data-choice="sample">Load the sample diagram</button><span class="desc">Replaces the canvas. Ctrl+Z undoes it.</span></div>`,

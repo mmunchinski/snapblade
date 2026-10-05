@@ -90,12 +90,12 @@ test('selection box, shift/ctrl-click and make same size', async () => {
   assert.deepEqual(await h.ev(() => multi), ['orders', 'inv', 'pay']);
   const centers = () => h.ev(() => ['orders', 'inv', 'pay'].map(id => { const n = byId(id); return [n.w, n.h, n.x + n.w / 2, n.y + n.h / 2]; }));
   const before = await centers();
-  await h.button('Same size');
+  await h.button('Both');
   const after = await centers();
   assert.deepEqual(after.map(c => c.slice(0, 2)), [[160, 60], [160, 60], [160, 60]], 'matches the first selected');
   assert.deepEqual(after.map(c => c.slice(2)), before.map(c => c.slice(2)), 'centers are kept');
   await h.page.keyboard.press('Control+z');
-  await h.button('Largest'); await h.button('Same width');
+  await h.button('Largest'); await h.button('Width');
   assert.deepEqual(await h.ev(() => ['orders', 'inv', 'pay'].map(id => byId(id).w)), [200, 200, 200]);
   await h.page.keyboard.press('Control+z');
 
@@ -108,6 +108,35 @@ test('selection box, shift/ctrl-click and make same size', async () => {
   const hdr = await h.toScreen(900, 100); await h.page.mouse.click(hdr.x, hdr.y);
   await h.button('Same size');
   assert.deepEqual(await h.ev(() => ['odb', 'cache', 'idb'].map(id => [byId(id).w, byId(id).h])), [[160, 90], [160, 90], [160, 90]]);
+  assert.deepEqual(h.errors, []);
+});
+
+test('Arrange: line up a column, straighten connectors, line up inside a container, undo', async () => {
+  const h = await open();
+  await h.ev(() => { byId('inv').x = 515; byId('pay').x = 540; byId('users').y = 260; refresh(true, false); });
+  const cx = ids => h.ev(ids => ids.map(id => byId(id).x + byId(id).w / 2), ids);
+  await h.selectApis();
+  assert.deepEqual(await h.ev(() => multi), ['orders', 'inv', 'pay']);
+  assert.ok((await h.page.textContent('#panel')).includes('Lines up with Orders API'));
+  await h.page.click('#panel button[aria-label="Column: line up centers"]');
+  assert.deepEqual(await cx(['orders', 'inv', 'pay']), [600, 600, 600]);
+  await h.page.keyboard.press('Control+z');
+  assert.deepEqual(await cx(['orders', 'inv', 'pay']), [600, 595, 620], 'one undo step');
+
+  await h.clear(); await h.click('users'); await h.button('Straighten connectors');
+  assert.ok(await h.ev(() => { const P = computePorts(); return P.e1.from.y === P.e1.to.y; }), 'Customers to firewall runs straight');
+  assert.equal(await h.ev(() => byId('users').x), 40);
+
+  // Container first, then boxes inside it: they line up inside the container, which stays put.
+  await h.clear();
+  const app = await h.ev(() => { const g = byId('app'); return [g.x, g.y, g.w, g.h]; });
+  const hdr = await h.toScreen(app[0] + 60, app[1] + 12); await h.page.mouse.click(hdr.x, hdr.y);
+  await h.page.keyboard.down('Shift'); await h.click('inv'); await h.click('pay'); await h.page.keyboard.up('Shift');
+  assert.deepEqual(await h.ev(() => multi), ['app', 'inv', 'pay']);
+  assert.ok((await h.page.textContent('#panel')).includes('Lines up inside Application tier'));
+  await h.page.click('#panel button[aria-label="Column: line up rights"]');
+  assert.deepEqual(await h.ev(() => { const g = byId('app'); return [g.x, g.y, g.w, g.h]; }), app);
+  assert.deepEqual(await h.ev(() => ['inv', 'pay'].map(id => byId(id).x + byId(id).w)), [app[0] + app[2] - 20, app[0] + app[2] - 20]);
   assert.deepEqual(h.errors, []);
 });
 
@@ -217,8 +246,11 @@ test('every control in every panel survives a reload and a file round trip', { t
     ['container', "sel = { type: 'node', id: 'app' }; multi = []"],
     ['connector', "sel = { type: 'edge', id: 'e3' }; multi = []"],
     ['connector, Visio-style', "setMode('fixed'); sel = { type: 'edge', id: 'e4' }; multi = []"],
-    ['several shapes', "multi = ['orders', 'inv', 'pay']; sel = { type: 'node', id: 'orders' }"],
+    // The container walk above may leave Application tier in a row or column layout, which would disable Arrange.
+    ['several shapes', "freeApp(); multi = ['orders', 'inv', 'pay']; sel = { type: 'node', id: 'orders' }"],
+    ['container, then boxes inside it', "freeApp(); multi = ['app', 'orders', 'inv']; sel = { type: 'node', id: 'app' }"],
   ];
+  await h.ev(() => { window.freeApp = () => { if (byId('app').layout !== 'free') { byId('app').layout = 'free'; layoutAll(); save(); } }; });
   const controls = () => h.ev(() => [...document.querySelectorAll('#panel [data-act], #panel [data-field], #modeSeg [data-mode]')]
     .filter(el => !el.disabled && el.offsetParent !== null)
     .map(el => ({
@@ -265,7 +297,7 @@ test('every control in every panel survives a reload and a file round trip', { t
     }
   }
   const seen = [...visited].join(' ');
-  for (const k of ['f-tint', 'f-fill-hex', 'f-line-r', 'data-act="align"', 'f-gap', 'f-fromSide', 'data-mode="fixed"', 'data-field="leg-label"', 'f-ann-author', 'data-act="annPos"', 'f-radius'])
+  for (const k of ['f-tint', 'f-fill-hex', 'f-line-r', 'data-act="align"', 'f-gap', 'f-fromSide', 'data-mode="fixed"', 'data-field="leg-label"', 'f-ann-author', 'data-act="annPos"', 'f-radius', 'data-act="lineUp"', 'data-act="straighten"', 'f-spaceGap'])
     assert.ok(seen.includes(k), `the walk reached ${k}`);
   assert.ok(visited.size > 120, `walked ${visited.size} controls`);
 

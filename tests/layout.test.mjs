@@ -188,3 +188,108 @@ test('every option the panels offer survives a reload and a file round trip', ()
     assert.deepStrictEqual(reopened, now, `${what}: saving and reopening changes the diagram`);
   }
 });
+
+// Arrange: Row/Column line-up, spacing and Straighten.
+run(`function flat(boxes, edges = [], mode = 'even') {
+  S = normalize({ nodes: boxes.map(([id, x, y, w, h]) => ({ id, kind: 'box', label: id, x, y, w, h, parent: null })),
+    edges: edges.map(([a, b], i) => ({ id: 'e' + i, from: { node: a, side: 'auto' }, to: { node: b, side: 'auto' }, arrow: 'end' })),
+    settings: { mode } });
+}
+const at = (...ids) => ids.map(id => { const n = byId(id); return [n.x, n.y]; });
+const box4 = id => { const n = byId(id); return [n.x, n.y, n.w, n.h]; };`);
+
+test('Row lines up with the first pick, keeps the order, and Keep only pushes apart shapes that would touch', () => {
+  run(`flat([['a', 0, 0, 100, 50], ['b', 200, 40, 120, 60], ['c', 150, 100, 80, 40]])`);
+  assert.equal(json(`lineUp(['a', 'b', 'c'], 'middle', { mode: 'keep' }).moved`), 2);
+  assert.deepEqual(json(`at('a', 'c', 'b')`), [[0, 0], [150, 5], [250, -5]]);
+});
+
+test('Even keeps the outer shapes and makes the gaps between them equal', () => {
+  run(`flat([['a', 0, 0, 100, 50], ['b', 30, 120, 60, 40], ['c', 10, 400, 80, 60]])`);
+  run(`lineUp(['a', 'b', 'c'], 'center', { mode: 'even' })`);
+  assert.deepEqual(json(`at('a', 'b', 'c')`), [[0, 0], [20, 205], [10, 400]]);
+});
+
+test('Fixed packs shapes the given gap apart, from the first one in line', () => {
+  run(`flat([['a', 300, 0, 100, 50], ['b', 0, 20, 100, 50]])`);
+  run(`lineUp(['a', 'b'], 'top', { mode: 'fixed', gap: 40 })`);
+  assert.deepEqual(json(`at('b', 'a')`), [[0, 0], [140, 0]]);
+});
+
+test('lining up never stacks shapes: Lefts on two shapes side by side makes a column', () => {
+  run(`flat([['a', 0, 0, 100, 50], ['b', 200, 0, 100, 50]])`);
+  run(`lineUp(['a', 'b'], 'left', { mode: 'keep' })`);
+  assert.deepEqual(json(`at('a', 'b')`), [[0, 0], [0, 70]]);
+  assert.equal(json(`lineUp(['a', 'b'], 'left', { mode: 'keep' }).moved`), 0, 'already lined up');
+});
+
+test('Arrange leaves shapes placed by a row or column container alone', () => {
+  run(`S = normalize(sample()); layoutAll()`);
+  const data = json(`at('odb', 'idb')`);
+  assert.equal(json(`lineUp(['odb', 'idb'], 'left', { mode: 'keep' }).moved`), 0);
+  run(`byId('pay').x = 540`);
+  assert.equal(json(`lineUp(['orders', 'odb', 'pay'], 'center', { mode: 'keep' }).skipped`), 1);
+  assert.deepEqual(json(`at('odb', 'idb')`), data);
+  assert.equal(json(`center(byId('pay')).x`), json(`center(byId('orders')).x`));
+});
+
+test('a selected container moves with its contents, and they move once', () => {
+  run(`S = normalize(sample()); layoutAll()`);
+  const [app0, orders0] = json(`[box4('app'), box4('orders')]`);
+  run(`lineUp(['gw', 'app'], 'bottom', { mode: 'keep' }); layoutAll()`);
+  const [app1, orders1, gw] = json(`[box4('app'), box4('orders'), box4('gw')]`);
+  assert.equal(app1[1] + app1[3], gw[1] + gw[3], 'container bottom on the gateway bottom');
+  assert.equal(orders1[1] - app1[1], orders0[1] - app0[1], 'contents keep their place in the container');
+  assert.equal(orders1[0], orders0[0]);
+});
+
+test('container picked first: shapes line up inside it, and the container stays put', () => {
+  run(`S = normalize(sample()); byId('pay').x = 540; byId('inv').x = 505; layoutAll()`);
+  const app = json(`box4('app')`), pad = json(`byId('app').pad`), header = json('HEADER');
+  run(`lineUp(['app', 'orders', 'inv', 'pay'], 'center', { mode: 'keep' }); layoutAll()`);
+  assert.deepEqual(json(`box4('app')`), app);
+  for (const cx of json(`['orders', 'inv', 'pay'].map(id => center(byId(id)).x)`)) assert.ok(Math.abs(cx - (app[0] + app[2] / 2)) <= 0.5, `centered: ${cx}`);
+
+  run(`lineUp(['app', 'orders', 'inv', 'pay'], 'left', { mode: 'even' }); layoutAll()`);
+  const [o, i, p] = json(`[box4('orders'), box4('inv'), box4('pay')]`);
+  assert.equal(o[0], app[0] + pad);
+  assert.equal(o[1], app[1] + header + pad, 'first one at the top of the inner area');
+  assert.equal(p[1] + p[3], app[1] + app[3] - pad, 'last one at the bottom of the inner area');
+  assert.equal(i[1] - (o[1] + o[3]), p[1] - (i[1] + i[3]), 'equal gaps');
+
+  run(`lineUp(['app', 'inv'], 'right', { mode: 'keep' })`);
+  assert.equal(json(`byId('inv').x + byId('inv').w`), app[0] + app[2] - pad, 'one shape is enough');
+  assert.deepEqual(json(`box4('app')`), app);
+});
+
+test('Straighten moves one shape just enough that its connectors run straight', () => {
+  run(`S = normalize(sample()); byId('users').y = 260; layoutAll()`);
+  const waf = json(`box4('waf')`), x = json(`byId('users').x`);
+  assert.equal(json(`straighten(['users']).moved`), 1);
+  const P = json('routesNow().P');
+  assert.equal(P.e1.from.y, P.e1.to.y);
+  assert.deepEqual(json(`box4('waf')`), waf, 'the partner stays put');
+  assert.equal(json(`byId('users').x`), x, 'moves on one axis only');
+  assert.equal(json(`straighten(['users']).moved`), 0, 'already straight');
+});
+
+test('Straighten with several shapes: the first pick stays put and the others follow', () => {
+  run(`flat([['a', 0, 0, 100, 50], ['b', 200, 60, 100, 50], ['c', 400, -50, 100, 50]], [['a', 'b'], ['b', 'c']])`);
+  assert.equal(json(`straighten(['a', 'b', 'c']).moved`), 2);
+  assert.deepEqual(json(`at('a', 'b', 'c')`), [[0, 0], [200, 0], [400, 0]]);
+});
+
+test('Straighten never moves a shape onto another one', () => {
+  run(`flat([['a', 0, 0, 100, 50], ['b', 200, 100, 100, 50], ['x', 200, 0, 100, 50]], [['a', 'b']])`);
+  assert.equal(json(`straighten(['b']).moved`), 0);
+  assert.deepEqual(json(`at('b')`), [[200, 100]]);
+});
+
+test('Straighten follows Visio-style pins in that anchor mode', () => {
+  run(`flat([['a', 0, 0, 100, 50], ['b', 200, 60, 100, 80]], [['a', 'b']], 'fixed');
+    S.edges[0].fixed = { from: { side: 'right', frac: 0.2 }, to: { side: 'left', frac: 0.5 } }`);
+  run(`straighten(['b'])`);
+  const P = json('computePorts()');
+  assert.equal(P.e0.from.y, P.e0.to.y);
+  assert.equal(P.e0.from.y, 10);
+});
