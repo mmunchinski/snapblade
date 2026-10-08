@@ -170,8 +170,8 @@ dl.keys dd { margin: 0; }
 .ib:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .ib:disabled { opacity: .4; cursor: default; }
 .ib svg { width: 20px; height: 16px; }
-.ib .gd { stroke: var(--port); stroke-width: 1.4; }
-.ib .br { fill: none; stroke: currentColor; stroke-width: 1.3; }
+.ib .gd, .gicon .gd { stroke: var(--port); stroke-width: 1.4; }
+.ib .br, .gicon .br { fill: none; stroke: currentColor; stroke-width: 1.3; }
 
 /* ---------- canvas (SVG) ---------- */
 .gdot { fill: var(--grid-dot); }
@@ -266,10 +266,21 @@ dl.keys dd { margin: 0; }
 .modal-back { position: fixed; inset: 0; z-index: 50; background: rgba(10, 14, 16, .45); display: flex; align-items: center; justify-content: center; padding: 16px; }
 .modal { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 24px 60px rgba(0, 0, 0, .3); width: min(820px, 100%); max-height: calc(100% - 8px); overflow: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
 .modal.small { width: min(440px, 100%); }
-.modal.help { width: min(640px, 100%); }
+.modal.help { width: min(720px, 100%); }
 .modal.help > .seg { align-self: flex-start; }
 .help-body { display: flex; flex-direction: column; gap: 12px; min-height: 360px; }
 .help-body .mode-card.current { border-color: var(--accent); }
+.help-body .toc { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
+.help-body a { color: var(--accent); }
+.guide { display: flex; flex-direction: column; gap: 14px; font-size: 13.5px; }
+.guide h3 { margin: 0 0 4px; font-size: 14.5px; font-weight: 600; }
+.modal .guide p { color: var(--ink); }
+.guide ul { margin: 4px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 5px; }
+.guide .gicons { list-style: none; margin-left: -20px; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 12px; }
+.gicon { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); }
+.gicon svg { width: 20px; height: 16px; flex: none; }
+.help-body code { font: 12px var(--mono); }
+.spec { margin: 0; font: 11.5px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; max-height: 50vh; overflow: auto; }
 .modal h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
 .modal p { margin: 0; color: var(--ink-2); font-size: 13.5px; }
 .modal .actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
@@ -303,7 +314,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 26</span>
+      Snapblade <span class="tag">playground &middot; build 27</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -1425,6 +1436,141 @@ function setAside() {
     localStorage.removeItem(KEY); localStorage.removeItem(OLD_KEY); localStorage.removeItem(META_KEY);
   } catch (e) { /* storage unavailable */ }
 }
+/* ---------- instructions for AI agents ----------
+   What an AI agent needs to write a diagram as JSON. Built from the same option lists and bounds normalize()
+   uses, so it can't drift from what the app accepts; published as llms.txt (npm run docs) and shown in Help. */
+const APP_URL = 'https://mmunchinski.github.io/snapblade/';
+const q = v => JSON.stringify(v);
+const or = list => list.length < 2 ? list.join('') : list.slice(0, -1).join(', ') + ' or ' + list[list.length - 1];
+function settingsDocs() {
+  const d = sample().settings;
+  return {
+    mode: `how connectors attach to a side: ${or(Object.entries(MODES).map(([k, [name]]) => `${q(k)} (${name.startsWith('Visio') ? name : name[0].toLowerCase() + name.slice(1)})`))}. Default ${q(d.mode)}.`,
+    grid: `snap step in px for moving shapes: ${or(valuesOf(GRIDS).map(q))}. Default ${d.grid}.`,
+    routing: `connector lines: ${or(ROUTINGS.map(([k, l]) => l.toLowerCase() === k ? q(k) : `${q(k)} (${l.toLowerCase()})`))}. Default ${q(d.routing)}.`,
+    radius: `corner radius of connector bends, 0 to 16. Default ${d.radius}.`,
+    labelPos: `where connector labels sit unless a connector says otherwise: ${or(LABEL_POS.map(q))}. Default ${q(d.labelPos)}.`,
+    showSlots: `true or false: mark where connectors attach. Default ${d.showSlots}.`,
+    walls: `true or false: keep shapes ${WALL} px apart while the user edits. Default ${d.walls}.`,
+  };
+}
+const legendExamples = () => [
+  ['a green box', { kind: 'box', style: { line: 'green' } }], ['a container with a blue line and a 30% tint', { kind: 'group', style: { line: 'blue', tint: 30 } }],
+  ['a dashed box with no fill', { kind: 'box', style: { dash: 'dashed', fill: 'none' } }], ['a dashed connector', { style: { dash: 'dashed' } }],
+  ['an orange dashed connector', { style: { line: 'orange', dash: 'dashed' } }],
+].map(([what, o]) => [what, styleKey(o)]);
+// The sample, as a file, one shape or connector per line. The date is fixed so the text doesn't change by the day.
+function exampleDiagram() { const s = sample(); s.title.date = '2026-10-07'; return s; }
+function exampleJson() {
+  const d = exampleDiagram(), list = a => '[\n' + a.map(o => '      ' + JSON.stringify(o)).join(',\n') + '\n    ]';
+  return '```json\n{\n  "format": "snapblade",\n  "version": 1,\n  "diagram": {\n    "nodes": ' + list(d.nodes) + ',\n    "edges": ' + list(d.edges) +
+    ',\n    "settings": ' + JSON.stringify(d.settings) + ',\n    "title": ' + JSON.stringify(d.title) + ',\n    "legend": ' + JSON.stringify(d.legend) + '\n  }\n}\n```\n';
+}
+function agentSpec() {
+  return `# Snapblade diagrams: instructions for AI agents
+
+Snapblade is a browser editor for box-and-line diagrams (architecture, systems, data flows): ${APP_URL}
+You write a diagram as JSON. The user saves your answer as a file ending in \`.snapblade\` (or \`.json\`) and opens it in Snapblade (File > Open, or drop it on the canvas).
+
+You decide what the shapes are and where they go. Snapblade draws the connectors itself: it picks the sides, spaces the anchor points, routes right-angled lines around the shapes and places the labels. So give every shape a sensible position and size, and leave the connector details on automatic.
+
+These instructions are generated from the app's own rules, so they always match the current version.
+
+## What to output
+
+One JSON object and nothing else (no comments, no trailing commas), in a single json code block. Tell the user to save it as \`<name>.snapblade\` and open it in Snapblade.
+
+    {"format": "snapblade", "version": 1, "diagram": {"nodes": [...], "edges": [...], "settings": {...}, "title": {...}, "legend": {...}}}
+
+Only \`nodes\` and \`edges\` are required. Anything missing gets its default. Anything not described here, or not one of the listed values, is dropped or reset to its default when the file is opened.
+
+## Coordinates
+
+Pixels. \`x\` grows to the right and \`y\` grows downward; \`x\` and \`y\` are a shape's top-left corner. Positions must be within ${-MAX_POS} to ${MAX_POS}, sizes from 1 to ${MAX_SIZE}. Use multiples of 10.
+
+## Shapes (\`nodes\`)
+
+    {"id": "orders", "kind": "box", "label": "Orders API", "x": 520, "y": 140, "w": 160, "h": 60, "parent": null}
+
+- \`id\` (required): letters, digits, \`_\` or \`-\`, 1 to 64 characters, unique among shapes. Connectors and children refer to shapes by id.
+- \`kind\`: ${or(['box', 'group'].map(q))}. A \`"group"\` is a container: it holds other shapes and shows its label as a header. Default \`"box"\`.
+- \`label\`: the text. \`\\n\` starts a new line. Default empty.
+- \`x\`, \`y\`, \`w\`, \`h\`: position and size. Defaults 0, 0, 120 and 60.
+- \`parent\`: the id of the container this shape is inside, or \`null\` (the default) for the canvas. It must be a \`"group"\`.
+- \`style\`: colors and line pattern; see Styles. Optional.
+
+Containers (\`"kind": "group"\`) also have:
+
+- \`layout\`: ${or(valuesOf(LAYOUTS).map(q))}. \`"free"\` (default): children sit at their own \`x\` and \`y\`, and the container grows to keep them inside (it never shrinks). \`"row"\` and \`"column"\`: children are stacked left to right or top to bottom, in the order they appear in \`nodes\`, \`gap\` apart; their \`x\` and \`y\` are ignored (write 0), and so are the container's \`w\` and \`h\`: it sizes itself to fit. Only its own \`x\` and \`y\` matter. The first child's top-left corner lands at the container's \`x + pad\`, \`y + ${HEADER} + pad\`; a column is as wide as its widest child plus \`2 × pad\` (at least 140), a row as tall as its tallest child plus \`${HEADER} + 2 × pad\`. Work these out when you place shapes next to or below a row or column container.
+- \`align\`: ${or(valuesOf(ALIGNS).map(q))}: how row or column children line up across the container. Default \`"center"\`.
+- \`pad\`: space between the container's edge and its children, 0 to ${MAX_PAD}. Default 20. A container also has a ${HEADER} px header strip for its label at the top, above the padding.
+- \`gap\`: space between stacked children in a row or column, 0 to ${MAX_PAD}. Default 30.
+
+## Connectors (\`edges\`)
+
+    {"id": "e1", "from": {"node": "users", "side": "auto"}, "to": {"node": "waf", "side": "auto"}, "arrow": "end", "label": "HTTPS"}
+
+- \`id\` (required): same rules as shape ids, unique among connectors.
+- \`from\`, \`to\` (required): \`node\` is the id of a shape (a box or a container); a connector to a shape that doesn't exist is dropped. \`side\` is ${or(['auto', ...SIDES].map(q))}. Leave it \`"auto"\` (the default) and Snapblade picks the sides that face each other. Pin a side only when the meaning needs it.
+- \`arrow\`: ${or(valuesOf(ARROWS).map(q))}. Default \`"end"\` (an arrowhead at \`to\`).
+- \`label\`: short text on the line: one to three words, \`\\n\` for a second line. Optional.
+- \`labelPos\`: ${or(LABEL_POS.map(q))}: where the label sits along the line (\`"start"\` is the end away from the arrowhead). Omit it to use the diagram's setting.
+- \`style\`: \`line\` and \`dash\` only; see Styles. Optional.
+- \`fixed\`: Visio-style glue points, used only when \`settings.mode\` is \`"fixed"\`: \`{"from": {"side": "right", "frac": 0.5}, "to": {"side": "left", "frac": 0.5}}\`, where \`side\` is ${or(SIDES.map(q))} and \`frac\` runs from 0 to 1 along that side. Don't write it otherwise.
+
+## Styles
+
+    "style": {"line": "green", "fill": "pair", "tint": 16, "dash": "dashed"}
+
+Every key is optional.
+
+- \`line\`: a preset, ${or(PRESETS.map(q))}, which adapts to the light and dark themes; or a fixed color \`"#rrggbb"\`. Omit it for the theme's default ink.
+- \`fill\` (shapes only): \`"pair"\` (the default: a light tint of the line color), \`"none"\` (transparent) or \`"#rrggbb"\`.
+- \`tint\` (shapes only): strength of the paired tint, 0 to 100. Defaults 16 for boxes and 7 for containers.
+- \`dash\`: ${or(valuesOf(DASHES).map(q))}. Default \`"solid"\`.
+
+Use color for meaning, one style per kind of thing (for example databases green, caches amber, external services dashed with no fill), and say what each one means in the legend.
+
+## Diagram settings (\`settings\`)
+
+Usually leave \`settings\` out.
+
+${Object.entries(settingsDocs()).map(([k, d]) => `- \x60${k}\x60: ${d}`).join('\n')}
+
+## Title block and legend
+
+    "title": {"show": true, "title": "Order platform", "version": "1.0", "date": "2026-10-07", "author": "", "pos": "bottom-right"}
+    "legend": {"show": true, "heading": "Legend", "pos": "bottom-left", "labels": {"box:green||pair": "Database"}, "hidden": []}
+
+- Title block: \`show\` true draws it. \`title\` (empty: the file's name), \`version\`, \`date\` and \`author\` are text; empty ones are left out. \`pos\` is ${or(CORNER_IDS.map(q))}. Default \`"${titleDefaults().pos}"\`.
+- Legend: \`show\` true draws it, \`heading\` is its heading (default \`"${legendDefaults().heading}"\`), \`pos\` as above (default \`"${legendDefaults().pos}"\`). The legend makes its own rows, one per distinct style in use; unstyled shapes and connectors get no row. \`labels\` maps a row's key to what that style means. \`hidden\` lists the keys of rows to leave out.
+- A row's key is \`<kind>:<line>|<dash>|<fill>\`. \`kind\` is \`box\`, \`container\` or \`connector\`. \`line\` is the preset or hex color, empty if none. \`dash\` is empty for solid. For shapes, \`fill\` is \`pair\` (followed by the tint if one is set, as in \`pair30\`) when the shape has a line color, empty for the default fill without one, or \`none\` or the hex color. Connectors have no fill part. Examples: ${legendExamples().map(([what, key]) => `${what}: \x60${key}\x60`).join('; ')}.
+- Both blocks sit just outside the diagram in their corner. You never position them.
+
+## Laying it out well
+
+- Flow left to right in tiers (for example clients, edge, services, data, external), one column per tier. Top to bottom is fine when that reads better.
+- Line shapes up so connectors run straight. A connector is straight when the two sides it joins face each other and overlap: Snapblade slides the anchors on the less busy side to line up with the other. So give connected shapes overlapping spans (the same center line is best), and make a box with many connectors on one side tall enough that its partners all face it.
+- One diagram can mix directions: a request path left to right with an event fan-out below it is fine.
+- Boxes are usually 140 to 160 wide and 50 to 60 tall. Make a box taller (90 to 120) when many connectors meet one of its sides.
+- Keep at least ${WALL} px between any two shapes in the same container or on the canvas. Leave 80 to 140 px between columns so connectors have room for bends and labels, and 30 to 60 px between shapes in a column.
+- Use \`"column"\` (or \`"row"\`) containers for tiers: you only place the container and Snapblade stacks what's inside. Use a \`"free"\` container when its children need their own positions: place them inside it, at least \`pad\` from its edges and below its header, and make the container big enough to hold them.
+- List containers before the shapes inside them, and list a row's or column's children in the order they should appear.
+- Keep ids short and readable (\`orders-api\`). Keep labels short: a box says what it is; a connector says what flows (\`HTTPS\`, \`SQL\`, \`/orders\`).
+
+## Checklist
+
+- Valid JSON. Every id unique. Every \`from.node\`, \`to.node\` and \`parent\` names an existing shape, and every \`parent\` is a \`"group"\`.
+- No two shapes overlap or sit closer than ${WALL} px, except a container and the shapes inside it. Opening a file never moves anything, so this is up to you.
+- Only the fields and values described here.
+
+## Example
+
+The sample diagram that ships with Snapblade:
+
+${exampleJson()}
+`;
+}
 const snapshot = () => JSON.stringify({ nodes: S.nodes, edges: S.edges, title: S.title, legend: S.legend });
 function pushUndo() { undoStack.push(snapshot()); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; }
 function restore(from, to) {
@@ -1988,8 +2134,9 @@ const ARRANGE_ICONS = {
   center: '<line class="gd" x1="10" y1="0" x2="10" y2="16"/><rect class="br" x="5.5" y="0.5" width="9" height="3.5" rx="1"/><rect class="br" x="3" y="6.2" width="14" height="3.5" rx="1"/><rect class="br" x="7" y="12" width="6" height="3.5" rx="1"/>',
   right: '<line class="gd" x1="16.5" y1="0" x2="16.5" y2="16"/><rect class="br" x="7.5" y="0.5" width="9" height="3.5" rx="1"/><rect class="br" x="2.5" y="6.2" width="14" height="3.5" rx="1"/><rect class="br" x="10.5" y="12" width="6" height="3.5" rx="1"/>',
 };
+const lineUpName = k => `${LINE_UP[k].axis === 'y' ? 'Row' : 'Column'}: line up ${LINE_UP[k].label.toLowerCase()}`;
 const lineUpBtn = (k, dis) => {
-  const L = LINE_UP[k], t = `${L.axis === 'y' ? 'Row' : 'Column'}: line up ${L.label.toLowerCase()}`;
+  const t = lineUpName(k);
   return `<button class="ib" type="button" data-act="lineUp" data-val="${k}" title="${t}" aria-label="${t}"${dis ? ' disabled' : ''}><svg viewBox="0 0 20 16" aria-hidden="true">${ARRANGE_ICONS[k]}</svg></button>`;
 };
 function arrangeSection(first) {
@@ -2660,10 +2807,79 @@ function toast(msg, isError = false) {
 }
 
 /* ---------- help ---------- */
+// The user guide in Help. Option names come from the same lists the panels use, so they can't drift; a browser
+// test checks that every control, panel heading, top-bar button and export option is mentioned here.
+function guideHtml() {
+  const b = list => or(list.map(l => `<b>${l}</b>`)), labels = list => list.map(o => o[1]);
+  const icons = keys => keys.map(k => `<span class="gicon"><svg viewBox="0 0 20 16" aria-hidden="true">${ARRANGE_ICONS[k]}</svg>${lineUpName(k)}</span>`).join('');
+  const sections = [
+    ['around', 'Getting around', `<p>The canvas is in the middle. The panel on the right shows whatever is selected, or the diagram's settings when nothing is.</p><ul>
+      <li>Pan with right-drag, middle-drag or Space+drag. The wheel zooms toward the cursor, and Shift+wheel scrolls sideways. <b>Fit</b> frames the whole diagram; the buttons in the bottom-right corner zoom in and out, and the percentage between them goes back to 100%.</li>
+      <li>Click a shape or connector to select it. Drag on empty canvas to draw a selection box around shapes; Shift- or Ctrl-click adds or removes one. Ctrl+A selects everything.</li>
+      <li><b>Undo</b> and <b>Redo</b> (Ctrl+Z and Ctrl+Y) cover every change to the diagram.</li>
+      <li><b>Help</b> in the top bar, F1, or <b>Shortcuts and help</b> at the bottom of the diagram panel opens this dialog.</li></ul>`],
+    ['shapes', 'Boxes and containers', `<ul>
+      <li><b>+ Box</b> adds a box, next to the selected shape or inside a selected container. Double-click empty canvas to add one right there. <b>+ Container</b> adds a container.</li>
+      <li>Double-click a shape, press F2 or Enter, or just start typing to change its <b>Text</b>. A new line in the text is a new line in the shape.</li>
+      <li>A <b>Box</b> or <b>Container</b> panel sets <b>X</b>, <b>Y</b>, <b>W</b> and <b>H</b> (position and size), or drag the handles on a selected shape. <b>Connectors per side</b> counts what's attached to each side.</li>
+      <li>Drag a shape onto a container to put it inside; drag it out to take it out. A container's <b>Layout</b> is ${b(labels(LAYOUTS))}: Free lets children sit where you put them and grows to fit them; Row and Column stack them with even gaps and size the container to fit. <b>Align</b> (${b(labels(ALIGNS))}) lines stacked children up across the container. <b>Padding</b> is the space inside its edge, <b>Gap</b> the space between stacked children.</li>
+      <li>With several <b>Boxes inside</b> a container, its panel can make them <b>Same width</b>, <b>Same height</b> or <b>Same size</b> (as the largest), <b>Use container's color</b> on all of them, or <b>Select boxes inside</b>.</li>
+      <li><b>Duplicate</b> (Ctrl+D) copies the selection. Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste; copies go to the first free spot below the original. The panel's Delete button (<b>Delete box</b>, <b>Delete container and contents</b>, or Delete shapes for a selection) or the Delete key removes it.</li></ul>`],
+    ['walls', 'Shapes can\'t overlap', `<p>With <b>Shapes can't overlap</b> on (a diagram setting, on by default), shapes side by side keep at least ${WALL} px apart, so connectors always have room between them.</p><ul>
+      <li>A dragged shape follows the cursor wherever it fits. Where it doesn't, it stops at the neighbor and slides along it. Resized edges, arrow-key nudges and typed positions and sizes stop there too.</li>
+      <li>A container that grows (a box added to a column, say) pushes the shapes it would crowd out of the way, and those push the next ones.</li>
+      <li>A container's own edge isn't a wall to what it holds: dragging a shape out takes it out.</li>
+      <li>Hold Alt while dragging to overlap anyway. Overlaps a diagram already has are left alone; opening a file never moves anything.</li></ul>`],
+    ['connect', 'Connecting', `<ul>
+      <li>Hover a shape and drag one of its <b>+</b> handles onto another shape. Drop near an edge to pin the connector to that side (the side lights up), or in the middle to let Snapblade pick the side (the whole shape lights up). A dot shows where it will land.</li>
+      <li>Select a <b>Connector</b> and drag either end onto another shape or side the same way. Dropping an end in the middle hands it back to automatic.</li>
+      <li>In its panel, <b>Leaves from side</b> and <b>Arrives at side</b> pin each end to a side or set it to Auto (which shows the side it picked). <b>Arrowheads</b>: ${b(labels(ARROWS))}. <b>Reverse direction</b> swaps the ends; <b>Delete</b> removes the connector.</li>
+      <li>Give a connector a <b>Label</b> by double-clicking it or typing in its panel. <b>Label sits near</b> the ${b(labels(LABEL_SPOTS))} (Start is the end away from the arrowhead); <b>Use diagram default</b> goes back to the diagram's setting. Labels keep clear of boxes, other labels and other connectors.</li></ul>`],
+    ['anchors', 'Anchors', `<p>The <b>Anchors</b> buttons in the top bar decide where connectors attach along a side:</p><ul>
+      ${Object.values(MODES).map(([name, desc]) => `<li><b>${esc(name)}</b> (${esc(name === MODES.fixed[0] ? 'Visio-style' : name === MODES.even[0] ? 'Even' : 'Even + straight')}): ${esc(desc)}</li>`).join('')}</ul>
+      <p><b>Show anchor points</b> marks where connectors attach: dots, or crosses for Visio-style points.</p>`],
+    ['routing', 'Connector lines', `<ul>
+      <li><b>Connector routing</b>: <b>${ROUTINGS[0][1]}</b> routes lines around shapes and around containers they don't belong to, with bends halfway between neighbors. Lines through the same gap are bundled: centered, evenly spaced and ordered so they don't cross. <b>${ROUTINGS[1][1]}</b> draws direct lines.</li>
+      <li><b>Corner radius</b> rounds the bends.</li></ul>`],
+    ['arrange', 'Arrange', `<p>Select several shapes (a selection box, or Shift-click) and the <b>Selection</b> panel offers <b>Arrange</b>. Shapes line up with the first one you picked, which has a thick outline.</p><ul>
+      <li><b>Same size</b>: <b>Width</b>, <b>Height</b> or <b>Both</b>, matching the <b>First selected</b> or the <b>Largest</b>.</li>
+      <li class="gicons">${icons(['top', 'middle', 'bottom', 'left', 'center', 'right'])}</li>
+      <li><b>Spacing</b> along the line: ${b(['Keep', 'Even', 'Fixed'])}. Keep only pushes apart shapes that would touch; Even makes the gaps equal; Fixed packs them the gap in pixels you type.</li>
+      <li><b>Straighten</b> moves shapes along one axis until their connectors run straight. For a single shape, <b>Straighten connectors</b> is in its panel.</li>
+      <li>Pick a free container first, then shapes inside it, and they line up with the container's inside instead.</li></ul>`],
+    ['colors', 'Colors and lines', `<ul>
+      <li><b>Line</b>: <b>Default</b> or a preset (${b(PRESETS.map(cap))}), which adapt to light and dark; or any color with <b>Pick line color</b>, <b>Hex</b>, or <b>R</b>, <b>G</b> and <b>B</b>.</li>
+      <li><b>Pattern</b>: ${b(labels(DASHES))}.</li>
+      <li><b>Fill</b>: <b>Paired with line</b> (a tint of the line color; <b>Tint strength</b> sets how strong), <b>Custom</b> (any color: Pick fill color, Hex or RGB) or <b>None</b>.</li>
+      <li><b>Copy style</b> and <b>Paste style</b> (Ctrl+Shift+C and Ctrl+Shift+V) move colors and patterns between shapes and connectors. With several shapes selected, <b>Match colors</b> gives them the first pick's <b>Same line</b>, <b>Same fill</b> or <b>Same colors</b>.</li></ul>`],
+    ['blocks', 'Title block and legend', `<ul>
+      <li>Under <b>Title block &amp; legend</b> in the diagram settings, tick <b>Title block</b> or <b>Legend</b>; <b>Edit</b> opens its settings (or click the block).</li>
+      <li>The title block has a <b>Title</b> (the diagram's name if empty), <b>Version</b>, <b>Date</b> (<b>Set date to today</b>) and <b>Author</b>, which is remembered for new diagrams. Empty fields are left out.</li>
+      <li>The legend makes its own <b>Rows</b>, one per color and line style in use. Type what each one means; <b>Hide</b> leaves a row out. Its <b>Heading</b> can be changed.</li>
+      <li><b>Position</b>: ${b(labels(CORNERS))}, or drag the block toward a corner. Blocks sit just outside the diagram and never cover it. <b>Hide title block</b> and <b>Hide legend</b> turn them off.</li></ul>`],
+    ['settings', 'Diagram settings', `<p>With nothing selected, the <b>Diagram</b> panel holds: <b>Connector routing</b> (${b(labels(ROUTINGS))}), <b>Connector labels sit near</b> (${b(labels(LABEL_SPOTS))}), <b>Grid snap</b> (${b(labels(GRIDS))}, the step shapes move in), <b>Corner radius</b>, <b>Show anchor points</b> and <b>Shapes can't overlap</b>.</p>`],
+    ['files', 'Files', `<ul>
+      <li>Everything is kept in this browser as you work. The <b>File</b> menu has <b>New diagram</b>, <b>Open</b> (Ctrl+O), <b>Save</b> (Ctrl+S) and <b>Save as</b> (Ctrl+Shift+S), for <code>.snapblade</code> files. You can also drop a file onto the canvas.</li>
+      <li>In Chrome and Edge, Save writes back to the same file; other browsers download it. A dot next to the name means changes not yet saved to a file. Click the name to rename the diagram.</li></ul>`],
+    ['export', 'Export', `<p><b>Export</b> makes a picture of the diagram, with a preview.</p><ul>
+      <li><b>Format</b>: ${b(labels(EXPORT_FORMATS))}. <b>Theme</b>: ${b(labels(EXPORT_THEMES))}. <b>Background</b>: ${b(labels(EXPORT_BACKGROUNDS))}.</li>
+      <li>PNG <b>Size</b>: ${b(labels(EXPORT_SCALES))}. PDF <b>Page</b>: ${b(labels(EXPORT_PAGES))}; PDFs stay sharp at any zoom.</li>
+      <li><b>Include</b> the ${b(labels(EXPORT_SCOPES))}, and choose whether to include the <b>Title block &amp; legend</b> (${b(labels(EXPORT_ANNOTS))}).</li>
+      <li><b>Download</b> saves the file; <b>Copy to clipboard</b> puts an SVG or PNG on the clipboard for slides, chat or wikis.</li></ul>`],
+    ['ai', 'Diagrams from an AI assistant', `<p>Snapblade files are plain JSON, so an AI assistant can write one. The <b>For AI agents</b> tab has instructions to give it (also at <a href="${APP_URL}llms.txt" target="_blank" rel="noopener">${APP_URL}llms.txt</a>). Describe the diagram you want, save the answer as a <code>.snapblade</code> file and open it here.</p>`],
+    ['privacy', 'Privacy', `<p>Nothing you draw leaves this browser. The only requests are downloads: the page itself, its fonts, and the PDF library when you first export a PDF.</p>`],
+  ];
+  return `<nav class="toc" aria-label="Guide contents">${sections.map(([id, t]) => `<a href="#g-${id}">${t}</a>`).join('')}</nav>
+    <div class="guide">${sections.map(([id, t, body]) => `<section id="g-${id}"><h3>${t}</h3>${body}</section>`).join('')}</div>`;
+}
 let helpTab = 'keys';
 function helpHtml() {
-  const tabs = [['keys', 'Shortcuts'], ['try', 'Things to try'], ['anchors', 'How anchors work']];
+  const tabs = [['guide', 'Guide'], ['keys', 'Shortcuts'], ['try', 'Things to try'], ['anchors', 'How anchors work'], ['agents', 'For AI agents']];
   const body = {
+    guide: guideHtml(),
+    agents: `<p>Snapblade files are plain JSON, so an AI assistant (Claude, ChatGPT, Copilot and the like) can write one. Give it these instructions, or point it at <a href="${APP_URL}llms.txt" target="_blank" rel="noopener">${APP_URL}llms.txt</a>, and describe the diagram you want. Save its answer as a <code>.snapblade</code> file and open it here. The instructions are generated from the app's own rules, so they always match this version.</p>
+    <div class="row"><button class="btn primary" type="button" data-copy-spec>Copy instructions</button></div>
+    <pre class="spec">${esc(agentSpec())}</pre>`,
     keys: `<dl class="keys">
       <dt>Double-click</dt><dd>Rename a box, container or connector, or add a box on empty canvas</dd>
       <dt>F2 / Enter</dt><dd>Rename the selection. Or just start typing to replace its text</dd>
@@ -2703,6 +2919,10 @@ function helpHtml() {
     <div class="seg" role="group" aria-label="Help topics">${tabs.map(([v, l]) => `<button type="button" data-help="${v}" aria-pressed="${v === helpTab}">${l}</button>`).join('')}</div>
     <div class="help-body">${body}</div>
     <div class="actions"><button class="btn" type="button" data-choice="cancel">Close</button></div>`;
+}
+async function copySpec() {
+  try { await navigator.clipboard.writeText(agentSpec()); toast('Instructions copied. Paste them into your AI assistant.'); }
+  catch (e) { toast("Couldn't copy here. Select the text below and copy it, or use the llms.txt address.", true); }
 }
 async function openHelp() {
   if ((await ask(helpHtml(), 'help', box => box.querySelector('[data-help][aria-pressed="true"]').focus())) === 'sample') loadSample();
@@ -2933,6 +3153,11 @@ async function exportBlob(opts) {
   return { blob: await svgToPdf(built.svg, built.w, built.h, opts.page), built };
 }
 
+// Export dialog options; the Help guide lists them from here too.
+const EXPORT_FORMATS = [['svg', 'SVG'], ['png', 'PNG'], ['pdf', 'PDF']], EXPORT_THEMES = [['light', 'Light'], ['dark', 'Dark']];
+const EXPORT_BACKGROUNDS = [['white', 'White'], ['canvas', 'Canvas'], ['none', 'None']], EXPORT_SCALES = [[1, '1×'], [2, '2×'], [3, '3×']];
+const EXPORT_PAGES = [['fit', 'Fit diagram'], ['letter', 'Letter'], ['a4', 'A4']], EXPORT_SCOPES = [['all', 'Whole diagram'], ['selection', 'Selection']];
+const EXPORT_ANNOTS = [['yes', 'Include'], ['no', 'Leave out']];
 function exportDialogHtml() {
   const o = exportOpts, hasSel = selectedIds().length > 0, pdf = o.format === 'pdf';
   const exSeg = (key, opts, cur, disabled = []) => `<div class="seg" role="group">${opts.map(([v, l]) =>
@@ -2942,13 +3167,13 @@ function exportDialogHtml() {
     <div class="export-grid">
       <div class="export-preview"><img id="exPreview" alt="Preview of the export"></div>
       <div class="export-opts">
-        <div class="field"><span>Format</span>${exSeg('format', [['svg', 'SVG'], ['png', 'PNG'], ['pdf', 'PDF']], o.format)}</div>
-        <div class="field"><span>Theme</span>${exSeg('theme', [['light', 'Light'], ['dark', 'Dark']], o.theme)}</div>
-        <div class="field"><span>Background</span>${exSeg('background', [['white', 'White'], ['canvas', 'Canvas'], ['none', 'None']], pdf && o.background === 'none' ? 'white' : o.background, pdf ? ['none'] : [])}</div>
-        ${o.format === 'png' ? `<div class="field"><span>Size</span>${exSeg('scale', [[1, '1×'], [2, '2×'], [3, '3×']], o.scale)}</div>` : ''}
-        ${pdf ? `<div class="field"><span>Page</span>${exSeg('page', [['fit', 'Fit diagram'], ['letter', 'Letter'], ['a4', 'A4']], o.page)}</div>` : ''}
-        <div class="field"><span>Include</span>${exSeg('scope', [['all', 'Whole diagram'], ['selection', 'Selection']], hasSel ? o.scope : 'all', hasSel ? [] : ['selection'])}</div>
-        ${(S.title.show || S.legend.show) && !(hasSel && o.scope === 'selection') ? `<div class="field"><span>Title block &amp; legend</span>${exSeg('annots', [['yes', 'Include'], ['no', 'Leave out']], o.annots)}</div>` : ''}
+        <div class="field"><span>Format</span>${exSeg('format', EXPORT_FORMATS, o.format)}</div>
+        <div class="field"><span>Theme</span>${exSeg('theme', EXPORT_THEMES, o.theme)}</div>
+        <div class="field"><span>Background</span>${exSeg('background', EXPORT_BACKGROUNDS, pdf && o.background === 'none' ? 'white' : o.background, pdf ? ['none'] : [])}</div>
+        ${o.format === 'png' ? `<div class="field"><span>Size</span>${exSeg('scale', EXPORT_SCALES, o.scale)}</div>` : ''}
+        ${pdf ? `<div class="field"><span>Page</span>${exSeg('page', EXPORT_PAGES, o.page)}</div>` : ''}
+        <div class="field"><span>Include</span>${exSeg('scope', EXPORT_SCOPES, hasSel ? o.scope : 'all', hasSel ? [] : ['selection'])}</div>
+        ${(S.title.show || S.legend.show) && !(hasSel && o.scope === 'selection') ? `<div class="field"><span>Title block &amp; legend</span>${exSeg('annots', EXPORT_ANNOTS, o.annots)}</div>` : ''}
         <p class="meta" id="exInfo"></p>
         ${pdf ? '<p class="desc">PDFs keep lines and text sharp at any zoom. Text uses Helvetica, a font every PDF reader has.</p>' : ''}
         ${framed ? '<div class="note">Downloads are blocked inside this preview. Copy to clipboard may still work, or use the app at mmunchinski.github.io/snapblade.</div>' : ''}
@@ -3030,6 +3255,7 @@ function init() {
     if (ev.target === modal) return closeModal('cancel');
     const ex = ev.target.closest('[data-ex]'); if (ex) return exportOption(ex);
     const hb = ev.target.closest('[data-help]'); if (hb) return helpTabSwitch(hb);
+    if (ev.target.closest('[data-copy-spec]')) return copySpec();
     const b = ev.target.closest('[data-choice]'); if (b) closeModal(b.dataset.choice);
   });
   // Drop a .snapblade file anywhere on the canvas to open it.

@@ -9,7 +9,8 @@
   "scripts": {
     "test": "npm run test:layout && npm run test:browser",
     "test:layout": "node --test tests/layout.test.mjs",
-    "test:browser": "node --test --test-concurrency=1 tests/browser.test.mjs"
+    "test:browser": "node --test --test-concurrency=1 tests/browser.test.mjs",
+    "docs": "node tests/lib/write-llms.mjs"
   },
   "devDependencies": {
     "playwright": "^1.48.0"

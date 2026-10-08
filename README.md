@@ -23,6 +23,7 @@ Manual tools (Visio, draw.io, Lucidchart) give you full control, and then you sp
 - **Styling.** Line and fill colors from presets, a picker, hex or RGB, with fills that pair automatically as a tint of the line color. Solid, dashed and dotted lines. Light and dark themes.
 - **Fast editing.** Multi-select, make same size, match colors, copy and paste style, copy, paste, duplicate, undo and redo.
 - **Title block and legend.** Turn on a drawing-style title block (title, version, date, author) and a legend that builds itself from the colors and line styles in use. You just say what each one means. Both sit just outside the diagram in the corner you pick, and stay put as the diagram changes.
+- **Diagrams from an AI assistant.** Snapblade files are plain JSON. Give an AI assistant the instructions at [llms.txt](https://mmunchinski.github.io/snapblade/llms.txt) (also in Help, under For AI agents, with a Copy button), describe the diagram, and open the file it writes. The instructions are generated from the app's own rules, so they match the current version.
 - **Files.** Save and open `.snapblade` files (plain JSON). In Chrome and Edge, Save writes straight back to the same file; other browsers download it. You can also drop a file onto the canvas to open it.
 - **Export.** SVG, PNG (1×, 2× or 3×) and vector PDF (fit to the diagram, Letter or A4), in light or dark, on white, the canvas color or a transparent background, for the whole diagram or just the selection. PNG and SVG can go straight to the clipboard for pasting into slides, chat or wikis.
 

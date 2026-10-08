@@ -50,6 +50,20 @@ async function open(opts = {}) {
   };
   return h;
 }
+// Every kind of panel: what each setup selects. A new panel context (a new kind of selection) needs a line here.
+const CONTEXTS = [
+  ['diagram', 'sel = null; multi = []'],
+  ['title block', "S.title.show = true; sel = { type: 'annot', id: 'title' }; multi = []"],
+  ['legend', "S.legend.show = true; sel = { type: 'annot', id: 'legend' }; multi = []"],
+  ['box', "sel = { type: 'node', id: 'users' }; multi = []"],
+  ['box in a column', "sel = { type: 'node', id: 'lb' }; multi = []"],
+  ['container', "sel = { type: 'node', id: 'app' }; multi = []"],
+  ['connector', "sel = { type: 'edge', id: 'e3' }; multi = []"],
+  ['connector, Visio-style', "setMode('fixed'); sel = { type: 'edge', id: 'e4' }; multi = []"],
+  // Walking the container controls may leave Application tier in a row or column layout, which would disable Arrange.
+  ['several shapes', "freeApp(); multi = ['orders', 'inv', 'pay']; sel = { type: 'node', id: 'orders' }"],
+  ['container, then boxes inside it', "freeApp(); multi = ['app', 'orders', 'inv']; sel = { type: 'node', id: 'app' }"],
+];
 const rgb = hex => `rgb(${[1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
 
 test('double-click renames boxes and connectors; typing and F2 also edit', async () => {
@@ -239,19 +253,6 @@ test('the diagram panel holds settings only; Help opens from the bar, F1 and ?',
 test('every control in every panel survives a reload and a file round trip', { timeout: 180000 }, async () => {
   const h = await open();
   const SKIP = new Set(['delete', 'duplicate', 'help', 'annHide']);   // remove or add shapes, or open a dialog
-  const contexts = [
-    ['diagram', 'sel = null; multi = []'],
-    ['title block', "S.title.show = true; sel = { type: 'annot', id: 'title' }; multi = []"],
-    ['legend', "S.legend.show = true; sel = { type: 'annot', id: 'legend' }; multi = []"],
-    ['box', "sel = { type: 'node', id: 'users' }; multi = []"],
-    ['box in a column', "sel = { type: 'node', id: 'lb' }; multi = []"],
-    ['container', "sel = { type: 'node', id: 'app' }; multi = []"],
-    ['connector', "sel = { type: 'edge', id: 'e3' }; multi = []"],
-    ['connector, Visio-style', "setMode('fixed'); sel = { type: 'edge', id: 'e4' }; multi = []"],
-    // The container walk above may leave Application tier in a row or column layout, which would disable Arrange.
-    ['several shapes', "freeApp(); multi = ['orders', 'inv', 'pay']; sel = { type: 'node', id: 'orders' }"],
-    ['container, then boxes inside it', "freeApp(); multi = ['app', 'orders', 'inv']; sel = { type: 'node', id: 'app' }"],
-  ];
   await h.ev(() => { window.freeApp = () => { if (byId('app').layout !== 'free') { byId('app').layout = 'free'; layoutAll(); save(); } }; });
   const controls = () => h.ev(() => [...document.querySelectorAll('#panel [data-act], #panel [data-field], #modeSeg [data-mode]')]
     .filter(el => !el.disabled && el.offsetParent !== null)
@@ -282,7 +283,7 @@ test('every control in every panel survives a reload and a file round trip', { t
   };
 
   const visited = new Set();
-  for (const [name, setup] of contexts) {
+  for (const [name, setup] of CONTEXTS) {
     const reselect = () => h.ev(`(() => { ${setup}; renderPanel(); render(); })()`);
     await reselect();
     let queue = [];
@@ -763,5 +764,54 @@ test('connecting: an edge band pins that side and lights it up; the middle is au
   assert.deepEqual(await h.ev(id => S.edges.find(e => e.id === id).to, id), { node: 'inv', side: 'auto' }, 'dropped in the middle: back to auto');
   await page.keyboard.press('Control+z');
   assert.deepEqual(await h.ev(id => S.edges.find(e => e.id === id).to, id), { node: 'inv', side: 'top' });
+  assert.deepEqual(h.errors, []);
+});
+
+test('the Help guide mentions every control, panel heading, top-bar button and export option', { timeout: 120000 }, async () => {
+  const h = await open(), { page } = h;
+  await h.ev(() => { window.freeApp = () => { if (byId('app').layout !== 'free') { byId('app').layout = 'free'; layoutAll(); } }; });
+  // What each control is called on screen: its text, its field's label, or its aria-label. Counts and values
+  // after a "·" change with the diagram, so they're left off.
+  const names = sel => h.ev(sel => [...document.querySelectorAll(sel)].filter(el => el.offsetParent !== null).map(el => {
+    const own = [...el.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('').trim();
+    const lab = el.closest('label'), span = lab?.querySelector('span');
+    const t = el.classList.contains('eyebrow') ? el.textContent : el.tagName === 'BUTTON' ? own || el.getAttribute('aria-label') || el.title
+      : span?.textContent || lab?.textContent || el.getAttribute('aria-label') || el.title;
+    return t.replace(/\s·\s.*$/s, '').replace(/[▾…]/g, '').replace(/\b\d+\b/g, '').replace(/\s+/g, ' ').trim();
+  }), sel);
+  const all = new Set();
+  for (const [, setup] of CONTEXTS) {
+    await h.ev(`(() => { ${setup}; renderPanel(); render(); })()`);
+    for (const n of await names('#panel [data-act], #panel [data-field], #panel .eyebrow')) all.add(n);
+  }
+  for (const n of await names('.bar button, #fileMenu button')) all.add(n);
+  await h.ev(() => { sel = null; multi = []; renderPanel(); });
+  await page.click('#exportBtn');
+  for (const fmt of ['PNG', 'PDF']) {
+    await page.click(`[data-ex="format"]:text-is("${fmt}")`);
+    for (const n of await names('#modal [data-ex], #modal .field > span, #modal .actions button')) all.add(n);
+  }
+  await page.keyboard.press('Escape');
+  await page.click('#helpBtn'); await page.click('[data-help="guide"]');
+  const guide = (await page.textContent('.help-body')).replace(/\s+/g, ' ').toLowerCase();
+  const skip = n => !n || /^meaning of /i.test(n) || n === 'Close';   // legend rows are named after their style; Close is obvious
+  const missing = [...all].filter(n => !skip(n) && !guide.includes(n.toLowerCase()));
+  assert.ok(all.size > 100, `checked ${all.size} names`);
+  assert.deepEqual(missing, [], 'not mentioned in the Help guide');
+  assert.deepEqual(h.errors, []);
+});
+
+test('Help: the guide links to its sections; the AI tab shows the agent instructions and copies them', async () => {
+  const h = await open({ permissions: ['clipboard-read', 'clipboard-write'] }), { page } = h;
+  await page.click('#helpBtn'); await page.click('[data-help="guide"]');
+  assert.ok(await page.locator('.toc a').count() >= 10);
+  await page.click('.toc a[href="#g-export"]');
+  assert.ok(await page.locator('#g-export').isVisible());
+  await page.click('[data-help="agents"]');
+  const spec = await h.ev(() => agentSpec());
+  assert.equal(await page.textContent('pre.spec'), spec);
+  await page.click('[data-copy-spec]');
+  assert.equal(await h.ev(() => navigator.clipboard.readText()), spec);
+  assert.match(await page.textContent('#toast'), /Instructions copied/);
   assert.deepEqual(h.errors, []);
 });

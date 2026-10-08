@@ -1,6 +1,7 @@
 // Layout engine tests: anchors, routing, bundling and label placement. Run: npm run test:layout
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { loadCore } from './lib/core.mjs';
 
 const run = loadCore();
@@ -401,4 +402,35 @@ test('attaching an end pins the dropped side or sets auto, and glues a Visio-sty
   run(`attachEnd(S.edges[0], 'to', byId('b'), { x: 370, y: 30 })`);
   assert.deepEqual(json('[S.edges[0].to, S.edges[0].fixed.to]'), [{ node: 'b', side: 'auto' }, { side: 'left', frac: 0.5 }],
     'auto in Visio-style mode glues to the middle of the side auto picks');
+});
+
+// ---------- instructions for AI agents (llms.txt) ----------
+test('llms.txt is the current agent instructions (run npm run docs after changing them)', () => {
+  const file = readFileSync(new URL('../llms.txt', import.meta.url), 'utf8');
+  assert.ok(file === json('agentSpec()'), 'llms.txt is out of date: run npm run docs');
+});
+
+test('the agent instructions\' example opens unchanged', () => {
+  const spec = json('agentSpec()'), example = spec.match(/```json\n([\s\S]*?)```/)[1];
+  const file = JSON.parse(example);
+  assert.deepStrictEqual(json(`parseDiagram(${JSON.stringify(example)})`), file.diagram);
+});
+
+test('the agent instructions name every field a diagram can keep', () => {
+  const spec = json('agentSpec()').split('## Example')[0];   // the example would mention them all anyway
+  // Everything normalize() keeps, from a diagram that uses every kind of field.
+  const keys = json(`(() => {
+    const d = normalize({ nodes: [
+        { id: 'g', kind: 'group', label: 'g', x: 0, y: 0, w: 200, h: 100, parent: null, layout: 'row', align: 'start', pad: 5, gap: 5, style: { line: 'blue', fill: 'pair', tint: 30, dash: 'dashed' } },
+        { id: 'b', kind: 'box', label: 'b', x: 0, y: 0, w: 120, h: 60, parent: 'g', style: { line: '#123456', fill: 'none', dash: 'dotted' } }],
+      edges: [{ id: 'e', from: { node: 'g', side: 'auto' }, to: { node: 'b', side: 'left' }, arrow: 'both', label: 'x', labelPos: 'end', style: { line: 'red', dash: 'dashed' },
+        fixed: { from: { side: 'top', frac: 0.5 }, to: { side: 'left', frac: 0.2 } } }],
+      settings: sample().settings, title: sample().title, legend: { ...sample().legend, hidden: ['box:blue||pair'] } });
+    const keys = new Set(), walk = (o, skip) => { if (Array.isArray(o)) o.forEach(v => walk(v)); else if (o && typeof o === 'object') for (const k in o) { if (!skip) keys.add(k); walk(o[k], k === 'labels'); } };
+    walk({ format: 1, version: 1, diagram: d });
+    return [...keys];
+  })()`);
+  assert.ok(keys.length > 35, `found ${keys.length} fields`);
+  const missing = keys.filter(k => !spec.includes('`' + k + '`') && !spec.includes('"' + k + '"'));
+  assert.deepEqual(missing, [], 'fields the instructions never mention');
 });
