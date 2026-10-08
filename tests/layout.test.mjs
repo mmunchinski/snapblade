@@ -66,6 +66,26 @@ test('the busiest side keeps even spacing wherever its partners move', () => {
   assert.deepEqual([...seen], ['[223,277,330,383,437]']);
 });
 
+// Reported 2026-10-07: a firewall and load balancer each with several connectors into one side of an API box.
+// Ends were ordered by the other box's center, so a line from a box's top or bottom sorted as if it left
+// from the middle, and two L-shaped lines from one bottom into one side were stacked the wrong way round.
+for (const mode of ['straighten', 'even']) {
+  test(`connectors sharing a side are ordered so they don't cross (${mode})`, () => {
+    run(`{ S = sample(); const lb = byId('lb'); lb.parent = null; Object.assign(lb, { x: 240, y: 290 });
+      Object.assign(byId('orders'), { x: 525, y: 145 }); Object.assign(byId('inv'), { x: 505, y: 305 });
+      Object.assign(byId('pay'), { x: 530, y: 530 }); Object.assign(byId('gw'), { y: 530 });
+      const E = (id, a, b, sa = 'auto', sb = 'auto') => ({ id, from: { node: a, side: sa }, to: { node: b, side: sb }, arrow: 'end' });
+      S.edges.push(E('wr', 'waf', 'orders'), E('wt', 'waf', 'orders', 'top'), E('wb', 'waf', 'orders', 'bottom', 'bottom'),
+        E('b1', 'lb', 'pay', 'bottom'), E('b2', 'lb', 'pay', 'bottom'));
+      S.settings.mode = '${mode}'; }`);
+    const pairs = json(`(() => { const { R } = routesNow(), ids = Object.keys(R), out = [];
+      for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) if (crossCount([R[ids[i]], R[ids[j]]])) out.push(ids[i] + ' x ' + ids[j]);
+      return out; })()`);
+    // /orders and the firewall-bottom-to-Orders-bottom line have to cross: that end was pinned to Orders' bottom.
+    assert.deepEqual(pairs, ['e3 x wb']);
+  });
+}
+
 for (const mode of ['start', 'center', 'end']) {
   test(`labels (${mode}): on their own line, clear of boxes, other labels and other lines`, () => {
     for (const setup of ['S = sample()', `twoColumns(190); S.edges.forEach((e, i) => e.label = ['req', 'resp', 'sync', 'ack', 'push'][i] || '')`]) {

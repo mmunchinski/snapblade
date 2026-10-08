@@ -301,7 +301,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 23</span>
+      Snapblade <span class="tag">playground &middot; build 24</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -687,36 +687,35 @@ function computePorts() {
       groups.get(k).ends.push(en);
     }
     const list = [...groups.values()];
-    const along = en => center(en.partner.node)[axisOf(en.side)];
     const tie = (u, v) => u.idx - v.idx || (u.which < v.which ? -1 : 1);
-    if (mode === 'even') {
-      for (const g of list) {
-        g.ends.sort((u, v) => along(u) - along(v) || tie(u, v));
-        const [s0, s1] = sideSpan(g.node, g.side), n = g.ends.length;
-        g.ends.forEach((en, i) => { en.pos = Math.round(s0 + (i + 1) * (s1 - s0) / (n + 1)); });
+    // Where the other end is: its anchor once placed, else the middle of its side (so an end on
+    // a box's bottom counts as being at that bottom, not at the box's center).
+    const partnerAt = p => { const [a, b] = sideSpan(p.node, p.side); return pointOn(p.node, p.side, p.pos ?? (a + b) / 2); };
+    // Busiest sides are placed first. Each later (lighter) side orders its anchors by where the other
+    // ends actually are, so a connector heading up leaves above one running straight across.
+    // In "Even + straight" mode the busiest sides keep even spacing and never give it up; each lighter
+    // side lines its anchors up with sides already placed, but only where a straight line is reachable
+    // and only if that keeps its own anchors reasonably evenly spaced.
+    const spanLen = g => { const [a, b] = sideSpan(g.node, g.side); return b - a; };
+    list.sort((p, q) => q.ends.length - p.ends.length || spanLen(q) - spanLen(p));
+    for (const g of list) {
+      const [s0, s1] = sideSpan(g.node, g.side), m = Math.min(10, (s1 - s0) * 0.15), n = g.ends.length;
+      const ax = axisOf(g.side), cross = ax === 'x' ? 'y' : 'x', mid = (s0 + s1) / 2;
+      const base = pointOn(g.node, g.side, mid)[cross], out = NORMAL[g.side][cross];
+      for (const en of g.ends) {
+        const p = en.partner, parallel = axisOf(p.side) === ax, q = partnerAt(p);
+        en.desired = mode === 'straighten' && parallel && p.pos != null && p.pos >= s0 + m && p.pos <= s1 - m ? p.pos : null;
+        en.key = q[ax];
+        // Several ends heading to the same spot (one side of one box) bend toward it as nested L's:
+        // the one that turns off soonest sits nearest to where they're all heading.
+        const reach = (q[cross] - base) * out;
+        en.key2 = en.key > mid ? -reach : reach;
       }
-    } else {
-      // Busiest sides claim even spacing first and never give it up. Each later (lighter) side
-      // lines its anchors up with sides already placed, but only where a straight line is reachable
-      // and only if that keeps its own anchors reasonably evenly spaced.
-      const spanLen = g => { const [a, b] = sideSpan(g.node, g.side); return b - a; };
-      list.sort((p, q) => q.ends.length - p.ends.length || spanLen(q) - spanLen(p));
-      for (const g of list) {
-        const [s0, s1] = sideSpan(g.node, g.side), m = Math.min(10, (s1 - s0) * 0.15), n = g.ends.length;
-        const ax = axisOf(g.side);
-        for (const en of g.ends) {
-          const p = en.partner, parallel = axisOf(p.side) === ax;
-          en.desired = parallel && p.pos != null && p.pos >= s0 + m && p.pos <= s1 - m ? p.pos : null;
-          // Order by where the other end actually is once it's placed, not by its box center,
-          // so a connector heading up leaves above one running straight across.
-          en.key = p.pos != null ? pointOn(p.node, p.side, p.pos)[ax] : along(en);
-        }
-        g.ends.sort((u, v) => u.key - v.key || tie(u, v));
-        let pos = place(g.ends.map(en => en.desired), s0, s1);
-        const evenGap = (s1 - s0) / (n + 1);
-        if (pos.some((v, i) => i > 0 && v - pos[i - 1] < 0.6 * evenGap)) pos = place(g.ends.map(() => null), s0, s1);
-        g.ends.forEach((en, i) => { en.pos = pos[i]; });
-      }
+      g.ends.sort((u, v) => u.key - v.key || u.key2 - v.key2 || tie(u, v));
+      let pos = place(g.ends.map(en => en.desired), s0, s1);
+      const evenGap = (s1 - s0) / (n + 1);
+      if (pos.some((v, i) => i > 0 && v - pos[i - 1] < 0.6 * evenGap)) pos = place(g.ends.map(() => null), s0, s1);
+      g.ends.forEach((en, i) => { en.pos = pos[i]; });
     }
   }
   for (const en of ends) {
