@@ -145,7 +145,9 @@ test('copy, paste, duplicate, cut, group move and delete', async () => {
   await h.click('orders');
   const o = await h.ev(() => [byId('orders').x, byId('orders').y]);
   await h.page.keyboard.press('Control+c'); await h.page.keyboard.press('Control+v'); await h.page.keyboard.press('Control+v');
-  assert.deepEqual(await h.ev(() => S.nodes.slice(-2).map(n => [n.x, n.y, n.parent])), [[o[0] + 20, o[1] + 20, 'app'], [o[0] + 40, o[1] + 40, 'app']]);
+  // Copies drop to the first free spot below the original: under Orders API, then between Inventory and Payments.
+  assert.deepEqual(o, [520, 140]);
+  assert.deepEqual(await h.ev(() => S.nodes.slice(-2).map(n => [n.x, n.y, n.parent])), [[520, 220, 'app'], [520, 390, 'app']]);
   const n1 = await h.ev(() => S.nodes.length);
   await h.page.keyboard.press('Control+d');
   assert.equal(await h.ev(() => S.nodes.length), n1 + 1);
@@ -164,9 +166,9 @@ test('copy, paste, duplicate, cut, group move and delete', async () => {
 
   await h.page.keyboard.press('Escape'); await h.selectApis();
   const ids = await h.ev(() => multi.slice()), y0 = await h.ev(ids => ids.map(id => byId(id).y), ids);
-  const p = await h.at(ids[0]); await h.drag(p, { x: p.x, y: p.y + 40 });
+  const p = await h.at(ids[0]); await h.drag(p, { x: p.x, y: p.y - 40 });
   const y1 = await h.ev(ids => ids.map(id => byId(id).y), ids);
-  assert.ok(y1.every((y, i) => y > y0[i]), 'every selected shape moved down');
+  assert.ok(y1.every((y, i) => y < y0[i]), 'every selected shape moved up');
   const n3 = await h.ev(() => S.nodes.length);
   await h.page.keyboard.press('Delete');
   assert.equal(await h.ev(() => S.nodes.length), n3 - ids.length);
@@ -464,7 +466,7 @@ test('a hostile file cannot run script: unexpected values are dropped or reset',
     assert.deepEqual(await h.ev(() => [byId('g').layout, byId('g').pad, byId('g').align, byId('g').parent === null || byId('g2').parent === null]), ['free', 20, 'center', true]);
     assert.deepEqual(await h.ev(() => S.edges[0]), { id: 'e1', from: { node: 'a', side: 'auto' }, to: { node: 'b', side: 'left' }, arrow: 'end', label: 'ok', style: {} });
     assert.deepEqual(await h.ev(() => [S.settings, S.title.pos, S.legend.pos, S.legend.labels, S.legend.hidden]),
-      [{ mode: 'straighten', grid: 10, showSlots: true, routing: 'ortho', radius: 6, labelPos: 'start' }, 'bottom-right', 'bottom-left', {}, []]);
+      [{ mode: 'straighten', grid: 10, showSlots: true, routing: 'ortho', radius: 6, labelPos: 'start', walls: true }, 'bottom-right', 'bottom-left', {}, []]);
     const svg = await h.ev(() => buildExportSvg({ theme: 'light', background: 'white', scope: 'all' }).svg);
     assert.doesNotMatch(svg, /onerror|<img/);
   };
@@ -675,4 +677,51 @@ test('exports include the title block and legend unless left out', async () => {
   assert.ok(withBlocks.includes('>Order platform<') && withBlocks.includes('>Database<') && withBlocks.includes('>LEGEND<'));
   const without = (await exportAs(h, { format: 'svg', annots: 'no' })).data.toString();
   assert.ok(!without.includes('>Order platform<') && !without.includes('>LEGEND<'));
+});
+
+test('hard walls: shapes stop 20 px apart, Alt overrides, containers push, and the setting turns it off', async () => {
+  const h = await open(), { page } = h;
+  const xy = id => h.ev(id => [byId(id).x, byId(id).y], id), box = id => h.ev(id => { const n = byId(id); return [n.x, n.y, n.w, n.h]; }, id);
+  // Undo, then wait out the double-click window: the next drag starts where the last one did.
+  const undo = async () => { await page.keyboard.press('Control+z'); await page.waitForTimeout(500); };
+  // Payment gateway dragged left toward the Application tier stops 20 px short of it (700 + 20).
+  let p = await h.at('gw'); await h.drag(p, await h.toScreen(750, 510));
+  assert.deepEqual(await xy('gw'), [720, 480]);
+  await undo();
+  // Alt lets it overlap.
+  p = await h.at('gw'); await page.keyboard.down('Alt'); await h.drag(p, await h.toScreen(750, 510)); await page.keyboard.up('Alt');
+  assert.deepEqual(await xy('gw'), [670, 480]);
+  await undo();
+  // Dropped inside the container, it keeps clear of the boxes there.
+  p = await h.at('gw'); await h.drag(p, await h.toScreen(600, 255));
+  const [gx, gy] = await xy('gw');
+  assert.equal(await h.ev(() => byId('gw').parent), 'app');
+  assert.ok(gx === 520 && gy >= 200 + 20 && gy + 60 <= 310 - 20, `between Orders and Inventory, 20 px clear of both (y ${gy})`);
+  await undo();
+
+  // A resized edge stops 20 px from the next box: Inventory API's bottom stops above Payments API (480 - 20).
+  await h.click('inv'); p = await h.toScreen(600, 370); await h.drag(p, await h.toScreen(600, 570));
+  assert.deepEqual(await box('inv'), [520, 310, 160, 150]);
+  await undo();
+  // Nudging into a wall stops at it; so does typing a position.
+  await h.click('pay'); for (let i = 0; i < 12; i++) await page.keyboard.press('ArrowUp');
+  assert.deepEqual(await xy('pay'), [520, 390]);
+  await undo(); await h.click('pay'); await page.fill('#f-y', '300');
+  assert.deepEqual(await xy('pay'), [520, 390]);
+  await page.keyboard.press('Escape'); await undo();
+
+  // A box added to the Data tier column makes it taller, and it pushes Payment gateway down to stay 20 px clear.
+  const hdr = await h.toScreen(900, 105); await page.mouse.click(hdr.x, hdr.y);
+  await page.click('#addBox'); await page.keyboard.press('Escape');
+  const data = await box('data');
+  assert.equal(data[1] + data[3], 470);
+  assert.deepEqual(await xy('gw'), [820, 490]);
+  await undo();
+
+  // Turned off: the gateway goes where it's dragged.
+  await h.clear(); await page.click('#f-walls');
+  assert.equal(await h.ev(() => S.settings.walls), false);
+  p = await h.at('gw'); await h.drag(p, await h.toScreen(750, 510));
+  assert.deepEqual(await xy('gw'), [670, 480]);
+  assert.deepEqual(h.errors, []);
 });

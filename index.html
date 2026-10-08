@@ -301,7 +301,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 24</span>
+      Snapblade <span class="tag">playground &middot; build 25</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -428,7 +428,7 @@ function sample() {
       E('e8', 'inv', 'cache'), { ...E('e9', 'inv', 'idb'), label: 'SQL' },
       { ...E('e10', 'pay', 'gw'), label: 'REST\nmTLS', style: { dash: 'dashed' } },
     ],
-    settings: { mode: 'straighten', grid: 10, showSlots: true, routing: 'ortho', radius: 6, labelPos: 'start' },
+    settings: { mode: 'straighten', grid: 10, showSlots: true, routing: 'ortho', radius: 6, labelPos: 'start', walls: true },
     title: { ...titleDefaults(), show: true, title: 'Order platform', version: '0.3', date: todayIso() },
     legend: { ...legendDefaults(), show: true, labels: {
       'box:blue||pair': 'People and client apps', 'box:green||pair': 'Database', 'box:amber||pair': 'Cache',
@@ -586,9 +586,9 @@ const canvasSwatch = (o, x, y, w, h) => swatchShape(o, x, y, w, h, {
   group: `style="${styleVars(o)}"`, line: 'class="sw-line"', head: 'class="sw-head"' });
 
 /* ---------- containers ---------- */
-function layoutGroup(g) {
+function layoutGroup(g, push) {
   const ch = kidsOf(g.id);
-  for (const c of ch) if (c.kind === 'group') layoutGroup(c);
+  for (const c of ch) if (c.kind === 'group') { const was = boxOf(c); layoutGroup(c, push); if (push) pushFrom(c, was); }
   const pad = g.pad;
   if (g.layout === 'row' || g.layout === 'column') {
     if (!ch.length) { g.w = Math.max(g.w, 160); g.h = Math.max(g.h, 100); return; }
@@ -614,11 +614,123 @@ function layoutGroup(g) {
     g.x = nx; g.y = ny; g.w = nx2 - nx; g.h = ny2 - ny;
   }
 }
-function layoutAll() {
+// push: a container that grows pushes the shapes it would crowd (hard walls). Off when a diagram is loaded,
+// so opening one never rearranges it.
+function layoutAll(push = true) {
   for (let pass = 0; pass < 2; pass++) {
-    for (const n of S.nodes) if (n.kind === 'group' && !n.parent) layoutGroup(n);
+    for (const n of S.nodes) if (n.kind === 'group' && !n.parent && n.id !== lifted) { const was = boxOf(n); layoutGroup(n, push); if (push) pushFrom(n, was); }
     const L = lifted && byId(lifted);
-    if (L && L.kind === 'group') layoutGroup(L);
+    if (L && L.kind === 'group') layoutGroup(L, push);
+  }
+}
+
+/* ---------- hard walls ----------
+   With settings.walls on, shapes side by side (in the same container, or on the canvas) keep at least WALL apart,
+   so a connector always has room to pass between them. A moved shape follows the cursor wherever it fits and
+   otherwise slides along the wall; a resized edge stops at the wall; a container that grows pushes the shapes it
+   would crowd. A container's own edge is not a wall to what it holds: moving a shape out takes it out.
+   Overlaps a diagram already has are left alone until one of those shapes is moved. */
+const WALL = 20;
+const wallsOn = () => S.settings.walls === true;
+const boxOf = n => ({ x: n.x, y: n.y, w: n.w, h: n.h });
+const crowded = (a, b) => a.x < b.x + b.w + WALL - 0.01 && b.x < a.x + a.w + WALL - 0.01 && a.y < b.y + b.h + WALL - 0.01 && b.y < a.y + a.h + WALL - 0.01;
+// The shapes something placed in `parent` (null: the canvas) has to keep clear of. A row or column container
+// places its own shapes, so it has none.
+function wallsIn(parent, skip) {
+  const g = parent && byId(parent);
+  if (g && g.layout !== 'free') return [];
+  return S.nodes.filter(m => (m.parent || null) === (parent || null) && !skip.has(m.id));
+}
+const movingSet = ms => new Set([...ms.flatMap(m => subtree(m.id)), ...(lifted ? subtree(lifted) : [])]);
+// Offsets at which mover m would crowd obstacle o, as an open rectangle in offset space.
+function forbidden(ms, parentOf) {
+  const skip = movingSet(ms);
+  return ms.flatMap(m => wallsIn(parentOf(m), skip).map(o =>
+    ({ x1: o.x - WALL - m.x - m.w, x2: o.x + o.w + WALL - m.x, y1: o.y - WALL - m.y - m.h, y2: o.y + o.h + WALL - m.y })));
+}
+const freeAt = (F, x, y) => F.every(f => x <= f.x1 + 0.01 || x >= f.x2 - 0.01 || y <= f.y1 + 0.01 || y >= f.y2 - 0.01);
+// The free offset nearest (dx, dy). There always is one: past the farthest wall.
+function nearestFree(F, dx, dy) {
+  if (freeAt(F, dx, dy)) return { x: dx, y: dy };
+  const xs = [...new Set(F.flatMap(f => [f.x1, f.x2]))], ys = [...new Set(F.flatMap(f => [f.y1, f.y2]))];
+  let best = null, bd = Infinity;
+  const tryAt = (x, y) => { const d = Math.hypot(x - dx, y - dy); if (d < bd && freeAt(F, x, y)) { bd = d; best = { x, y }; } };
+  for (const x of xs) tryAt(x, dy);
+  for (const y of ys) tryAt(dx, y);
+  for (const x of xs) if (Math.abs(x - dx) < bd) for (const y of ys) if (Math.abs(y - dy) < bd) tryAt(x, y);
+  return best;
+}
+// Move from offset p along one axis toward `to`, stopping at the first wall.
+function slide(F, p, axis, to) {
+  const o = axis === 'x' ? 'y' : 'x', at = p[axis], q = { ...p };
+  let stop = to;
+  for (const f of F) {
+    if (!(p[o] > f[o + '1'] + 0.01 && p[o] < f[o + '2'] - 0.01)) continue;   // not in this wall's way
+    if (to > at && f[axis + '1'] >= at - 0.01) stop = Math.min(stop, f[axis + '1']);
+    if (to < at && f[axis + '2'] <= at + 0.01) stop = Math.max(stop, f[axis + '2']);
+  }
+  q[axis] = stop;
+  return q;
+}
+// Where shapes asked to move by (dx, dy) may go. parentOf(m): the container each one lands in.
+// The spot asked for if it's free; otherwise as far toward it as the walls allow, sliding along them.
+function wallOffset(ms, dx, dy, parentOf = m => m.parent) {
+  if (!wallsOn()) return { x: dx, y: dy };
+  const F = forbidden(ms, parentOf);
+  if (freeAt(F, dx, dy)) return { x: dx, y: dy };
+  if (!freeAt(F, 0, 0)) return nearestFree(F, dx, dy);   // starting out crowded (an older diagram): nearest free spot
+  const a = slide(F, slide(F, { x: 0, y: 0 }, 'x', dx), 'y', dy), b = slide(F, slide(F, { x: 0, y: 0 }, 'y', dy), 'x', dx);
+  return Math.hypot(a.x - dx, a.y - dy) <= Math.hypot(b.x - dx, b.y - dy) ? a : b;
+}
+// For new shapes (pasted, duplicated): the first free spot straight below where they are.
+function belowFree(ms) {
+  if (!wallsOn()) return { x: 0, y: 0 };
+  const F = forbidden(ms, m => m.parent);
+  const y = [0, ...F.map(f => f.y2)].sort((p, q) => p - q).find(y => y >= 0 && freeAt(F, 0, y));
+  return { x: 0, y };
+}
+// For a new shape placed by the app (added, typed coordinates): the nearest free spot.
+const nearestSpot = ms => wallsOn() ? nearestFree(forbidden(ms, m => m.parent), 0, 0) : { x: 0, y: 0 };
+// Resize n to r ({x, y, w, h}), pulling the edges being dragged (dir: some of n, e, s, w) back until it keeps
+// WALL from its neighbors. A neighbor it already crowded before the resize is ignored.
+function wallResize(n, r, dir, before = boxOf(n)) {
+  if (!wallsOn()) return r;
+  const obs = wallsIn(n.parent, new Set(subtree(n.id))).filter(o => !crowded(before, o));
+  let x1 = r.x, y1 = r.y, x2 = r.x + r.w, y2 = r.y + r.h;
+  for (let guard = 0; guard <= obs.length; guard++) {
+    const o = obs.find(o => crowded({ x: x1, y: y1, w: x2 - x1, h: y2 - y1 }, o));
+    if (!o) break;
+    const opts = [];
+    if (dir.includes('e') && o.x - WALL >= x1 + MIN_W) opts.push(['x2', o.x - WALL, x2 - (o.x - WALL)]);
+    if (dir.includes('w') && o.x + o.w + WALL <= x2 - MIN_W) opts.push(['x1', o.x + o.w + WALL, o.x + o.w + WALL - x1]);
+    if (dir.includes('s') && o.y - WALL >= y1 + MIN_H) opts.push(['y2', o.y - WALL, y2 - (o.y - WALL)]);
+    if (dir.includes('n') && o.y + o.h + WALL <= y2 - MIN_H) opts.push(['y1', o.y + o.h + WALL, o.y + o.h + WALL - y1]);
+    const ok = opts.filter(q => q[2] > 0);
+    if (!ok.length) return before;
+    const [k, v] = ok.reduce((p, q) => q[2] < p[2] ? q : p);
+    if (k === 'x1') x1 = v; else if (k === 'x2') x2 = v; else if (k === 'y1') y1 = v; else y2 = v;
+  }
+  return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+}
+// Shape a grew (or moved) from `was` to where it is now: push the shapes beside it that it now crowds
+// out of the way, on the side they were on, then whatever those crowd in turn.
+function pushFrom(a, was) {
+  if (!wallsOn() || (a.x === was.x && a.y === was.y && a.w === was.w && a.h === was.h)) return;
+  const sibs = wallsIn(a.parent, movingSet([a])), queue = [[a, was]];
+  for (let guard = 0; queue.length && guard < 20 * S.nodes.length; guard++) {
+    const [p, pw] = queue.shift();
+    for (const b of sibs) {
+      if (b === p || !crowded(p, b) || crowded(pw, b)) continue;
+      const opts = [];
+      if (b.x >= pw.x + pw.w + WALL - 0.01) opts.push([p.x + p.w + WALL - b.x, 0]);
+      if (b.x + b.w <= pw.x - WALL + 0.01) opts.push([p.x - WALL - b.x - b.w, 0]);
+      if (b.y >= pw.y + pw.h + WALL - 0.01) opts.push([0, p.y + p.h + WALL - b.y]);
+      if (b.y + b.h <= pw.y - WALL + 0.01) opts.push([0, p.y - WALL - b.y - b.h]);
+      if (!opts.length) continue;
+      const [dx, dy] = opts.reduce((u, v) => Math.abs(v[0] + v[1]) < Math.abs(u[0] + u[1]) ? v : u), bw = boxOf(b);
+      translate(b.id, dx, dy);
+      queue.push([b, bw]);
+    }
   }
 }
 
@@ -1115,7 +1227,7 @@ const isStraight = p => !!(p?.from && p?.to) && axisOf(p.from.side) === axisOf(p
 const linksTo = (e, id, set) => (e.from.node === id && set.has(e.to.node)) || (e.to.node === id && set.has(e.from.node));
 const neighbors = n => S.edges.flatMap(e => e.from.node === n.id ? [e.to.node] : e.to.node === n.id ? [e.from.node] : []);
 const nested = (a, b) => a === b || subtree(a.id).includes(b.id) || subtree(b.id).includes(a.id);
-const crowds = n => S.nodes.some(m => !nested(n, m) && n.x < m.x + m.w + CLEAR && m.x < n.x + n.w + CLEAR && n.y < m.y + m.h + CLEAR && m.y < n.y + n.h + CLEAR);
+const crowds = n => { const g = wallsOn() ? WALL : CLEAR; return S.nodes.some(m => !nested(n, m) && n.x < m.x + m.w + g && m.x < n.x + n.w + g && n.y < m.y + m.h + g && m.y < n.y + n.h + g); };
 function straightCount(n, partners) { const P = portsIn(straightMode()); return S.edges.filter(e => linksTo(e, n.id, partners) && isStraight(P[e.id])).length; }
 function straightenOne(n, partners) {
   const es = S.edges.filter(e => linksTo(e, n.id, partners));
@@ -1254,7 +1366,8 @@ function normalize(s) {
   const def = sample().settings, st = isObj(s.settings) ? s.settings : {};
   const settings = { mode: oneOf(st.mode, Object.keys(MODES), def.mode), grid: oneOf(st.grid, valuesOf(GRIDS), def.grid),
     showSlots: typeof st.showSlots === 'boolean' ? st.showSlots : def.showSlots, routing: oneOf(st.routing, valuesOf(ROUTINGS), def.routing),
-    radius: numIn(st.radius, def.radius, 0, 16), labelPos: oneOf(st.labelPos, LABEL_POS, def.labelPos) };
+    radius: numIn(st.radius, def.radius, 0, 16), labelPos: oneOf(st.labelPos, LABEL_POS, def.labelPos),
+    walls: typeof st.walls === 'boolean' ? st.walls : def.walls };
   const ti = isObj(s.title) ? s.title : {}, tdef = titleDefaults();
   const title = { show: ti.show === true, title: strOr(ti.title), version: strOr(ti.version), date: strOr(ti.date), author: strOr(ti.author), pos: oneOf(ti.pos, CORNER_IDS, tdef.pos) };
   const lg = isObj(s.legend) ? s.legend : {}, ldef = legendDefaults();
@@ -1330,11 +1443,14 @@ function matchSize(ids, dims, ref) {
   const W = ref === 'largest' ? Math.max(...targets.map(n => n.w)) : targets[0].w;
   const H = ref === 'largest' ? Math.max(...targets.map(n => n.h)) : targets[0].h;
   pushUndo();
+  const was = targets.map(boxOf);
   for (const n of targets) {
     // Keep each shape's center, so shapes that were lined up stay lined up.
     if (dims.includes('w')) { const cx = n.x + n.w / 2; n.w = W; n.x = Math.round(cx - W / 2); }
     if (dims.includes('h')) { const cy = n.y + n.h / 2; n.h = H; n.y = Math.round(cy - H / 2); }
   }
+  // Shapes that grew push the ones they would now crowd (hard walls).
+  targets.forEach((n, i) => pushFrom(n, was[i]));
   refresh(true, true);
 }
 /* ---------- matching colors ---------- */
@@ -1410,7 +1526,8 @@ function paste() {
   if (!clip) return;
   pushUndo();
   pasteN++;
-  const off = pasteN * 2 * S.settings.grid, map = dict();
+  // With walls, copies start on the original and drop to the first free spot below it; without, they step down and right.
+  const off = wallsOn() ? 0 : pasteN * 2 * S.settings.grid, map = dict();
   for (const n of clip.nodes) map[n.id] = nid(n.kind === 'group' ? 'g' : 'n');
   for (const n of clip.nodes) {
     // Copied with its container: goes in the new copy. Otherwise back into the original container if it's still there.
@@ -1420,7 +1537,9 @@ function paste() {
   for (const e of clip.edges) {
     S.edges.push({ ...JSON.parse(JSON.stringify(e)), id: nid('e'), from: { ...e.from, node: map[e.from.node] }, to: { ...e.to, node: map[e.to.node] } });
   }
-  setMulti(clip.roots.map(id => map[id]));
+  const roots = clip.roots.map(id => byId(map[id])), go = belowFree(roots);
+  for (const r of roots) translate(r.id, go.x, go.y);
+  setMulti(roots.map(r => r.id));
   refresh(true, true);
 }
 function cutSel() { if (copySel()) { pasteN = -1; deleteSel(); } }
@@ -1732,6 +1851,7 @@ function diagramPanel() {
     <div class="field"><span>Grid snap</span>${seg('grid', GRIDS, st.grid)}</div>
     <label class="field"><span>Corner radius · ${st.radius} px</span><input id="f-radius" type="range" min="0" max="16" step="1" value="${st.radius}" data-field="radius"></label>
     <label class="check"><input id="f-slots" type="checkbox" data-field="showSlots"${st.showSlots ? ' checked' : ''}> Show anchor points</label>
+    <label class="check" title="Shapes side by side stay at least ${WALL} px apart. Hold Alt while dragging to overlap them."><input id="f-walls" type="checkbox" data-field="walls"${st.walls ? ' checked' : ''}> Shapes can't overlap</label>
   </section>
   <section>
     <p class="eyebrow">Title block &amp; legend</p>
@@ -1967,6 +2087,7 @@ function onField(t) {
   if (f === 'spaceGap') { const v = Math.round(+t.value); if (Number.isFinite(v)) spaceGap = Math.min(400, Math.max(0, v)); return; }
   if (f === 'radius') { st.radius = +t.value; t.previousElementSibling.textContent = `Corner radius · ${st.radius} px`; render(); save(); return; }
   if (f === 'showSlots') { st.showSlots = t.checked; render(); save(); return; }
+  if (f === 'walls') { st.walls = t.checked; save(); return; }
   if (f === 'showTitle' || f === 'showLegend') {
     pushUndo();
     const blk = f === 'showTitle' ? S.title : S.legend;
@@ -2008,10 +2129,12 @@ function onField(t) {
     const n = byId(sel.id), v = parseFloat(t.value);
     if (f === 'label') n.label = t.value;
     else if (isNaN(v)) return;
-    else if (f === 'x') translate(n.id, numIn(v, n.x, -MAX_POS, MAX_POS) - n.x, 0);
-    else if (f === 'y') translate(n.id, 0, numIn(v, n.y, -MAX_POS, MAX_POS) - n.y);
-    else if (f === 'w') n.w = numIn(v, n.w, MIN_W, MAX_SIZE);
-    else if (f === 'h') n.h = numIn(v, n.h, MIN_H, MAX_SIZE);
+    else if (f === 'x' || f === 'y') {
+      const want = numIn(v, n[f], -MAX_POS, MAX_POS) - n[f], go = wallOffset([n], f === 'x' ? want : 0, f === 'y' ? want : 0);
+      translate(n.id, go.x, go.y);
+    }
+    else if (f === 'w') Object.assign(n, wallResize(n, { ...boxOf(n), w: numIn(v, n.w, MIN_W, MAX_SIZE) }, 'e'));
+    else if (f === 'h') Object.assign(n, wallResize(n, { ...boxOf(n), h: numIn(v, n.h, MIN_H, MAX_SIZE) }, 's'));
     else if (f === 'pad') n.pad = numIn(v, n.pad, 0, MAX_PAD);
     else if (f === 'gap') n.gap = numIn(v, n.gap, 0, MAX_PAD);
   } else if (sel?.type === 'edge' && f === 'elabel') {
@@ -2111,6 +2234,7 @@ function addNode(kind, at) {
     ? { id: nid('g'), kind: 'group', label: 'Container', x: snap(p.x - w / 2), y: snap(p.y - h / 2), w, h, parent, layout: 'free', align: 'center', pad: 20, gap: 30 }
     : { id: nid('n'), kind: 'box', label: 'New box', x: snap(p.x - w / 2), y: snap(p.y - h / 2), w, h, parent };
   S.nodes.push(n);
+  const go = nearestSpot([n]); translate(n.id, go.x, go.y);
   sel = { type: 'node', id: n.id };
   refresh(true, true);
   openEditor(n);
@@ -2240,10 +2364,12 @@ function onMove(ev) {
       drag.moved = true; pushUndo(); hover = null;
       if (single) lifted = drag.id;
     }
-    const dx = snap(p.x - drag.off.x) - n.x, dy = snap(p.y - drag.off.y) - n.y;
-    for (const id of drag.ids) translate(id, dx, dy);
     // Only a single shape can be dropped into a different container.
     dropTarget = single ? groupAt(p, n.id)?.id ?? null : null;
+    // Walls among the shapes where it would land; Alt lets it overlap them.
+    const want = { x: snap(p.x - drag.off.x) - n.x, y: snap(p.y - drag.off.y) - n.y };
+    const go = ev.altKey ? want : wallOffset(drag.ids.map(byId), want.x, want.y, m => single ? dropTarget : m.parent);
+    for (const id of drag.ids) translate(id, go.x, go.y);
     layoutAll(); render(); return;
   }
   if (drag.kind === 'resize') {
@@ -2255,7 +2381,8 @@ function onMove(ev) {
     if (d.includes('s')) y2 = snap(o.y + o.h + dy);
     if (x2 - x1 < MIN_W) { if (d.includes('w')) x1 = x2 - MIN_W; else x2 = x1 + MIN_W; }
     if (y2 - y1 < MIN_H) { if (d.includes('n')) y1 = y2 - MIN_H; else y2 = y1 + MIN_H; }
-    n.x = x1; n.y = y1; n.w = x2 - x1; n.h = y2 - y1;
+    const r = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+    Object.assign(n, ev.altKey ? r : wallResize(n, r, d, o));
     layoutAll(); render(); return;
   }
   if (drag.kind === 'connect' || drag.kind === 'reattach') {
@@ -2408,7 +2535,7 @@ function loadDiagram(text, filename, handle) {
   // so a file this build can't draw never leaves a dead canvas or reaches the saved copy.
   const prev = { ...S }, prevSel = [sel, multi, hover];
   Object.assign(S, s); sel = null; multi = []; hover = null;
-  try { refresh(true, false); }
+  try { layoutAll(false); refresh(true, false); }
   catch (e) {
     Object.assign(S, prev); [sel, multi, hover] = prevSel; refresh(true, false);
     toast("That file couldn't be opened. Something in it can't be drawn.", true); return false;
@@ -2443,7 +2570,7 @@ async function newDiagram() {
 // Put the sample back (undoable). The "Things to try" steps in Help refer to it.
 function loadSample() {
   pushUndo(); const s = sample(); S.nodes = s.nodes; S.edges = s.edges; S.settings.mode = s.settings.mode; S.title = s.title; S.legend = s.legend;
-  sel = null; multi = []; syncModeButtons(); refresh(true, true); fit();
+  sel = null; multi = []; syncModeButtons(); layoutAll(false); refresh(true, true); fit();
 }
 // Before replacing the diagram: if it has changes not saved to a file, ask first.
 async function confirmDiscard() {
@@ -2495,6 +2622,7 @@ function helpHtml() {
       <dt>Double-click</dt><dd>Rename a box, container or connector, or add a box on empty canvas</dd>
       <dt>F2 / Enter</dt><dd>Rename the selection. Or just start typing to replace its text</dd>
       <dt>Arrow keys</dt><dd>Nudge by one grid step (Shift: 1 px)</dd>
+      <dt>Alt+drag</dt><dd>Move or resize a shape so it overlaps others (shapes otherwise stay ${WALL} px apart)</dd>
       <dt>Delete</dt><dd>Remove selection</dd>
       <dt>Ctrl+Z / Ctrl+Y</dt><dd>Undo / redo</dd>
       <dt>Drag canvas</dt><dd>Select the shapes inside the box</dd>
@@ -2833,9 +2961,9 @@ function init() {
   S = load() || sample();
   try { doc = { ...doc, ...JSON.parse(localStorage.getItem(META_KEY)) }; } catch (e) { /* keep defaults */ }
   // First draw. A saved diagram that can't be drawn must not lock the app: set it aside and start from the sample.
-  try { layoutAll(); fit(); render(); }
+  try { layoutAll(false); fit(); render(); }
   catch (e) {
-    setAside(); S = sample(); doc = { name: 'Untitled diagram', dirty: false }; layoutAll(); fit();
+    setAside(); S = sample(); doc = { name: 'Untitled diagram', dirty: false }; layoutAll(false); fit();
     toast("The diagram saved in this browser couldn't be drawn. It was set aside, and the sample loaded instead.", true);
   }
   syncModeButtons(); renderPanel(); updateDocUi();
@@ -2915,6 +3043,7 @@ function init() {
 
   window.addEventListener('keydown', ev => {
     const mod = ev.ctrlKey || ev.metaKey, k = ev.key;
+    if (k === 'Alt' && drag) ev.preventDefault();   // Alt+drag ignores walls; keep the browser from opening its menu
     if (!document.getElementById('modal').hidden) { if (k === 'Escape') { ev.preventDefault(); closeModal('cancel'); } return; }
     if (k === 'Escape' && !document.getElementById('fileMenu').hidden) { closeMenu(); document.getElementById('fileBtn').focus(); return; }
     if (mod && k.toLowerCase() === 's') { ev.preventDefault(); if (document.activeElement === editor) commitEditor(); saveFile(ev.shiftKey); return; }
@@ -2940,10 +3069,11 @@ function init() {
       ev.preventDefault();
       const s = ev.shiftKey ? 1 : S.settings.grid;
       const dx = k === 'ArrowLeft' ? -s : k === 'ArrowRight' ? s : 0, dy = k === 'ArrowUp' ? -s : k === 'ArrowDown' ? s : 0;
-      pushUndo(); for (const id of topLevel(selectedIds())) translate(id, dx, dy); refresh(false, true);
+      const ms = topLevel(selectedIds()).map(byId), go = wallOffset(ms, dx, dy);
+      pushUndo(); for (const m of ms) translate(m.id, go.x, go.y); refresh(false, true);
     }
   });
-  window.addEventListener('keyup', ev => { if (ev.key === ' ') spaceDown = false; });
+  window.addEventListener('keyup', ev => { if (ev.key === ' ') spaceDown = false; if (ev.key === 'Alt' && drag) ev.preventDefault(); });
   new ResizeObserver(() => render()).observe(stage);
   document.fonts?.ready.then(() => render());
 }

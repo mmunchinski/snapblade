@@ -198,7 +198,7 @@ test('every option the panels offer survives a reload and a file round trip', ()
     trip('shapes, connectors, title block and legend');
     for (const [pos] of CORNERS) { S.title.pos = pos; S.legend.pos = pos; trip('corner ' + pos); }
     S.title.show = S.legend.show = false; trip('blocks hidden');
-    const settings = { mode: Object.keys(MODES), grid: valuesOf(GRIDS), routing: valuesOf(ROUTINGS), labelPos: LABEL_POS, radius: [0, 9, 16], showSlots: [false, true] };
+    const settings = { mode: Object.keys(MODES), grid: valuesOf(GRIDS), routing: valuesOf(ROUTINGS), labelPos: LABEL_POS, radius: [0, 9, 16], showSlots: [false, true], walls: [false, true] };
     for (const k in settings) for (const v of settings[k]) { S.settings[k] = v; trip('settings.' + k + ' = ' + v); }
     return trips;
   })()`);
@@ -312,4 +312,65 @@ test('Straighten follows Visio-style pins in that anchor mode', () => {
   const P = json('computePorts()');
   assert.equal(P.e0.from.y, P.e0.to.y);
   assert.equal(P.e0.from.y, 10);
+});
+
+// ---------- hard walls ----------
+// With settings.walls on, shapes beside each other keep 20 px apart: a move stops at the wall, a resize stops
+// at it, and a container that grows pushes its neighbors out of the way. Overlaps a file already has stay put.
+test('a moved shape stops 20 px from a neighbor, slides along it, and goes past once the spot is free', () => {
+  run(`flat([['a', 0, 0, 100, 50], ['b', 200, 0, 100, 50]])`);
+  assert.deepEqual(json(`wallOffset([byId('a')], 150, 0)`), { x: 80, y: 0 }, 'stops with a 20 px gap');
+  assert.deepEqual(json(`wallOffset([byId('a')], 150, 30)`), { x: 80, y: 30 }, 'slides along the wall');
+  assert.deepEqual(json(`wallOffset([byId('a')], 280, 0)`), { x: 80, y: 0 }, 'still behind the wall');
+  assert.deepEqual(json(`wallOffset([byId('a')], 330, 0)`), { x: 330, y: 0 }, 'past it: no wall');
+  assert.deepEqual(json(`wallOffset([byId('a')], 200, 70)`), { x: 200, y: 70 }, 'below it: no wall');
+  run(`S.settings.walls = false`);
+  assert.deepEqual(json(`wallOffset([byId('a')], 150, 0)`), { x: 150, y: 0 }, 'walls off');
+});
+
+test('walls apply between shapes in the same container, not between a container and what it holds', () => {
+  run(`S = normalize({ nodes: [{ id: 'g', kind: 'group', label: 'g', x: 0, y: 0, w: 400, h: 200, parent: null, layout: 'free', align: 'center', pad: 20, gap: 30 },
+    { id: 'a', kind: 'box', label: 'a', x: 20, y: 50, w: 100, h: 50, parent: 'g' }, { id: 'b', kind: 'box', label: 'b', x: 250, y: 50, w: 100, h: 50, parent: 'g' },
+    { id: 'out', kind: 'box', label: 'out', x: 600, y: 50, w: 100, h: 50, parent: null }], edges: [] }); layoutAll(false)`);
+  assert.deepEqual(json(`wallOffset([byId('a')], 200, 0)`), { x: 110, y: 0 }, 'a stops 20 px short of b');
+  assert.deepEqual(json(`wallOffset([byId('a')], -15, 0)`), { x: -15, y: 0 }, 'the container edge is not a wall');
+  // Dragged out onto the canvas: the container itself is now a neighbor.
+  assert.deepEqual(json(`wallOffset([byId('a')], 0, 230, () => null)`), { x: 0, y: 230 });
+  assert.deepEqual(json(`wallOffset([byId('a')], 0, 160, () => null)`), { x: 0, y: 170 }, 'stops 20 px below the container');
+});
+
+test('a resized edge stops 20 px from a neighbor', () => {
+  run(`flat([['a', 0, 0, 100, 50], ['b', 200, 0, 100, 50], ['c', 0, 200, 100, 50]])`);
+  const r = (w, h, dir) => json(`wallResize(byId('a'), { x: 0, y: 0, w: ${w}, h: ${h} }, '${dir}')`);
+  assert.deepEqual(r(250, 50, 'e'), { x: 0, y: 0, w: 180, h: 50 });
+  assert.deepEqual(r(100, 250, 's'), { x: 0, y: 0, w: 100, h: 180 });
+  assert.deepEqual(r(250, 120, 'se'), { x: 0, y: 0, w: 180, h: 120 }, 'b only blocks the width');
+  assert.deepEqual(r(150, 150, 'se'), { x: 0, y: 0, w: 150, h: 150 }, 'room to grow');
+});
+
+test('a container that grows pushes the shapes it would crowd, and they push the next ones', () => {
+  const setup = walls => run(`S = normalize({ nodes: [
+      { id: 'g', kind: 'group', label: 'g', x: 0, y: 0, w: 100, h: 100, parent: null, layout: 'column', align: 'center', pad: 20, gap: 30 },
+      { id: 'k1', kind: 'box', label: 'k1', x: 0, y: 0, w: 120, h: 60, parent: 'g' },
+      { id: 'u', kind: 'box', label: 'u', x: 20, y: 170, w: 120, h: 60, parent: null },
+      { id: 'v', kind: 'box', label: 'v', x: 20, y: 250, w: 120, h: 60, parent: null },
+      { id: 'side', kind: 'box', label: 'side', x: 200, y: 100, w: 100, h: 60, parent: null },
+      { id: 'old', kind: 'box', label: 'old', x: 165, y: 0, w: 30, h: 30, parent: null }],
+    edges: [], settings: { walls: ${walls} } }); layoutAll(false)`);
+  setup(true);
+  assert.deepEqual(json(`box4('g')`), [0, 0, 160, 130]);
+  run(`S.nodes.push({ id: 'k2', kind: 'box', label: 'k2', x: 0, y: 0, w: 120, h: 60, parent: 'g' }); layoutAll()`);
+  assert.deepEqual(json(`box4('g')`), [0, 0, 160, 220], 'the column grew');
+  assert.deepEqual(json(`at('u', 'v', 'side', 'old')`), [[20, 240], [20, 320], [200, 100], [165, 0]],
+    'u pushed 20 px below it, v below u; the shape beside it and the one already crowding it stay put');
+  setup(false);
+  run(`S.nodes.push({ id: 'k2', kind: 'box', label: 'k2', x: 0, y: 0, w: 120, h: 60, parent: 'g' }); layoutAll()`);
+  assert.deepEqual(json(`at('u', 'v')`), [[20, 170], [20, 250]], 'walls off: nothing pushed');
+});
+
+test('a pasted copy goes to the first free spot below the original', () => {
+  run(`flat([['a', 0, 0, 100, 50], ['b', 0, 90, 100, 50]])`);
+  // Right below a is only 40 px: not enough for a 50 px copy and two 20 px gaps. Below b is.
+  run(`S.nodes.push({ id: 'c', kind: 'box', label: 'c', x: 0, y: 0, w: 100, h: 50, parent: null })`);
+  assert.deepEqual(json(`belowFree([byId('c')])`), { x: 0, y: 160 });
 });

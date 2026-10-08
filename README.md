@@ -17,6 +17,7 @@ Manual tools (Visio, draw.io, Lucidchart) give you full control, and then you sp
 - **Self-spacing anchors.** Connectors on a side spread evenly and re-space as boxes resize. The busiest side keeps even spacing, and lighter sides line up with it so lines run straight. A Visio-style mode is included for comparison.
 - **Routing that respects your layout.** Right-angle connectors route around boxes and containers they don't belong to. Bends land halfway between the boxes they pass between, and bundles of connectors through the same gap are centered, evenly spaced and ordered so they don't cross.
 - **Containers.** Boxes live inside containers, which can be free-form (grow to fit) or stack their contents in a row or column with even gaps.
+- **Shapes that can't overlap.** Shapes side by side stay at least 20 px apart, so connectors always have room between them. A dragged shape stops at the wall and slides along it, a resized edge stops at it, and a container that grows pushes its neighbors out of the way. Hold Alt to overlap anyway, or turn it off for the diagram.
 - **Connector labels.** Placed near the start, center or end, and kept clear of boxes, other labels and other connectors.
 - **Styling.** Line and fill colors from presets, a picker, hex or RGB, with fills that pair automatically as a tint of the line color. Solid, dashed and dotted lines. Light and dark themes.
 - **Fast editing.** Multi-select, make same size, match colors, copy and paste style, copy, paste, duplicate, undo and redo.
