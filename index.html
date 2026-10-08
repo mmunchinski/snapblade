@@ -212,6 +212,8 @@ dl.keys dd { margin: 0; }
 .eh { fill: var(--accent); stroke: var(--panel); stroke-width: 2; vector-effect: non-scaling-stroke; cursor: grab; }
 .marquee { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
 .node.primary .b-body, .node.primary .g-body { stroke-width: 3; }
+.side-hl { stroke: var(--accent); stroke-width: 4; stroke-linecap: round; vector-effect: non-scaling-stroke; pointer-events: none; }
+.drop-dot { fill: var(--accent); stroke: var(--panel); stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: none; }
 .temp { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
 .cur-nw, .cur-se { cursor: nwse-resize; } .cur-ne, .cur-sw { cursor: nesw-resize; }
 .cur-n, .cur-s { cursor: ns-resize; } .cur-e, .cur-w { cursor: ew-resize; }
@@ -301,7 +303,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 25</span>
+      Snapblade <span class="tag">playground &middot; build 26</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -745,6 +747,30 @@ function autoSides(a, b) {
 function resolveSides(e) {
   const [sa, sb] = autoSides(byId(e.from.node), byId(e.to.node));
   return [e.from.side === 'auto' ? sa : e.from.side, e.to.side === 'auto' ? sb : e.to.side];
+}
+// Where on shape n a connector end dropped at p attaches: the side whose edge band p is in (a quarter of the
+// width or height, at most 24 px, or just outside the edge), the nearer edge in a corner; 'auto' in the middle.
+function dropSide(n, p) {
+  const band = { left: Math.min(24, n.w / 4), right: Math.min(24, n.w / 4), top: Math.min(24, n.h / 4), bottom: Math.min(24, n.h / 4) };
+  const d = { left: p.x - n.x, right: n.x + n.w - p.x, top: p.y - n.y, bottom: n.y + n.h - p.y };
+  const near = SIDES.filter(s => d[s] < band[s]);
+  return near.length ? near.reduce((a, b) => d[a] <= d[b] ? a : b) : 'auto';
+}
+// Attach end `which` of connector e to shape t where it was dropped (p): pinned to that side, or auto.
+// A Visio-style end is also glued to a point: where it was dropped, or the middle of the side auto picks.
+function attachEnd(e, which, t, p) {
+  const side = dropSide(t, p);
+  e[which] = { node: t.id, side };
+  if (!e.fixed) return;
+  const s = side === 'auto' ? resolveSides(e)[which === 'from' ? 0 : 1] : side, [s0, s1] = sideSpan(t, s);
+  e.fixed[which] = { side: s, frac: side === 'auto' ? 0.5 : Math.min(0.95, Math.max(0.05, (p[axisOf(s)] - s0) / (s1 - s0))) };
+}
+// A new connector from a side of shape `from` to shape t, dropped at p.
+function newEdge(id, from, side, t, p) {
+  const e = { id, from: { node: from, side }, to: { node: t.id, side: 'auto' }, arrow: 'end' };
+  if (S.settings.mode === 'fixed') e.fixed = { from: { side, frac: 0.5 }, to: { side, frac: 0.5 } };
+  attachEnd(e, 'to', t, p);
+  return e;
 }
 
 // Spread n anchors along [s0, s1]. Entries with a desired coordinate try to sit there
@@ -1595,13 +1621,6 @@ function groupAt(p, excludeId) {
   }
   return best;
 }
-function nearestSide(n, p) {
-  const d = { left: Math.abs(p.x - n.x), right: Math.abs(n.x + n.w - p.x), top: Math.abs(p.y - n.y), bottom: Math.abs(n.y + n.h - p.y) };
-  const side = SIDES.reduce((a, b) => d[a] <= d[b] ? a : b);
-  const [s0, s1] = sideSpan(n, side);
-  const frac = Math.min(0.95, Math.max(0.05, (p[axisOf(side)] - s0) / (s1 - s0)));
-  return { side, frac };
-}
 function reorderInto(n, g) {
   const ax = g.layout === 'row' ? 'x' : 'y', c = center(n)[ax];
   S.nodes.splice(S.nodes.indexOf(n), 1);
@@ -1649,7 +1668,7 @@ function render() {
   const order = S.nodes.map((n, i) => ({ n, i, d: depth(n), m: moving?.has(n.id) ? 1 : 0, gk: n.kind === 'group' ? 0 : 1 }))
     .sort((a, b) => a.m - b.m || a.d - b.d || a.gk - b.gk || a.i - b.i);
   for (const { n } of order) {
-    const cls = ['node', n.kind, selSet.has(n.id) ? 'sel' : '', multi[0] === n.id ? 'primary' : '', over === n.id ? 'target' : '', dropTarget === n.id ? 'drop' : '', drag?.id === n.id && moving ? 'lifted' : ''].join(' ');
+    const cls = ['node', n.kind, selSet.has(n.id) ? 'sel' : '', multi[0] === n.id ? 'primary' : '', over === n.id && drag.zone === 'auto' ? 'target' : '', dropTarget === n.id ? 'drop' : '', drag?.id === n.id && moving ? 'lifted' : ''].join(' ');
     if (n.kind === 'group') {
       h += `<g class="${cls}" data-role="node" data-id="${esc(n.id)}" style="${styleVars(n)}">
         <rect class="g-body" x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="6"/>
@@ -1757,6 +1776,16 @@ function render() {
     const pe = P[drag.id], other = pe?.[drag.which === 'from' ? 'to' : 'from'];
     if (other) h += `<path class="temp" d="M${other.x},${other.y} L${drag.cur.x},${drag.cur.y}"/>`;
   }
+  // Dropping a connector end: the side it will pin lights up (the whole shape for auto), and a dot shows where it lands.
+  if ((drag?.kind === 'connect' || drag?.kind === 'reattach') && drag.over) {
+    const t = byId(drag.over), z = drag.zone;
+    if (z !== 'auto') {
+      const [a, b] = { top: [[t.x, t.y], [t.x + t.w, t.y]], bottom: [[t.x, t.y + t.h], [t.x + t.w, t.y + t.h]], left: [[t.x, t.y], [t.x, t.y + t.h]], right: [[t.x + t.w, t.y], [t.x + t.w, t.y + t.h]] }[z];
+      h += `<line class="side-hl" x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}"/>`;
+    }
+    const pv = previewEnd(drag, drag.cur);
+    if (pv) h += `<circle class="drop-dot" cx="${pv.x}" cy="${pv.y}" r="${sw(4.5)}"/>`;
+  }
   h += '</g>';
   svg.innerHTML = h;
   updateStatus(P);
@@ -1768,7 +1797,11 @@ function render() {
 
 function updateStatus(P) {
   let t;
-  if (drag?.kind === 'move' && drag.moved) {
+  if (drag?.kind === 'connect' || drag?.kind === 'reattach') {
+    const n = drag.over && byId(drag.over);
+    t = n ? `${drag.kind === 'connect' ? 'Connect to' : 'Move end to'} ${oneLine(n.label)}  ·  ${drag.zone === 'auto' ? 'auto side' : drag.zone + ' side'}`
+      : 'Drop on a shape: near an edge pins that side, the middle picks one automatically';
+  } else if (drag?.kind === 'move' && drag.moved) {
     const n = byId(drag.id), g = dropTarget && byId(dropTarget);
     t = `X ${n.x}  Y ${n.y}  ·  ${g ? 'drop into ' + oneLine(g.label) : 'drop on canvas'}`;
   } else if (sel?.type === 'annot') {
@@ -2294,6 +2327,23 @@ function commitEditor(cancel) {
 }
 
 /* ---------- pointer handling ---------- */
+const DROP_REACH = 8;   // screen px outside a shape's edge that still count as dropping on that edge
+// The shape a connector end being dragged would attach to: not its own start, nor the shape at its other end.
+function dropTargetFor(d, p) {
+  const e = d.kind === 'reattach' && S.edges.find(x => x.id === d.id);
+  const ex = new Set([d.kind === 'connect' ? d.from : d.which === 'from' ? e.to.node : e.from.node]);
+  return hitNode(p, DROP_REACH / view.k, ex);
+}
+// Where that end would land if dropped now: the connector as it would be, spaced with the others on that side.
+function previewEnd(d, p) {
+  const t = byId(d.over); if (!t) return null;
+  let e, which = 'to';
+  if (d.kind === 'connect') e = newEdge('\u0000preview', d.from, d.side, t, p);
+  else { e = JSON.parse(JSON.stringify(S.edges.find(x => x.id === d.id))); which = d.which; attachEnd(e, which, t, p); }
+  const edges = S.edges;
+  S.edges = d.kind === 'connect' ? [...edges, e] : edges.map(x => x.id === e.id ? e : x);
+  try { return computePorts()[e.id]?.[which] ?? null; } finally { S.edges = edges; }
+}
 const rectOf = (a, b) => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) });
 function onDown(ev) {
   if (ev.button > 2) return;
@@ -2387,8 +2437,8 @@ function onMove(ev) {
   }
   if (drag.kind === 'connect' || drag.kind === 'reattach') {
     drag.cur = p;
-    const ex = drag.kind === 'connect' ? new Set([drag.from]) : null;
-    drag.over = hitNode(p, 0, ex)?.id ?? null;
+    const t = dropTargetFor(drag, p);
+    drag.over = t?.id ?? null; drag.zone = t ? dropSide(t, p) : null;
     render();
   }
 }
@@ -2430,23 +2480,19 @@ function onUp(ev) {
     }
   } else if (d.kind === 'resize') { refresh(true, true); return; }
   else if (d.kind === 'connect') {
-    const t = hitNode(p, 0, new Set([d.from]));
+    const t = dropTargetFor(d, p);
     if (t) {
       pushUndo();
-      const e = { id: nid('e'), from: { node: d.from, side: d.side }, to: { node: t.id, side: 'auto' }, arrow: 'end' };
-      if (S.settings.mode === 'fixed') e.fixed = { from: { side: d.side, frac: 0.5 }, to: nearestSide(t, p) };
+      const e = newEdge(nid('e'), d.from, d.side, t, p);
       S.edges.push(e);
       sel = { type: 'edge', id: e.id };
       refresh(true, true); return;
     }
   } else if (d.kind === 'reattach') {
-    const e = S.edges.find(x => x.id === d.id), t = hitNode(p, 0);
-    const other = d.which === 'from' ? e.to.node : e.from.node;
-    if (t && t.id !== other) {
+    const e = S.edges.find(x => x.id === d.id), t = dropTargetFor(d, p);
+    if (t) {
       pushUndo();
-      const ns = nearestSide(t, p);
-      e[d.which] = { node: t.id, side: ns.side };
-      if (e.fixed) e.fixed[d.which] = ns;
+      attachEnd(e, d.which, t, p);
       refresh(true, true); return;
     }
   }
@@ -2640,8 +2686,8 @@ function helpHtml() {
       <li>Switch Anchors to <b>Visio-style</b> and resize the same box. Then switch back.</li>
       <li>Drag <b>Payments API</b> into the Data tier column and drop it between two boxes.</li>
       <li>Select the <b>Data tier</b> container and change its layout to Row.</li>
-      <li>Hover a box, then drag one of its <b>+</b> handles onto another box to connect them.</li>
-      <li>Click a connector and drag one of its ends onto a different side of a box.</li>
+      <li>Hover a box, then drag one of its <b>+</b> handles onto another box to connect them. Drop near an edge to pin that side (it lights up), or in the middle to let the side be picked automatically.</li>
+      <li>Click a connector and drag one of its ends onto a different side of a box, or onto its middle to go back to automatic.</li>
       <li>Double-click a connector to give it a label. Labels sit away from the arrowhead by default.</li>
       <li>Drag a box around the three APIs on empty canvas. Under Arrange, make them the same size, or line them up with the Column icons.</li>
       <li>Click the <b>Application tier</b> header, Shift-click an API, and click the right-hand Column icon: the box lines up inside the container.</li>

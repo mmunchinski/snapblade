@@ -374,3 +374,31 @@ test('a pasted copy goes to the first free spot below the original', () => {
   run(`S.nodes.push({ id: 'c', kind: 'box', label: 'c', x: 0, y: 0, w: 100, h: 50, parent: null })`);
   assert.deepEqual(json(`belowFree([byId('c')])`), { x: 0, y: 160 });
 });
+
+// ---------- dropping a connector end ----------
+// Near an edge (a quarter of the width or height, at most 24 px, or just outside it) pins that side;
+// the middle leaves the side to auto.
+test('where a connector end is dropped on a shape picks its side, or auto in the middle', () => {
+  run(`flat([['a', 0, 0, 140, 60]])`);
+  const zone = (x, y) => json(`dropSide(byId('a'), { x: ${x}, y: ${y} })`);
+  assert.deepEqual([zone(5, 30), zone(135, 30), zone(70, 5), zone(70, 56)], ['left', 'right', 'top', 'bottom']);
+  assert.deepEqual([zone(70, 30), zone(30, 30), zone(110, 40)], ['auto', 'auto', 'auto'], 'bands are at most 24 px wide');
+  assert.equal(zone(70, 14), 'top', 'a 60 px tall box has 15 px bands');
+  assert.equal(zone(70, 16), 'auto');
+  assert.deepEqual([zone(3, 5), zone(8, 2)], ['left', 'top'], 'in a corner the nearer edge wins');
+  assert.deepEqual([zone(-6, 30), zone(70, 66)], ['left', 'bottom'], 'just outside an edge counts');
+});
+
+test('attaching an end pins the dropped side or sets auto, and glues a Visio-style point', () => {
+  run(`flat([['a', 0, 0, 140, 60], ['b', 300, 0, 140, 60]], [['a', 'b']])`);
+  run(`attachEnd(S.edges[0], 'to', byId('b'), { x: 305, y: 30 })`);
+  assert.deepEqual(json('S.edges[0].to'), { node: 'b', side: 'left' });
+  run(`attachEnd(S.edges[0], 'to', byId('b'), { x: 370, y: 30 })`);
+  assert.deepEqual(json('S.edges[0].to'), { node: 'b', side: 'auto' });
+  run(`S.settings.mode = 'fixed'; S.edges[0].fixed = { from: { side: 'right', frac: 0.5 }, to: { side: 'left', frac: 0.5 } }`);
+  run(`attachEnd(S.edges[0], 'to', byId('b'), { x: 335, y: 4 })`);
+  assert.deepEqual(json('[S.edges[0].to, S.edges[0].fixed.to]'), [{ node: 'b', side: 'top' }, { side: 'top', frac: 0.25 }]);
+  run(`attachEnd(S.edges[0], 'to', byId('b'), { x: 370, y: 30 })`);
+  assert.deepEqual(json('[S.edges[0].to, S.edges[0].fixed.to]'), [{ node: 'b', side: 'auto' }, { side: 'left', frac: 0.5 }],
+    'auto in Visio-style mode glues to the middle of the side auto picks');
+});

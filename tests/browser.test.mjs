@@ -725,3 +725,43 @@ test('hard walls: shapes stop 20 px apart, Alt overrides, containers push, and t
   assert.deepEqual(await xy('gw'), [670, 480]);
   assert.deepEqual(h.errors, []);
 });
+
+test('connecting: an edge band pins that side and lights it up; the middle is auto and lights up the shape; re-attaching works the same', async () => {
+  const h = await open(), { page } = h;
+  const center = async sel => { const b = await page.locator(sel).first().boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+  const status = () => h.ev(() => statusEl.textContent);
+  const lit = () => h.ev(() => ({ side: !!svg.querySelector('.side-hl'), shape: [...svg.querySelectorAll('.node.target')].map(n => n.dataset.id) }));
+  // Press on a handle, move to `to`, report what's highlighted, then let go.
+  const dragTo = async (from, to) => {
+    await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.mouse.move(to.x, to.y, { steps: 6 });
+    const seen = { ...(await lit()), status: await status() }; await page.mouse.up(); await page.waitForTimeout(500);
+    return seen;
+  };
+  const fromHandle = async () => { await page.mouse.move(...Object.values(await h.at('users'))); return center('[data-role="connect"][data-id="users"][data-side="bottom"] circle'); };
+  const last = () => h.ev(() => S.edges[S.edges.length - 1]);
+
+  // Payments API is at 520..680 x 480..540: x = 525 is in its left band.
+  let seen = await dragTo(await fromHandle(), await h.toScreen(525, 510));
+  assert.deepEqual([seen.side, seen.shape], [true, []], 'only the left side lights up');
+  assert.match(seen.status, /Connect to Payments API\s+·\s+left side/);
+  assert.deepEqual((await last()).to, { node: 'pay', side: 'left' });
+  assert.deepEqual((await last()).from, { node: 'users', side: 'bottom' });
+
+  seen = await dragTo(await fromHandle(), await h.toScreen(600, 510));
+  assert.deepEqual([seen.side, seen.shape], [false, ['pay']], 'the whole shape lights up');
+  assert.match(seen.status, /Connect to Payments API\s+·\s+auto side/);
+  assert.deepEqual((await last()).to, { node: 'pay', side: 'auto' });
+
+  // The new connector is selected: drag its arrowhead end to Inventory API's top band (310..370), then its middle.
+  const id = (await last()).id;
+  seen = await dragTo(await center('circle.eh[data-which="to"]'), await h.toScreen(600, 313));
+  assert.equal(seen.side, true);
+  assert.deepEqual(await h.ev(id => S.edges.find(e => e.id === id).to, id), { node: 'inv', side: 'top' });
+  await h.ev(id => { sel = { type: 'edge', id }; render(); }, id);
+  seen = await dragTo(await center('circle.eh[data-which="to"]'), await h.toScreen(600, 340));
+  assert.deepEqual(seen.shape, ['inv']);
+  assert.deepEqual(await h.ev(id => S.edges.find(e => e.id === id).to, id), { node: 'inv', side: 'auto' }, 'dropped in the middle: back to auto');
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await h.ev(id => S.edges.find(e => e.id === id).to, id), { node: 'inv', side: 'top' });
+  assert.deepEqual(h.errors, []);
+});
