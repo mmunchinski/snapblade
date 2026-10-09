@@ -565,3 +565,34 @@ test('tabs: hostile tab lists are capped and cleaned', () => {
   assert.equal(json(`normalizeBook({ pages: [{ name: 'a', diagram: 'nope' }] })`), null);
   assert.equal(json(`normalizeBook({ pages: [{ diagram: { nodes: [], edges: [] } }], active: -3 }).active`), 0);
 });
+
+// ---------- the README keeps up ----------
+// Nothing else checks the README, and it once fell six builds behind. Every Help guide section is a feature or a
+// piece of the app the README has to cover (the browser test "the Help guide mentions every control..." makes a
+// new control land in the guide, so a new feature lands here). A new guide section needs an entry in this map:
+// what the README must say about it, or null for sections that aren't features of their own.
+const README_FOR_SECTION = {
+  around: /## Getting started/, shapes: /\*\*Containers\.\*\*/, walls: /\*\*Shapes that can't overlap\.\*\*/, connect: /\*\*Connect where you drop\.\*\*/,
+  anchors: /\*\*Self-spacing anchors\.\*\*/, routing: /\*\*Routing that respects your layout\.\*\*/, arrange: /\*\*Arrange\.\*\*/, colors: /\*\*Styling\.\*\*/,
+  blocks: /\*\*Title block and legend\.\*\*/, settings: null, seq: /\*\*Sequence diagrams\.\*\*/, tabs: /\*\*Tabs\.\*\*/, files: /\*\*Files\.\*\*/,
+  export: /\*\*Export\.\*\*/, ai: /\*\*Diagrams from an AI assistant\.\*\*/, privacy: /## Privacy/,
+};
+test('the README covers every section of the Help guide', () => {
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  const sections = json(`[...guideHtml().matchAll(/<section id="g-([\\w-]+)"><h3>([^<]+)/g)].map(m => [m[1], m[2]])`);
+  assert.ok(sections.length >= 15, `found ${sections.length} guide sections`);
+  const unmapped = sections.filter(([id]) => !(id in README_FOR_SECTION)).map(([id, t]) => `${id} (${t})`);
+  assert.deepEqual(unmapped, [], 'new Help guide sections: describe them in README.md and add them to README_FOR_SECTION');
+  const missing = sections.filter(([id]) => README_FOR_SECTION[id] && !README_FOR_SECTION[id].test(readme)).map(([id, t]) => `${id} (${t})`);
+  assert.deepEqual(missing, [], 'README.md doesn\'t cover these Help guide sections');
+});
+
+// Every outside server the page talks to is named in the README's Privacy section (the app promises nothing else leaves).
+const README_FOR_HOST = { 'fonts.googleapis.com': /Google Fonts/, 'fonts.gstatic.com': /Google Fonts/, 'cdn.jsdelivr.net': /jsDelivr/, 'mmunchinski.github.io': null };
+test('the README\'s Privacy section names every server the page loads from', () => {
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8'), html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const privacy = readme.split('## Privacy')[1]?.split(/\n## /)[0] || '';
+  const hosts = [...new Set([...html.matchAll(/https:\/\/([a-z0-9.-]+)/g)].map(m => m[1]))];
+  assert.deepEqual(hosts.filter(h => !(h in README_FOR_HOST)), [], 'new servers: name them in the README\'s Privacy section and add them to README_FOR_HOST');
+  assert.deepEqual(hosts.filter(h => README_FOR_HOST[h] && !README_FOR_HOST[h].test(privacy)), [], 'servers the Privacy section doesn\'t name');
+});
