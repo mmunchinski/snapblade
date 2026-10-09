@@ -199,7 +199,8 @@ test('every option the panels offer survives a reload and a file round trip', ()
     trip('shapes, connectors, title block and legend');
     for (const [pos] of CORNERS) { S.title.pos = pos; S.legend.pos = pos; trip('corner ' + pos); }
     S.title.show = S.legend.show = false; trip('blocks hidden');
-    const settings = { mode: Object.keys(MODES), grid: valuesOf(GRIDS), routing: valuesOf(ROUTINGS), labelPos: LABEL_POS, radius: [0, 9, 16], showSlots: [false, true], walls: [false, true] };
+    const settings = { mode: Object.keys(MODES), grid: valuesOf(GRIDS), routing: valuesOf(ROUTINGS), labelPos: LABEL_POS, radius: [0, 9, 16], showSlots: [false, true], walls: [false, true],
+      autonumber: [true, false], footbox: [false, true], activation: [false, true] };
     for (const k in settings) for (const v of settings[k]) { S.settings[k] = v; trip('settings.' + k + ' = ' + v); }
     S = normalize(seqSample());
     for (const [type] of FRAME_TYPES) { seqWrap('m1', 'm2', type, type + ' label'); if (BRANCHED.includes(type)) seqAddElse(S.rows[0].id); }
@@ -619,6 +620,44 @@ test('sequence frames: edges move within their frame, a frame moves whole, wrap 
   assert.equal(json(`guessType('pay', 'orders', ${at('f1') + 1})`), 'sync', 'Result (a reply) is above, so no');
   run(`S = normalize({ type: 'sequence', parts: [{ id: 'a' }, { id: 'b' }], rows: [{ id: 'm', from: 'a', to: 'b' }, { id: 'f', kind: 'frame', type: 'opt' }, { id: 'x', kind: 'end' }] })`);
   assert.equal(json(`guessType('b', 'a', 2)`), 'reply');
+});
+
+// Activation bars come from the messages alone.
+const bars = () => json(`seqActivations(S.rows).map(b => [b.p, S.rows[b.i].id, S.rows[b.end].id, b.level])`);
+test('sequence activation: a sync call activates its callee until the last reply back, or until the caller acts again; async starts none', () => {
+  run('S = normalize(seqSample())');
+  // Both alt sections reply, so the bars run to the last reply. Validate cart nests on Orders API. Nothing calls Customer; the bus only gets an event.
+  assert.deepEqual(bars(), [['web', 'm1', 'm13', 0], ['orders', 'm2', 'm12', 0], ['orders', 'm3', 'm3', 1], ['pay', 'm4', 'm11', 0], ['gw', 'm5', 'm6', 0]]);
+  // No reply: the bar covers what the callee does next, up to its last message before the caller sends again; nothing more, a stub.
+  run(`S = normalize({ type: 'sequence', parts: [{ id: 'a' }, { id: 'b' }, { id: 'c' }], rows: [
+    { id: 'call', from: 'a', to: 'b' }, { id: 'check', from: 'b', to: 'c' }, { id: 'ok', from: 'c', to: 'b', type: 'reply' },
+    { id: 'log', from: 'b', to: 'c', type: 'async' }, { id: 'next', from: 'a', to: 'c' }, { id: 'n', kind: 'note', side: 'right', on: ['a'], label: 'x' }] })`);
+  assert.deepEqual(bars(), [['b', 'call', 'log', 0], ['c', 'check', 'ok', 0], ['c', 'next', 'next', 0]]);
+  // A call back into a participant that's already busy nests one level in.
+  run(`S = normalize({ type: 'sequence', parts: [{ id: 'a' }, { id: 'b' }], rows: [{ id: 'm1', from: 'a', to: 'b' }, { id: 'm2', from: 'b', to: 'a' },
+    { id: 'm3', from: 'a', to: 'b' }, { id: 'm4', from: 'b', to: 'a', type: 'reply' }, { id: 'm5', from: 'a', to: 'b', type: 'reply' }, { id: 'm6', from: 'b', to: 'a', type: 'reply' }] })`);
+  assert.deepEqual(bars(), [['b', 'm1', 'm6', 0], ['a', 'm2', 'm5', 0], ['b', 'm3', 'm4', 1]], 'each reply closes the latest open call between the two');
+  // A call that one alt section answers and another doesn't is still open after the frame, for the path that didn't.
+  run(`S = normalize({ type: 'sequence', parts: [{ id: 'a' }, { id: 'b' }], rows: [{ id: 'c', from: 'a', to: 'b' }, { id: 'f', kind: 'frame', type: 'alt' },
+    { id: 'r1', from: 'b', to: 'a', type: 'reply' }, { id: 'e', kind: 'else' }, { id: 'w', from: 'b', to: 'b', type: 'async' }, { id: 'x', kind: 'end' },
+    { id: 'r2', from: 'b', to: 'a', type: 'reply' }] })`);
+  assert.deepEqual(bars(), [['b', 'c', 'r2', 0]]);
+});
+
+test('sequence activation: arrows end at the bars, notes and columns make room for them, and the setting turns them off', () => {
+  run(`S = normalize(seqSample()); S.rows.splice(4, 0, { id: 'nr', kind: 'note', side: 'right', on: ['orders'], label: 'stock reserved' })`);
+  const L = json(`(() => { const L = seqLayout(); return { P: Object.fromEntries(L.P.map(q => [q.id, q.x])), R: Object.fromEntries(L.R.map(g => [g.r.id, g])), A: L.A.map(a => [a.p, a.x, a.y1, a.y2]) }; })()`);
+  const { P, R } = L;
+  assert.deepEqual([R.m1.x1, R.m1.x2], [P.cust, P.web - 5], 'into the bar the call starts');
+  assert.deepEqual([R.m2.x1, R.m2.x2], [P.web + 5, P.orders - 5], 'out of the caller\'s bar');
+  assert.deepEqual([R.m6.x1, R.m6.x2], [P.gw - 5, P.pay + 5], 'a reply leaves from the left of its bar');
+  assert.equal(R.m8.x2, P.bus, 'no bar on the bus');
+  assert.deepEqual([R.m3.x1, R.m3.x2], [P.orders + 5, P.orders + 10], 'a self-call returns into its nested bar');
+  assert.ok(R.nr.x >= P.orders + 5 + 12, 'a note beside a busy lifeline clears its bar');
+  const web = L.A.find(a => a[0] === 'web');
+  assert.deepEqual([web[1], web[2], web[3]], [P.web - 5, R.m1.ay, R.m13.ay + 4], 'from the call to the last reply');
+  run('S.settings.activation = false');
+  assert.deepEqual(json('[seqLayout().A.length, seqLayout().R[0].x2 === seqLayout().P[1].x]'), [0, true]);
 });
 
 // ---------- tabs ----------

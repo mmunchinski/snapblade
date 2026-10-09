@@ -483,7 +483,7 @@ test('a hostile file cannot run script: unexpected values are dropped or reset',
     assert.deepEqual(await h.ev(() => [byId('g').layout, byId('g').pad, byId('g').align, byId('g').parent === null || byId('g2').parent === null]), ['free', 20, 'center', true]);
     assert.deepEqual(await h.ev(() => S.edges[0]), { id: 'e1', from: { node: 'a', side: 'auto' }, to: { node: 'b', side: 'left' }, arrow: 'end', label: 'ok', style: {} });
     assert.deepEqual(await h.ev(() => [S.settings, S.title.pos, S.legend.pos, S.legend.labels, S.legend.hidden]),
-      [{ mode: 'straighten', grid: 10, showSlots: true, routing: 'ortho', radius: 6, labelPos: 'start', walls: true, autonumber: false, footbox: true }, 'bottom-right', 'bottom-left', {}, []]);
+      [{ mode: 'straighten', grid: 10, showSlots: true, routing: 'ortho', radius: 6, labelPos: 'start', walls: true, autonumber: false, footbox: true, activation: true }, 'bottom-right', 'bottom-left', {}, []]);
     const svg = await h.ev(() => buildExportSvg({ theme: 'light', background: 'white', scope: 'all' }).svg);
     assert.doesNotMatch(svg, /onerror|<img/);
   };
@@ -1133,7 +1133,9 @@ test('tabs: export the open tab, or all of them (one PDF page or one file per ta
   assert.match(await page.textContent('#exInfo'), /2 files/);
   const downloads = [];
   page.on('download', d => downloads.push(d.suggestedFilename()));
-  await page.click('[data-choice="download"]'); await page.waitForTimeout(800);
+  // Each SVG fetches the fonts first, so wait for both files rather than a fixed time.
+  await page.click('[data-choice="download"]');
+  for (let t = 0; downloads.length < 2 && t < 150; t++) await page.waitForTimeout(100);
   assert.deepEqual(downloads.sort(), ['Untitled diagram - Page 1.svg', 'Untitled diagram - Sequence 1.svg']);
   // A PDF of all tabs has a page per tab.
   const pdf = await h.ev(async () => {

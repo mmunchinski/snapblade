@@ -269,6 +269,7 @@ dl.keys dd { margin: 0; }
 .n-fold { fill: none; stroke: var(--ln, var(--note-stroke)); stroke-width: 1.25; stroke-linejoin: round; }
 .note.sel .n-body, .note.sel .n-fold { stroke: var(--accent); stroke-width: 2; }
 .n-text { font: 500 12px var(--ui); fill: var(--ink); pointer-events: none; }
+.s-act { fill: var(--fl, var(--node-bg)); stroke: var(--ln, var(--node-stroke)); stroke-width: 1.25; pointer-events: none; }
 .frame, .fsec, .fend { cursor: row-resize; }
 .frame .hit, .fsec .hit, .fend .hit { fill: none; stroke: transparent; stroke-width: 12; }
 .f-box { fill: none; stroke: var(--ink-2); stroke-width: 1.25; pointer-events: none; }
@@ -379,7 +380,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 32</span>
+      Snapblade <span class="tag">playground &middot; build 33</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -528,7 +529,7 @@ function sample() {
       E('e8', 'inv', 'cache'), { ...E('e9', 'inv', 'idb'), label: 'SQL' },
       { ...E('e10', 'pay', 'gw'), label: 'REST\nmTLS', style: { dash: 'dashed' } },
     ],
-    settings: { mode: 'straighten', grid: 10, showSlots: true, routing: 'ortho', radius: 6, labelPos: 'start', walls: true, autonumber: false, footbox: true },
+    settings: { mode: 'straighten', grid: 10, showSlots: true, routing: 'ortho', radius: 6, labelPos: 'start', walls: true, autonumber: false, footbox: true, activation: true },
     title: { ...titleDefaults(), show: true, title: 'Order platform', version: '0.3', date: todayIso() },
     legend: { ...legendDefaults(), show: true, labels: {
       'box:blue||pair': 'People and client apps', 'box:green||pair': 'Database', 'box:amber||pair': 'Cache',
@@ -1410,7 +1411,7 @@ function straighten(ids) {
    a message from one lifeline to another (or to itself), or a note beside, over or across lifelines. Nothing has a
    position: seqLayout() sizes each column from the labels next to it and spaces the rows evenly, so it stays tidy. */
 const SEQ = { minW: 100, padX: 14, headH: 40, nameLh: 16, gap: 40, rowTop: 30, rowGap: 14, lh: 15, labelPad: 12, head: 10,
-  self: 36, selfH: 20, noteGap: 12, notePad: 8, fold: 8, span: 18, tail: 26, framePad: 12, tabH: 18, tabCut: 6 };
+  self: 36, selfH: 20, noteGap: 12, notePad: 8, fold: 8, span: 18, tail: 26, framePad: 12, tabH: 18, tabCut: 6, actHalf: 5, actStep: 5, actStub: 16 };
 const MAX_PARTS = 100, MAX_ROWS = 1000;   // the most a file (or a paste) can add
 const MAX_DEPTH = 20;                      // frames inside frames
 const MSG_TYPES = [['sync', 'Sync'], ['async', 'Async'], ['reply', 'Reply']];
@@ -1431,6 +1432,8 @@ const hasContent = () => isSeq() ? S.parts.length > 0 : S.nodes.length > 0;
 // A reply is dashed unless its style says otherwise.
 const msgDash = r => r.style?.dash || (r.type === 'reply' ? 'dashed' : 'solid');
 const withDash = r => ({ ...r, style: { ...(r.style || {}), dash: msgDash(r) } });
+// An activation bar takes its participant's colors, but is always solid and filled, so it hides the lifeline.
+const barStyle = p => { const { dash, ...st } = p.style || {}; if (st.fill === 'none') delete st.fill; return { ...p, style: st }; };
 
 function seqSample() {
   const P = (id, label, o = {}) => ({ id, kind: 'participant', label, ...o });
@@ -1457,6 +1460,49 @@ function seqSample() {
   };
 }
 
+// Activation bars, from row indexes. A sync call starts one on the participant it calls, and a reply back closes the
+// latest open call between the two, as calls nest. An alt's sections are alternatives: each starts from the calls
+// open at the top of the frame, and a call's bar runs to its last reply in any of them. A call with no reply lasts to
+// the callee's last message before the caller sends again (a stub if there's none); an unanswered self-call is a stub.
+// Async messages start no bar. A bar that starts while another is open on the same participant sits one level in.
+function seqActivations(rows) {
+  const bars = [], frames = [];
+  let open = dict();   // "from>to": the calls still waiting for a reply, latest last
+  const copy = o => { const c = dict(); for (const k in o) c[k] = [...o[k]]; return c; };
+  rows.forEach((r, i) => {
+    if (r.kind === 'frame') frames.push(r.type === 'alt' ? { alt: true, top: copy(open), ends: [] } : {});
+    else if (r.kind === 'else') { const f = frames[frames.length - 1]; if (f?.alt) { f.ends.push(open); open = copy(f.top); } }
+    else if (r.kind === 'end') {
+      const f = frames.pop();
+      if (f?.alt) {
+        // After the alt, a call is still open if some section left it open (whichever section opened it).
+        const ends = [...f.ends, open], next = dict();
+        for (const k of new Set([...Object.keys(f.top), ...ends.flatMap(e => Object.keys(e))])) {
+          const top = f.top[k] || [], kept = top.filter(b => ends.some(e => (e[k] || []).includes(b)));
+          next[k] = [...kept, ...new Set(ends.flatMap(e => (e[k] || []).filter(b => !top.includes(b))))].sort((x, y) => x.i - y.i);
+        }
+        open = next;
+      }
+    } else if (isMsg(r) && r.type === 'sync') {
+      const b = { p: r.to, from: r.from, i, end: -1, key: r.from + '>' + r.to };
+      bars.push(b); (open[b.key] ||= []).push(b);
+    } else if (isMsg(r) && r.type === 'reply') {
+      const list = open[r.to + '>' + r.from], b = list?.pop();
+      if (b) b.end = Math.max(b.end, i);
+    }
+  });
+  const msgAt = j => isMsg(rows[j]) ? rows[j] : null;
+  for (const b of bars) {
+    if (b.end >= 0) continue;
+    b.end = b.i;
+    if (b.p === b.from) continue;
+    let j = b.i + 1;
+    for (; j < rows.length; j++) { const m = msgAt(j); if (m && m.from === b.from) break; }
+    for (let k = b.i + 1; k < j; k++) { const m = msgAt(k); if (m && (m.from === b.p || m.to === b.p)) b.end = k; }
+  }
+  for (const b of bars) b.level = bars.filter(o => o.p === b.p && o.i < b.i && o.end >= b.i).length;
+  return bars.map(({ p, i, end, level }) => ({ p, i, end, level }));
+}
 function seqLayout(fam = UI_STACK) {
   const nameFont = `500 13px ${fam}`, textFont = `500 12px ${fam}`;
   const linesOf = s => String(s).split('\n');
@@ -1468,29 +1514,37 @@ function seqLayout(fam = UI_STACK) {
   const need = P.map(() => []);
   const apart = (i, j, d) => { if (i > j) [i, j] = [j, i]; if (i !== j && i >= 0 && j < P.length) need[j].push([i, d]); };
   for (let i = 1; i < P.length; i++) apart(i - 1, i, (P[i - 1].w + P[i].w) / 2 + SEQ.gap);
+  // Activation: the deepest bar open on a participant at a row (-1 for none); `starting` counts one that starts there.
+  // An arrow ends at that bar's edge, so columns and notes make room for it.
+  const acts = S.settings.activation ? seqActivations(S.rows) : [];
+  const level = (p, r, starting) => acts.reduce((L, b) => b.p === p && (b.i < r && b.end >= r || starting && b.i === r) ? Math.max(L, b.level) : L, -1);
+  const reach = L => L < 0 ? 0 : L * SEQ.actStep + SEQ.actHalf;
   let num = 0;
-  const R = S.rows.map(r => {
+  const R = S.rows.map((r, idx) => {
     if (r.kind === 'frame') return { r, mark: 'frame', h: SEQ.tabH + 2 };
     if (r.kind === 'else') return { r, mark: 'else', h: guard(r.label) ? SEQ.lh + 4 : 4 };
     if (r.kind === 'end') return { r, mark: 'end', h: 0 };
     if (isNote(r)) {
       const ls = linesOf(r.label), w = Math.max(60, widest(ls, textFont) + 2 * SEQ.notePad + SEQ.fold), h = ls.length * SEQ.lh + 2 * SEQ.notePad;
       const a = at[r.on[0]], b = r.side === 'over' && r.on.length > 1 ? at[r.on[1]] : a;
-      if (r.side === 'right') apart(a, a + 1, w + 2 * SEQ.noteGap);
-      else if (r.side === 'left') apart(a - 1, a, w + 2 * SEQ.noteGap);
+      const L = acts.reduce((m, o) => o.p === r.on[0] && o.i < idx && o.end > idx ? Math.max(m, o.level) : m, -1);
+      const ext = r.side === 'left' ? (L < 0 ? 0 : SEQ.actHalf) : reach(L);   // a bar steps right as it nests
+      if (r.side === 'right') apart(a, a + 1, w + 2 * SEQ.noteGap + ext);
+      else if (r.side === 'left') apart(a - 1, a, w + 2 * SEQ.noteGap + ext);
       else if (a === b) { apart(a - 1, a, w / 2 + SEQ.noteGap); apart(a, a + 1, w / 2 + SEQ.noteGap); }
       else apart(a, b, w - 2 * SEQ.span);
-      return { r, note: true, ls, w, h, a: Math.min(a, b), b: Math.max(a, b) };
+      return { r, note: true, ls, w, h, a: Math.min(a, b), b: Math.max(a, b), ext };
     }
     const text = (S.settings.autonumber ? `${++num}. ` : '') + r.label;
     const ls = text ? linesOf(text) : [], lw = widest(ls, textFont), lh = ls.length * SEQ.lh, a = at[r.from], b = at[r.to];
+    const la = level(r.from, idx, false), lb = level(r.to, idx, r.type === 'sync');
     if (a === b) {
-      const loop = Math.max(SEQ.selfH, lh + 4);
-      apart(a, a + 1, SEQ.self + (lw ? lw + 8 : 0) + SEQ.labelPad);
-      return { r, self: true, ls, lw, lh, a, b, loop, h: loop + 10 };
+      const loop = Math.max(SEQ.selfH, lh + 4), out = Math.max(reach(la), reach(lb));
+      apart(a, a + 1, SEQ.self + out + (lw ? lw + 8 : 0) + SEQ.labelPad);
+      return { r, self: true, ls, lw, lh, a, b, la, lb, out, loop, h: loop + 10 };
     }
-    apart(a, b, lw + 2 * SEQ.labelPad);
-    return { r, ls, lw, lh, a, b, h: (ls.length ? lh + 5 : 6) + 10 };
+    apart(a, b, lw + 2 * SEQ.labelPad + reach(la) + reach(lb));
+    return { r, ls, lw, lh, a, b, la, lb, h: (ls.length ? lh + 5 : 6) + 10 };
   });
   const frames = seqFrameSpans(R, P, apart, fam);
   P.forEach((q, j) => { q.x = Math.round(j ? Math.max(...need[j].map(([i, d]) => P[i].x + d)) : q.w / 2); });
@@ -1502,21 +1556,31 @@ function seqLayout(fam = UI_STACK) {
     g.y = y; y += g.h + SEQ.rowGap;
     if (g.note) {
       const xa = P[g.a].x, xb = P[g.b].x;
-      if (g.r.side === 'right') g.x = xa + SEQ.noteGap;
-      else if (g.r.side === 'left') g.x = xa - SEQ.noteGap - g.w;
+      if (g.r.side === 'right') g.x = xa + g.ext + SEQ.noteGap;
+      else if (g.r.side === 'left') g.x = xa - g.ext - SEQ.noteGap - g.w;
       else if (g.a === g.b) g.x = Math.round(xa - g.w / 2);
       else { g.x = xa - SEQ.span; g.w = xb - xa + 2 * SEQ.span; }
       grow(g.x, g.x + g.w);
     } else if (g.self) {
-      g.x1 = g.x2 = P[g.a].x; g.ay = g.y + 5; g.by = g.ay + g.loop;
-      grow(g.x1, g.x1 + SEQ.self + (g.lw ? g.lw + 8 : 0));
+      // Out from the bar it's in, round, and back into the bar it starts (or to the same spot).
+      const x = P[g.a].x, edge = L => L < 0 ? 0 : L * SEQ.actStep + SEQ.actHalf;
+      g.x1 = x + edge(g.la); g.x2 = x + edge(g.lb); g.xr = x + g.out + SEQ.self; g.ay = g.y + 5; g.by = g.ay + g.loop;
+      grow(g.x1, g.xr + (g.lw ? g.lw + 8 : 0));
     } else if (!g.mark) {
-      g.x1 = P[g.a].x; g.x2 = P[g.b].x; g.ay = g.y + g.h - 5;
+      // Arrows start and end at the edge of an activation bar, the side facing the other end.
+      const dir = Math.sign(P[g.b].x - P[g.a].x) || 1, edge = (L, d) => L < 0 ? 0 : L * SEQ.actStep + d * SEQ.actHalf;
+      g.x1 = P[g.a].x + edge(g.la, dir); g.x2 = P[g.b].x + edge(g.lb, -dir); g.ay = g.y + g.h - 5;
     }
   }
+  const A = acts.map(b => {
+    const s = R[b.i], e = R[b.end], y1 = s.self ? s.by - 4 : s.ay, y2 = b.end === b.i ? y1 + SEQ.actStub : (e.self ? e.by : e.ay) + 4;
+    const q = P[at[b.p]], x = q.x + b.level * SEQ.actStep - SEQ.actHalf;
+    grow(x, x + 2 * SEQ.actHalf);
+    return { ...b, q, x, y1, y2, w: 2 * SEQ.actHalf };
+  });
   for (const f of frames) { seqFramePlace(f, R, P); grow(f.x1, f.x2); }
   const end = (R.length ? y - SEQ.rowGap : H + SEQ.rowTop) + SEQ.tail;   // where lifelines stop (and the bottom heads start)
-  return { H, P, R, end, bounds: { x1, y1: 0, x2, y2: S.settings.footbox ? end + H : end } };
+  return { H, P, R, A, end, bounds: { x1, y1: 0, x2, y2: S.settings.footbox ? end + H : end } };
 }
 // Frames, innermost first: the rows each holds, the columns they touch, and room for its tab and condition.
 // A frame is as wide as the lifelines its rows touch plus a margin, so a frame inside another sits inset.
@@ -1524,10 +1588,17 @@ function seqFrameSpans(R, P, apart, fam) {
   const font = `500 12px ${fam}`;
   const out = [], stack = [];
   R.forEach((g, i) => {
-    if (g.mark === 'frame') { const f = { g, i, secs: [], kids: [], a: Infinity, b: -Infinity, levels: 0 }; stack.at(-1)?.kids.push(f); stack.push(f); }
+    if (g.mark === 'frame') { const f = { g, i, secs: [], kids: [], items: [], a: Infinity, b: -Infinity, levels: 0 }; stack.at(-1)?.kids.push(f); stack.push(f); }
     else if (g.mark === 'else') stack.at(-1)?.secs.push(g);
     else if (g.mark === 'end') { const f = stack.pop(); if (!f) return; f.end = g; f.j = i; out.push(f); }
-    else for (const f of stack) { f.a = Math.min(f.a, g.a, g.b); f.b = Math.max(f.b, g.a, g.b); }
+    else {
+      // What reaches past a lifeline: {c: column, l: px to its left, r: px to its right}.
+      const side = g.r.side, w = g.w, gap = (g.ext || 0) + SEQ.noteGap + w;
+      const items = !g.note ? (g.self ? [{ c: g.a, l: 0, r: g.out + SEQ.self + (g.lw ? g.lw + 8 : 0) }] : [{ c: Math.min(g.a, g.b), l: 0, r: 0 }, { c: Math.max(g.a, g.b), l: 0, r: 0 }])
+        : side === 'right' ? [{ c: g.a, l: 0, r: gap }] : side === 'left' ? [{ c: g.a, l: gap, r: 0 }]
+        : g.a === g.b ? [{ c: g.a, l: w / 2, r: w / 2 }] : [{ c: g.a, l: SEQ.span, r: 0 }, { c: g.b, l: 0, r: SEQ.span }];
+      for (const f of stack) { f.items.push(...items); f.a = Math.min(f.a, g.a, g.b); f.b = Math.max(f.b, g.a, g.b); }
+    }
   });
   for (const f of out) {   // innermost first, so a frame knows what's inside it
     for (const k of f.kids) { f.a = Math.min(f.a, k.a); f.b = Math.max(f.b, k.b); f.levels = Math.max(f.levels, k.levels + 1); }
@@ -1540,6 +1611,9 @@ function seqFrameSpans(R, P, apart, fam) {
     const pad = SEQ.framePad * (f.levels + 1);
     if (f.a < f.b) apart(f.a, f.b, f.need - 2 * pad);
     else apart(f.a, f.a + 1, f.need - pad + SEQ.framePad);
+    // A frame never reaches a lifeline it doesn't cover.
+    const clear = pad + SEQ.framePad + SEQ.actHalf;
+    for (const it of f.items) { apart(it.c, f.b + 1, it.r + clear); apart(f.a - 1, it.c, it.l + clear); }
   }
   return out;
 }
@@ -1549,10 +1623,11 @@ function seqFramePlace(f, R, P) {
   for (let i = f.i + 1; i < f.j; i++) {
     const g = R[i];
     if (g.note) take(g.x, g.x + g.w);
-    else if (g.self) take(g.x1, g.x1 + SEQ.self + (g.lw ? g.lw + 8 : 0));
+    else if (g.self) take(Math.min(g.x1, g.x2), g.xr + (g.lw ? g.lw + 8 : 0));
     else if (!g.mark) take(Math.min(g.x1, g.x2), Math.max(g.x1, g.x2));
   }
   for (const k of f.kids) take(k.x1, k.x2);
+  if (f.a <= f.b) take(P[f.a].x - SEQ.actHalf, P[f.b].x + SEQ.actHalf);   // its lifelines, and the bars on them
   if (x1 > x2) { const a = P[0]?.x ?? 0, b = P[P.length - 1]?.x ?? a; x1 = a - SEQ.framePad; x2 = b + SEQ.framePad; }
   else { x1 -= SEQ.framePad; x2 += SEQ.framePad; }
   x2 = Math.max(x2, x1 + f.need);
@@ -1562,7 +1637,7 @@ function seqFramePlace(f, R, P) {
 }
 // Draw a layout. `p` paints: CSS classes and hit areas on the canvas, plain colors in exports.
 function seqMarkup(L, p) {
-  const { H, P, R, end } = L, r2 = v => Math.round(v * 100) / 100;
+  const { H, P, R, A = [], end } = L, r2 = v => Math.round(v * 100) / 100;
   const texts = (ls, x, top, lh, size, attrs, anchor) => ls.map((t, i) =>
     `<text x="${r2(x)}" y="${r2(top + i * lh + lh / 2 + size * 0.35)}" text-anchor="${anchor}" ${attrs}>${esc(t)}</text>`).join('');
   let out = '';
@@ -1587,6 +1662,7 @@ function seqMarkup(L, p) {
         + '</g>';
     } else out += `<g ${p.frameEnd(g)}>${p.hit(across)}</g>`;
   }
+  for (const a of A) out += `<rect x="${a.x}" y="${r2(a.y1)}" width="${a.w}" height="${r2(a.y2 - a.y1)}" ${p.act(a)}/>`;
   for (const g of R) {
     if (g.mark) continue;
     if (g.note) {
@@ -1600,8 +1676,8 @@ function seqMarkup(L, p) {
     const open = g.r.type !== 'sync', inset = open ? 0 : SEQ.head / 2;
     let d, dir;
     if (g.self) {
-      const x = g.x1, xr = x + SEQ.self;
-      d = pathD([{ x, y: g.ay }, { x: xr, y: g.ay }, { x: xr, y: g.by }, { x: x + inset, y: g.by }], 4); dir = -1;
+      const xr = g.xr;
+      d = pathD([{ x: g.x1, y: g.ay }, { x: xr, y: g.ay }, { x: xr, y: g.by }, { x: g.x2 + inset, y: g.by }], 4); dir = -1;
     } else {
       dir = Math.sign(g.x2 - g.x1) || 1;
       d = `M${g.x1},${g.ay} L${g.x2 - dir * inset},${g.ay}`;
@@ -1610,7 +1686,7 @@ function seqMarkup(L, p) {
     const arrow = open ? `<path d="M${bx},${ty - hw} L${tx},${ty} L${bx},${ty + hw}" ${p.open(g)}/>`
       : `<path d="M${tx},${ty} L${bx},${ty - hw} L${bx},${ty + hw} Z" ${p.fill(g)}/>`;
     let label = '';
-    if (g.ls.length && g.self) label = texts(g.ls, g.x1 + SEQ.self + 8, (g.ay + g.by - g.lh) / 2, SEQ.lh, 12, p.label(g), 'start');
+    if (g.ls.length && g.self) label = texts(g.ls, g.xr + 8, (g.ay + g.by - g.lh) / 2, SEQ.lh, 12, p.label(g), 'start');
     else if (g.ls.length) {
       const mid = (g.x1 + g.x2) / 2;   // the label breaks the lifelines it crosses
       label = `<rect x="${r2(mid - g.lw / 2 - 4)}" y="${g.y - 1}" width="${g.lw + 8}" height="${g.lh + 2}" rx="2" ${p.labelBg(g)}/>`
@@ -1896,7 +1972,8 @@ function normalize(s) {
     showSlots: typeof st.showSlots === 'boolean' ? st.showSlots : def.showSlots, routing: oneOf(st.routing, valuesOf(ROUTINGS), def.routing),
     radius: numIn(st.radius, def.radius, 0, 16), labelPos: oneOf(st.labelPos, LABEL_POS, def.labelPos),
     walls: typeof st.walls === 'boolean' ? st.walls : def.walls,
-    autonumber: typeof st.autonumber === 'boolean' ? st.autonumber : def.autonumber, footbox: typeof st.footbox === 'boolean' ? st.footbox : def.footbox };
+    autonumber: typeof st.autonumber === 'boolean' ? st.autonumber : def.autonumber, footbox: typeof st.footbox === 'boolean' ? st.footbox : def.footbox,
+    activation: typeof st.activation === 'boolean' ? st.activation : def.activation };
   const ti = isObj(s.title) ? s.title : {}, tdef = titleDefaults();
   const title = { show: ti.show === true, title: strOr(ti.title), version: strOr(ti.version), date: strOr(ti.date), author: strOr(ti.author), pos: oneOf(ti.pos, CORNER_IDS, tdef.pos) };
   const lg = isObj(s.legend) ? s.legend : {}, ldef = legendDefaults();
@@ -1966,6 +2043,7 @@ function settingsDocs() {
     walls: `true or false: keep shapes ${WALL} px apart while the user edits. Default ${d.walls}.`,
     autonumber: `true or false: number the messages of a sequence diagram. Default ${d.autonumber}.`,
     footbox: `true or false: draw a sequence diagram's participants at the bottom too. Default ${d.footbox}.`,
+    activation: `true or false: draw a sequence diagram's activation bars (see Sequence diagrams). Default ${d.activation}.`,
   };
 }
 const legendExamples = () => [
@@ -2098,7 +2176,7 @@ A sequence diagram is a different kind of file: participants left to right, and 
 - A message: \`{"id": "m1", "from": "cust", "to": "web", "type": "sync", "label": "Place order"}\`. \`from\` and \`to\` are participant ids, the same one for a self-message; a message naming a participant that doesn't exist is dropped. \`type\` is ${or(valuesOf(MSG_TYPES).map(q))}: a call that waits for an answer (filled arrowhead), one that doesn't wait (open arrowhead), or the answer (dashed). Default \`"sync"\`. \`style\`: \`line\` and \`dash\` only; a reply is dashed unless \`dash\` says otherwise.
 - A note: \`{"id": "n1", "kind": "note", "side": "right", "on": ["gw"], "label": "Can take up to 5 s"}\`. \`side\` is ${or(valuesOf(NOTE_SIDES).map(q))}. \`on\` lists the participant it sits beside, or for \`"over"\` one or two participants (the note spans from one to the other). A note takes a row of its own. \`style\` works as for boxes.
 - A frame (alt, opt, loop, par) is rows around the rows it holds: a start \`{"id": "f1", "kind": "frame", "type": "alt", "label": "approved"}\`, then the rows, then an end \`{"id": "f1x", "kind": "end"}\`. For an alt or par, an else line \`{"id": "f1e", "kind": "else", "label": "declined"}\` between them starts the next section. \`type\` is ${or(valuesOf(FRAME_TYPES).map(q))}: ${FRAME_TYPES.map(([v]) => FRAME_HINTS[v]).join(', ')}. Default ${q('alt')}. \`label\` is the condition, shown in brackets (leave the brackets out). Frames nest, at most ${MAX_DEPTH} deep. An end with no start, or an else line outside an alt or par, is dropped; a start with no end is closed after the last row. A frame is drawn as wide as the lifelines its rows touch.
-- \`settings.autonumber\` numbers the messages and \`settings.footbox\` repeats the participants at the bottom; the other settings don't apply. The title block and legend work as above.
+- \`settings.autonumber\` numbers the messages, \`settings.footbox\` repeats the participants at the bottom, and \`settings.activation\` (default \`true\`) draws activation bars. Bars are automatic: a sync call starts one on the participant it calls, and a reply back closes the latest open call between the two (in an alt, each section's reply counts and the bar runs to the last). A call with no reply lasts to that participant's last message before the caller sends again. Async messages start none. So send a reply for every call you want to read as finished. The other settings don't apply. The title block and legend work as above.
 - Put each reply right after the call it answers. Keep labels short: an operation, an endpoint or an event name.
 
 The sequence sample that ships with Snapblade:
@@ -2538,6 +2616,7 @@ function renderSeq() {
     labelBg: () => 'class="s-label-bg"', label: () => 'class="s-label"',
     note: g => `class="${cls('note', g.r.id)}" data-role="row" data-id="${esc(g.r.id)}" style="${styleVars(g.r)}"`,
     noteBody: () => 'class="n-body"', fold: () => 'class="n-fold"', noteText: () => 'class="n-text"',
+    act: a => `class="s-act" style="${styleVars(barStyle(a.q.p))}"`,
     frame: g => `class="${cls('frame', g.r.id)}" data-role="row" data-id="${esc(g.r.id)}"`,
     frameBox: () => 'class="f-box"', tab: () => 'class="f-tab"', kind: () => 'class="f-kind"', guard: () => 'class="f-guard"',
     sec: g => `class="${cls('fsec', g.r.id)}" data-role="row" data-id="${esc(g.r.id)}"`, secLine: () => 'class="f-else"',
@@ -2664,6 +2743,7 @@ function seqDiagramPanel() {
     <p class="eyebrow">Sequence diagram</p>
     <label class="check"><input id="f-autonumber" type="checkbox" data-field="autonumber"${st.autonumber ? ' checked' : ''}> Number messages</label>
     <label class="check"><input id="f-footbox" type="checkbox" data-field="footbox"${st.footbox ? ' checked' : ''}> Participants at the bottom too</label>
+    <label class="check"><input id="f-activation" type="checkbox" data-field="activation"${st.activation ? ' checked' : ''}> Activation bars</label>
     <p class="desc">Columns size themselves to their labels and rows are evenly spaced. Drag from one lifeline to another to add a message.</p>
   </section>
   ${annSection()}`;
@@ -2987,7 +3067,7 @@ function onField(t) {
   if (f === 'radius') { st.radius = +t.value; t.previousElementSibling.textContent = `Corner radius · ${st.radius} px`; render(); save(); return; }
   if (f === 'showSlots') { st.showSlots = t.checked; render(); save(); return; }
   if (f === 'walls') { st.walls = t.checked; save(); return; }
-  if (f === 'autonumber' || f === 'footbox') { st[f] = t.checked; render(); save(); return; }
+  if (f === 'autonumber' || f === 'footbox' || f === 'activation') { st[f] = t.checked; render(); save(); return; }
   if (f === 'showTitle' || f === 'showLegend') {
     pushUndo();
     const blk = f === 'showTitle' ? S.title : S.legend;
@@ -3248,7 +3328,7 @@ function openSeqEditor(id, fresh) {
     if (g.mark === 'frame') b = { x: g.x1 + g.tw + 2, y: g.y - 4, w: Math.max(180, g.gw + 30), h: SEQ.tabH + 8 };
     else if (g.mark === 'else') b = { x: g.x1 + 4, y: g.y, w: Math.max(180, g.gw + 30), h: SEQ.lh + 10 };
     else if (isNote(o)) b = { x: g.x, y: g.y, w: g.w, h: g.h };
-    else if (g.self) b = { x: g.x1 + SEQ.self + 4, y: g.y, w: Math.max(140, g.lw + 20), h: Math.max(30, g.h) };
+    else if (g.self) b = { x: g.xr + 4, y: g.y, w: Math.max(140, g.lw + 20), h: Math.max(30, g.h) };
     else { const w = Math.max(140, g.lw + 20); b = { x: (g.x1 + g.x2) / 2 - w / 2, y: g.y - 4, w, h: Math.max(30, g.lh + 10) }; }
   }
   Object.assign(editor.style, { left: b.x * view.k + view.x + 'px', top: b.y * view.k + view.y + 'px', width: Math.max(120, b.w * view.k) + 'px',
@@ -3751,7 +3831,8 @@ function guideHtml() {
       <li>The <b>Frame</b> panel sets its <b>Kind</b> and <b>Condition</b>. In an Alt, <b>+ Else line</b> starts another section (in a Par, <b>+ And line</b>): it goes in at the bottom of the frame, and you drag it up to where its section starts. An <b>Else line</b> or <b>And line</b> has its own Condition, and <b>Delete line</b>. Switching to Opt or Loop removes the lines, not the rows.</li>
       <li>Drag a frame's top or bottom edge to take in more or fewer rows; a message dragged past an edge moves in or out. <b>Move up</b> and <b>Move down</b> (or the arrow keys) move the whole frame with what's in it. <b>Remove frame</b> or the Delete key takes the frame away and keeps what was inside; <b>Delete with contents</b> takes everything. Frames nest, and each one is as wide as the lifelines its rows touch.</li>
       <li><b>Duplicate</b> (Ctrl+D) puts a copy of a message, note, frame (with what's in it) or participant right after it. <b>Delete message</b>, <b>Delete note</b>, <b>Delete participant</b> or the Delete key removes one.</li>
-      <li>The <b>Sequence diagram</b> settings: <b>Number messages</b>, and <b>Participants at the bottom too</b>.</li></ul>`],
+      <li>The <b>Sequence diagram</b> settings: <b>Number messages</b>, <b>Participants at the bottom too</b> and <b>Activation bars</b>.</li>
+      <li>Activation bars draw themselves. A Sync call starts a bar on the participant it calls, which lasts until the last Reply back (so a reply in each section of an alt keeps it going through all of them). With no reply, it lasts until that participant's last message before the caller sends anything else. Async messages start no bar. A call into a participant that's already busy, or a self-message, adds a bar beside the first. Arrows end at the bars, and notes keep clear of them.</li></ul>`],
     ['tabs', 'Tabs', `<p>One file can hold several diagrams, each on its own tab along the bottom of the canvas: an architecture view and the sequence diagrams that go with it, say.</p><ul>
       <li><b>Add a tab</b> (the + at the end of the tabs) offers a <b>Box diagram</b>, a <b>Sequence diagram</b>, or <b>Duplicate this tab</b>. A new tab goes right after the open one.</li>
       <li>Click a tab to open it. Double-click the open tab (or press F2 on it) to rename it; drag a tab sideways to move it. The arrow keys move between tabs when one has the focus.</li>
@@ -4138,6 +4219,7 @@ function buildExportSvg(o) {
       noteBody: g => { const c = col(g.r); return `fill="${c.fill}"${fo(c)} stroke="${c.line}" stroke-width="1.25" stroke-linejoin="round"${dash(g.r.style)}`; },
       fold: g => `fill="none" stroke="${col(g.r).line}" stroke-width="1.25" stroke-linejoin="round"`,
       noteText: () => `${fontAttrs(12, 500)} fill="${ink}"`,
+      act: a => { const c = col(barStyle(a.q.p)); return `fill="${c.fill}"${fo(c)} stroke="${c.line}" stroke-width="1.25"`; },
       frame: () => '', sec: () => '', frameEnd: () => '',
       frameBox: () => `fill="none" stroke="${frameInk}" stroke-width="1.25"`,
       tab: () => `fill="${labelBg}" stroke="${frameInk}" stroke-width="1.25" stroke-linejoin="round"`,
