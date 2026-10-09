@@ -431,6 +431,7 @@ test('the agent instructions name every field a diagram can keep', () => {
       settings: sample().settings, title: sample().title, legend: { ...sample().legend, hidden: ['box:blue||pair'] } });
     const keys = new Set(), walk = (o, skip) => { if (Array.isArray(o)) o.forEach(v => walk(v)); else if (o && typeof o === 'object') for (const k in o) { if (!skip) keys.add(k); walk(o[k], k === 'labels'); } };
     walk({ format: 1, version: 1, diagram: d });
+    walk({ pages: [{ name: 'x', diagram: {} }], active: 0 });
     walk(normalize({ type: 'sequence', parts: [{ id: 'a', label: 'A', style: { line: 'blue' } }],
       rows: [{ id: 'm', from: 'a', to: 'a', type: 'reply', label: 'x', style: { dash: 'dotted' } }, { id: 'n', kind: 'note', side: 'over', on: ['a'], label: 'n' }] }));
     return [...keys];
@@ -532,4 +533,35 @@ test('sequence: normalize drops what a sequence diagram cannot hold', () => {
   run(`S = normalize({ type: 'sequence', parts: Array.from({ length: 300 }, (_, i) => ({ id: 'p' + i })), rows: Array.from({ length: 3000 }, (_, i) => ({ id: 'r' + i, from: 'p0', to: 'p1' })) })`);
   assert.deepEqual(json('[S.parts.length, S.rows.length]'), [100, 1000]);
   assert.ok(json('seqLayout().R.length') === 1000);
+});
+
+// ---------- tabs ----------
+test('tabs: a file with several diagrams round-trips, and an old one-diagram file opens as one tab', () => {
+  const book = json(`(() => {
+    const a = normalize(sample()), b = normalize(seqSample());
+    BOOK = { pages: [{ name: 'Architecture', S: a }, { name: 'Checkout', S: b }], active: 1 }; S = b;
+    S.rows[0].label = 'changed on the open tab';
+    return parseBook(serialize());
+  })()`);
+  assert.deepEqual(book.pages.map(p => [p.name, p.diagram.type || 'box']), [['Architecture', 'box'], ['Checkout', 'sequence']]);
+  assert.equal(book.active, 1);
+  assert.equal(book.pages[1].diagram.rows[0].label, 'changed on the open tab', 'the open tab is saved as it is now');
+  assert.deepStrictEqual(json('parseDiagram(serialize())'), json('S'));
+  assert.equal(json('JSON.parse(serialize()).version'), 2);
+  const old = json(`parseBook(JSON.stringify({ format: 'snapblade', version: 1, diagram: seqSample() }))`);
+  assert.deepEqual([old.pages.length, old.pages[0].name, old.active], [1, 'Sequence 1', 0]);
+  assert.throws(() => run(`parseBook(JSON.stringify({ format: 'snapblade', version: 3, pages: [] }))`), /newer version/);
+  run('BOOK = null');
+});
+
+test('tabs: hostile tab lists are capped and cleaned', () => {
+  const b = json(`normalizeBook({ active: 99, pages: [
+    { name: 7, diagram: { nodes: [], edges: [] } }, null, 'x', { name: 'no diagram' }, { name: '  spaced  ', diagram: { type: 'sequence' } },
+    { name: 'x'.repeat(500), diagram: { nodes: [], edges: [] } }, ...Array.from({ length: 80 }, (_, i) => ({ name: 'p' + i, diagram: { nodes: [], edges: [] } })) ] })`);
+  assert.equal(b.pages.length, 50 - 3, 'at most 50 entries are read; the ones that are not diagrams are dropped');
+  assert.deepEqual(b.pages.slice(0, 3).map(p => p.name.length > 20 ? p.name.length : p.name), ['Page 1', 'spaced', 100]);
+  assert.equal(b.active, b.pages.length - 1);
+  assert.equal(json(`normalizeBook({ pages: [] })`), null);
+  assert.equal(json(`normalizeBook({ pages: [{ name: 'a', diagram: 'nope' }] })`), null);
+  assert.equal(json(`normalizeBook({ pages: [{ diagram: { nodes: [], edges: [] } }], active: -3 }).active`), 0);
 });

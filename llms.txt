@@ -195,3 +195,12 @@ The sequence sample that ships with Snapblade:
   }
 }
 ```
+
+## Several diagrams in one file (tabs)
+
+A file can hold several diagrams, each shown as a tab: for example an architecture diagram and the sequence diagrams that go with it. Use version 2 and a `pages` list instead of `diagram`:
+
+    {"format": "snapblade", "version": 2, "active": 0, "pages": [{"name": "Architecture", "diagram": {...}}, {"name": "Checkout", "diagram": {"type": "sequence", ...}}]}
+
+- `pages`: the tabs in order, at most 50. Each has a `name` (text, up to 100 characters; empty gets a default) and a `diagram` written exactly as above. Ids only need to be unique within their own diagram.
+- `active`: the index of the tab the file opens at. Default 0.

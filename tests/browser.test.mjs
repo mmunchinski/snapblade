@@ -424,8 +424,8 @@ test('save downloads a .snapblade file; reopening restores it; unsaved changes a
   assert.equal(dl.suggestedFilename(), 'Order platform.snapblade');
   const file = `${tmp}/snapblade-test.snapblade`; await dl.saveAs(file);
   const saved = JSON.parse(readFileSync(file, 'utf8'));
-  assert.equal(saved.format, 'snapblade'); assert.equal(saved.version, 1);
-  assert.equal(saved.diagram.nodes.find(n => n.id === 'lb').label, 'Front door');
+  assert.equal(saved.format, 'snapblade'); assert.equal(saved.version, 2);
+  assert.equal(saved.pages[0].diagram.nodes.find(n => n.id === 'lb').label, 'Front door');
   assert.equal(await h.ev(() => doc.dirty), false, 'saving clears the unsaved state');
 
   await h.click('gw'); await page.keyboard.press('Delete');
@@ -548,7 +548,7 @@ test('a saved diagram that cannot be drawn is set aside, and the sample loads in
   assert.deepEqual(await h.ev(() => [JSON.parse(localStorage.getItem('snapblade-set-aside-v1')).edges[0].label, localStorage.getItem('snapblade-playground-v1')]), ['BOOM', null], 'kept, but out of the way');
   // Work carries on from the sample and is saved as usual.
   await page.click('#addBox'); await page.keyboard.press('Escape');
-  assert.equal(await h.ev(() => JSON.parse(localStorage.getItem('snapblade-playground-v1')).nodes.length), 14);
+  assert.equal(await h.ev(() => JSON.parse(localStorage.getItem('snapblade-playground-v1')).pages[0].diagram.nodes.length), 14);
   assert.deepEqual(h.errors, []);
 });
 
@@ -799,6 +799,11 @@ test('the Help guide mentions every control, panel heading, top-bar button and e
   await page.click('#fileBtn');
   for (const n of await names('#fileMenu button')) all.add(n);
   await page.keyboard.press('Escape');
+  // The tab strip's own controls (not the tabs, which are named by the user), with a second tab so Delete tab and the export Tabs option show.
+  await h.ev(() => { closeMenu(); addTab('copy'); });
+  await page.click('#tabAdd');
+  for (const n of await names('#tabs button, #tabs [data-tabdel], #tabMenu button')) all.add(n);
+  await page.keyboard.press('Escape'); await h.ev(() => closeMenu());
   await h.ev(() => { sel = null; multi = []; renderPanel(); });
   await page.click('#exportBtn');
   for (const fmt of ['PNG', 'PDF']) {
@@ -984,4 +989,108 @@ test('a hostile sequence file cannot run script; it opens with what is valid', a
   await check();
   await page.reload(); await page.waitForTimeout(300);
   await check();
+});
+
+// ---------- tabs ----------
+const tabNames = h => h.ev(() => BOOK.pages.map(p => p.name));
+const tabAt = (h, i) => h.page.locator(`#tablist [data-tab="${i}"]`);
+
+test('tabs: add, rename, reorder, switch with their own undo and view, delete, and keep them all on reload and in files', async () => {
+  const h = await open(), { page } = h;
+  assert.deepEqual(await tabNames(h), ['Page 1']);
+  assert.equal(await page.locator('#tablist [data-tabdel]').count(), 0, 'the last tab cannot be deleted');
+  // A sequence tab right after the open one, typed into straight away.
+  await page.click('#tabAdd'); await page.click('[data-tabadd="sequence"]');
+  assert.deepEqual(await tabNames(h), ['Page 1', 'Sequence 1']);
+  assert.equal(await h.ev(() => [isSeq(), BOOK.active, document.activeElement.id].join()), 'true,1,quickIn');
+  await page.keyboard.type('Client -> Server : hello'); await page.keyboard.press('Enter');
+  // Undo is per tab: switching back to the first tab and undoing leaves the sequence alone.
+  await tabAt(h, 0).click();
+  assert.equal(await h.ev(() => isSeq()), false);
+  await h.click('inv'); await page.keyboard.press('Delete');
+  await tabAt(h, 1).click();
+  assert.equal(await h.ev(() => undoStack.length), 1);
+  await page.keyboard.press('Control+z');
+  assert.equal(await h.ev(() => S.rows.length), 0, 'undo on this tab undid this tab');
+  await page.keyboard.press('Control+y');
+  await tabAt(h, 0).click();
+  assert.equal(await h.ev(() => !!byId('inv')), false, 'the other tab kept its change');
+  await page.keyboard.press('Control+z');
+  assert.equal(await h.ev(() => !!byId('inv')), true);
+  // Rename: double-click the open tab.
+  await tabAt(h, 0).dblclick();
+  await page.keyboard.press('Control+a'); await page.keyboard.type('Architecture'); await page.keyboard.press('Enter');
+  // Duplicate, then drag the copy to the front.
+  await page.click('#tabAdd'); await page.click('[data-tabadd="copy"]');
+  assert.deepEqual(await tabNames(h), ['Architecture', 'Architecture copy', 'Sequence 1']);
+  const from = await tabAt(h, 1).boundingBox(), to = await tabAt(h, 0).boundingBox();
+  await h.drag({ x: from.x + from.width / 2, y: from.y + from.height / 2 }, { x: to.x + 4, y: to.y + to.height / 2 });
+  assert.deepEqual(await tabNames(h), ['Architecture copy', 'Architecture', 'Sequence 1']);
+  assert.equal(await h.ev(() => BOOK.pages[BOOK.active].name), 'Architecture copy', 'the moved tab stays open');
+  // The title block's empty title shows the tab's name when there are several.
+  assert.ok((await h.ev(() => svg.textContent)).includes('Order platform'));
+  await h.ev(() => { S.title.title = ''; render(); });
+  assert.ok((await h.ev(() => svg.textContent)).includes('Architecture copy'));
+  // Copy and paste between tabs.
+  await h.click('users'); await page.keyboard.press('Control+c');
+  await tabAt(h, 1).click(); await page.keyboard.press('Control+v');
+  assert.equal(await h.ev(() => S.nodes.filter(n => n.label === 'Customers').length), 2);
+  // Everything survives a reload, including which tab is open and each tab's own content.
+  const before = await h.ev(() => ({ names: BOOK.pages.map(p => p.name), active: BOOK.active, d: JSON.parse(JSON.stringify(bookData())) }));
+  await page.reload(); await page.waitForTimeout(300);
+  assert.deepStrictEqual(await h.ev(() => ({ names: BOOK.pages.map(p => p.name), active: BOOK.active, d: JSON.parse(JSON.stringify(bookData())) })), before);
+  assert.equal(await page.locator('#tablist [data-tab]').count(), 3);
+  // And a save and reopen.
+  const file = await h.ev(() => serialize());
+  await h.ev(() => { doc.dirty = false; return newDiagram(); });
+  assert.deepEqual(await tabNames(h), ['Page 1']);
+  await dropFile(h, file, 'design.snapblade'); await page.waitForTimeout(300);
+  assert.deepStrictEqual(await h.ev(() => JSON.parse(JSON.stringify(bookData()))), before.d);
+  // Deleting a tab with something on it asks first; Cancel keeps it.
+  await page.click('#tablist [data-tabdel]');
+  assert.match(await page.textContent('#modal'), /Delete the tab “Architecture”/);
+  await page.click('#modal [data-choice="cancel"]');
+  assert.equal(await page.locator('#tablist [data-tab]').count(), 3);
+  await page.click('#tablist [data-tabdel]'); await page.click('#modal [data-choice="delete"]');
+  assert.deepEqual(await tabNames(h), ['Architecture copy', 'Sequence 1']);
+  assert.equal(await h.ev(() => BOOK.active), 0, 'the tab before it opens');
+  assert.deepEqual(h.errors, []);
+});
+
+test('tabs: export the open tab, or all of them (one PDF page or one file per tab)', { timeout: 60000 }, async () => {
+  const h = await open(), { page } = h;
+  await h.ev(() => { addTab('sequence'); loadSample(true); switchTab(0); });
+  await page.click('#exportBtn');
+  assert.equal(await page.isVisible('[data-ex="tabs"]'), true);
+  await page.click('[data-ex="format"][data-val="svg"]'); await page.click('[data-ex="tabs"][data-val="all"]');
+  assert.match(await page.textContent('#exInfo'), /2 files/);
+  const downloads = [];
+  page.on('download', d => downloads.push(d.suggestedFilename()));
+  await page.click('[data-choice="download"]'); await page.waitForTimeout(800);
+  assert.deepEqual(downloads.sort(), ['Untitled diagram - Page 1.svg', 'Untitled diagram - Sequence 1.svg']);
+  // A PDF of all tabs has a page per tab.
+  const pdf = await h.ev(async () => {
+    const { blob } = await exportBlob({ ...exportOpts, format: 'pdf', tabs: 'all' });
+    return { pages: ((await blob.text()).match(/\/Type \/Page\b/g) || []).length };
+  });
+  assert.equal(pdf.pages, 2);
+  // The open tab only.
+  const one = await h.ev(async () => (await exportSvgs({ ...exportOpts, format: 'svg', tabs: 'current' })).map(x => x.name));
+  assert.deepEqual(one, ['Page 1']);
+  assert.deepEqual(h.errors, []);
+});
+
+test('a hostile tab name is shown as text everywhere', async () => {
+  const pwn = '"><img src=x onerror="window.__pwn=1">';
+  const file = JSON.stringify({ format: 'snapblade', version: 2, active: 1, pages: [{ name: pwn, diagram: { nodes: [box('a')], edges: [] } }, { name: 'ok', diagram: { nodes: [box('b')], edges: [] } }] });
+  const h = await open(), { page } = h;
+  await dropFile(h, file, 'tabs.snapblade'); await page.waitForTimeout(300);
+  await h.ev(() => { switchTab(0); S.title.show = true; render(); });
+  await page.click('#exportBtn'); await page.click('[data-ex="tabs"][data-val="all"]'); await page.waitForTimeout(300);
+  await page.keyboard.press('Escape');
+  await tabAt(h, 0).dblclick(); await page.keyboard.press('Escape');
+  assert.equal(await h.ev(() => window.__pwn), undefined);
+  assert.equal(await h.ev(() => document.querySelectorAll('img:not(#exPreview)').length), 0);
+  assert.equal(await page.textContent('#tablist [data-tab="0"] .tname'), pwn);
+  assert.deepEqual(h.errors, []);
 });

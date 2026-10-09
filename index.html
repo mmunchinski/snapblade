@@ -98,7 +98,31 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ---------- main ---------- */
 main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; min-height: 0; }
+.work { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-width: 0; min-height: 0; }
 .stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+
+/* ---------- tabs (along the bottom of the canvas) ---------- */
+.tabs { position: relative; display: flex; align-items: stretch; gap: 2px; padding: 0 8px; background: var(--panel); border-top: 1px solid var(--line); min-width: 0; }
+.tablist { display: flex; gap: 2px; overflow-x: auto; min-width: 0; scrollbar-width: thin; }
+.tab {
+  display: flex; align-items: center; gap: 6px; border: 0; border-top: 2px solid transparent; background: transparent; padding: 6px 10px 7px;
+  font-size: 13px; font-weight: 500; color: var(--ink-2); cursor: pointer; white-space: nowrap; max-width: 220px; user-select: none; touch-action: none;
+}
+.tab:hover { color: var(--ink); background: var(--paper); }
+.tab[aria-selected="true"] { color: var(--ink); background: var(--paper); border-top-color: var(--accent); }
+.tab .tname { overflow: hidden; text-overflow: ellipsis; }
+.tab svg { width: 14px; height: 12px; flex: none; opacity: .7; }
+.tab .tx { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; color: var(--ink-3); }
+.tab .tx:hover { background: var(--line); color: var(--ink); }
+.tab .tx svg { width: 9px; height: 9px; opacity: 1; }
+.tab.dragging { opacity: .5; }
+.tabs input.tname { font: 500 13px var(--ui); color: var(--ink); background: var(--panel); border: 1px solid var(--accent); border-radius: 4px; padding: 1px 4px; width: 14ch; outline: none; }
+.tabs .menu-wrap { display: flex; }
+.tabadd { border: 0; background: transparent; color: var(--ink-2); padding: 0 10px; cursor: pointer; display: grid; place-items: center; }
+.tabadd:hover { color: var(--accent); background: var(--paper); }
+.tabadd svg { width: 12px; height: 12px; }
+.tabs .menu { top: auto; bottom: calc(100% + 4px); }
+.tab-drop { position: absolute; top: 4px; bottom: 4px; width: 2px; background: var(--accent); pointer-events: none; }
 #cv { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; display: block; }
 #cv.panning { cursor: grabbing; }
 
@@ -335,6 +359,7 @@ dl.keys dd { margin: 0; }
 @media (max-width: 760px) {
   .export-grid { grid-template-columns: minmax(0, 1fr); }
   main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .tab { max-width: 160px; }
   .panel { border-left: 0; border-top: 1px solid var(--line); max-height: 42vh; }
   .modes { margin-left: 0; }
   .status { max-width: calc(100% - 160px); }
@@ -351,7 +376,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 28</span>
+      Snapblade <span class="tag">playground &middot; build 29</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -390,6 +415,7 @@ dl.keys dd { margin: 0; }
     </div>
   </header>
   <main>
+    <div class="work">
     <div class="stage" id="stage">
       <svg id="cv" aria-label="Diagram canvas"></svg>
       <textarea id="editor" hidden aria-label="Edit label"></textarea>
@@ -403,6 +429,18 @@ dl.keys dd { margin: 0; }
         <button type="button" id="zlbl" title="Reset to 100%">100%</button>
         <button type="button" id="zin" aria-label="Zoom in">+</button>
       </div>
+    </div>
+    <nav class="tabs" id="tabs" aria-label="Tabs">
+      <div class="tablist" id="tablist" role="tablist"></div>
+      <div class="menu-wrap">
+        <button class="tabadd" id="tabAdd" type="button" aria-label="Add a tab" title="Add a tab" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.6" fill="none"/></svg></button>
+        <div class="menu" id="tabMenu" role="menu" hidden>
+          <button type="button" role="menuitem" data-tabadd="box">Box diagram</button>
+          <button type="button" role="menuitem" data-tabadd="sequence">Sequence diagram</button>
+          <button type="button" role="menuitem" data-tabadd="copy">Duplicate this tab</button>
+        </div>
+      </div>
+    </nav>
     </div>
     <aside class="panel" id="panel" aria-label="Inspector"></aside>
   </main>
@@ -422,7 +460,8 @@ const NORMAL = { top: { x: 0, y: -1 }, right: { x: 1, y: 0 }, bottom: { x: 0, y:
 const KEY = 'snapblade-playground-v1', OLD_KEY = 'diogramo-playground-v1', META_KEY = 'snapblade-doc-meta', AUTHOR_KEY = 'snapblade-author', ASIDE_KEY = 'snapblade-set-aside-v1';
 let doc = { name: 'Untitled diagram', dirty: false };   // the diagram's name, and whether it has unsaved file changes
 
-let S = null;          // { nodes, edges, settings, title, legend }: the diagram (a sequence diagram adds type, parts and rows)
+let S = null;          // { nodes, edges, settings, title, legend }: the diagram on the open tab (a sequence diagram adds type, parts and rows)
+let BOOK = null;       // the file's tabs: { pages: [{ name, S, undo, redo, view }], active }; S is always pages[active].S
 let lifted = null;     // node being dragged: excluded from its container's layout
 let uid = Date.now() % 1e6;
 // A new id that nothing in the diagram uses yet (ids from an opened file can sit in the same range).
@@ -1625,7 +1664,7 @@ const cap = s => s[0].toUpperCase() + s.slice(1);
 // the diagram has changes that haven't been saved to a file.
 function save(markDirty = true) {
   if (markDirty && doc) setDirty(true);
-  try { localStorage.setItem(KEY, JSON.stringify(S)); localStorage.setItem(META_KEY, JSON.stringify(doc)); } catch (e) { /* storage unavailable */ }
+  try { localStorage.setItem(KEY, JSON.stringify(bookData())); localStorage.setItem(META_KEY, JSON.stringify(doc)); } catch (e) { /* storage unavailable */ }
 }
 // Check and repair a diagram from storage or a file; null if it isn't one.
 // Files are untrusted and parts of them reach the canvas markup, so every field is rebuilt
@@ -1732,9 +1771,28 @@ function normalize(s) {
   const edges = firstById(s.edges.filter(e => isObj(e) && isId(e.id) && isObj(e.from) && isObj(e.to) && byIdIn.has(e.from.node) && byIdIn.has(e.to.node))).map(cleanEdge);
   return { nodes, edges, settings, title, legend };
 }
-function load() {
-  try { return normalize(JSON.parse(localStorage.getItem(KEY) ?? localStorage.getItem(OLD_KEY))); } catch (e) { return null; }
+/* Tabs: a file holds one or more diagrams, each with a name. Older files and saved copies hold a single diagram
+   and open as one tab. Names are free text (escaped wherever they're shown); the number of tabs is capped. */
+const MAX_PAGES = 50, MAX_NAME = 100;
+const pageName = (d, i) => `${d.type === 'sequence' ? 'Sequence' : 'Page'} ${i + 1}`;
+function normalizeBook(x) {
+  if (!isObj(x)) return null;
+  if (!Array.isArray(x.pages)) { const d = normalize(x); return d && { pages: [{ name: pageName(d, 0), diagram: d }], active: 0 }; }
+  const pages = x.pages.slice(0, MAX_PAGES).filter(isObj).map(p => ({ name: strOr(p.name).trim().slice(0, MAX_NAME), diagram: normalize(p.diagram) })).filter(p => p.diagram);
+  if (!pages.length) return null;
+  pages.forEach((p, i) => { if (!p.name) p.name = pageName(p.diagram, i); });
+  return { pages, active: Number.isInteger(x.active) ? Math.min(pages.length - 1, Math.max(0, x.active)) : 0 };
 }
+// The tabs as stored and saved: the open tab's diagram is always the current S.
+function bookData() {
+  const pages = BOOK ? BOOK.pages.map((p, i) => ({ name: p.name, diagram: i === BOOK.active ? S : p.S })) : [{ name: pageName(S, 0), diagram: S }];
+  return { active: BOOK ? BOOK.active : 0, pages };
+}
+function loadBook() {
+  try { return normalizeBook(JSON.parse(localStorage.getItem(KEY) ?? localStorage.getItem(OLD_KEY))); } catch (e) { return null; }
+}
+// The open tab's diagram as a reload would read it.
+function load() { const b = loadBook(); return b && b.pages[b.active].diagram; }
 // Move a saved copy that can't be drawn out of the way. It stays under its own key, in case it was real work.
 function setAside() {
   try {
@@ -1895,7 +1953,16 @@ A sequence diagram is a different kind of file: participants left to right, and 
 
 The sequence sample that ships with Snapblade:
 
-${exampleJson(exampleDiagram(true))}`;
+${exampleJson(exampleDiagram(true))}
+## Several diagrams in one file (tabs)
+
+A file can hold several diagrams, each shown as a tab: for example an architecture diagram and the sequence diagrams that go with it. Use version 2 and a \`pages\` list instead of \`diagram\`:
+
+    {"format": "snapblade", "version": 2, "active": 0, "pages": [{"name": "Architecture", "diagram": {...}}, {"name": "Checkout", "diagram": {"type": "sequence", ...}}]}
+
+- \`pages\`: the tabs in order, at most ${MAX_PAGES}. Each has a \`name\` (text, up to ${MAX_NAME} characters; empty gets a default) and a \`diagram\` written exactly as above. Ids only need to be unique within their own diagram.
+- \`active\`: the index of the tab the file opens at. Default 0.
+`;
 }
 // What undo keeps: everything but the settings. A sequence diagram adds type, parts and rows.
 const CONTENT = ['type', 'nodes', 'edges', 'parts', 'rows', 'title', 'legend'];
@@ -2151,7 +2218,7 @@ function canvasStart(defs = '') {
 }
 // The end: title block and legend around bounds B, then the parts of the page that follow the canvas.
 function canvasEnd(h, B, P) {
-  const blocks = annotationLayout(B, UI_STACK, doc.name, LEGEND_HINT);
+  const blocks = annotationLayout(B, UI_STACK, titleName(), LEGEND_HINT);
   lastGeom.annots = blocks; lastGeom.bounds = B;
   h += annotationMarkup(blocks, {
     group: id => `class="ann${sel?.type === 'annot' && sel.id === id ? ' sel' : ''}" data-role="annot" data-id="${id}"`,
@@ -2386,14 +2453,14 @@ function titlePanel() {
   const t = S.title;
   return `<section>
     <p class="eyebrow">Title block</p>
-    <label class="field"><span>Title</span><input type="text" id="f-ann-title" data-field="ann-title" value="${esc(t.title)}" placeholder="${esc(doc.name)}"></label>
+    <label class="field"><span>Title</span><input type="text" id="f-ann-title" data-field="ann-title" value="${esc(t.title)}" placeholder="${esc(titleName())}"></label>
     <div class="grid2">
       <label class="field"><span>Version</span><input type="text" id="f-ann-version" data-field="ann-version" value="${esc(t.version)}" placeholder="1.0"></label>
       <div class="inline"><label class="field"><span>Date</span><input type="text" id="f-ann-date" data-field="ann-date" value="${esc(t.date)}" placeholder="${todayIso()}"></label></div>
     </div>
     <div class="row"><button class="mini" type="button" data-act="annToday">Set date to today</button></div>
     <label class="field"><span>Author</span><input type="text" id="f-ann-author" data-field="ann-author" value="${esc(t.author)}" placeholder="Your name"></label>
-    <p class="desc">An empty title uses the diagram's name. Empty fields are left out. Your name is remembered for new diagrams.</p>
+    <p class="desc">An empty title uses the diagram's name (the tab's name when there are several tabs). Empty fields are left out. Your name is remembered for new diagrams.</p>
   </section>
   <section><p class="eyebrow">Position</p>${cornerPicker(t.pos)}<p class="desc">Or drag the block toward a corner.</p></section>
   <div class="row"><button class="btn danger" type="button" data-act="annHide">Hide title block</button></div>`;
@@ -3260,19 +3327,23 @@ function syncTypeUi() {
   document.getElementById('emptyHint').textContent = seq ? 'Double-click to add a participant, or type a line such as  Customer -> Web app : checkout  in the box above.'
     : 'Double-click anywhere to add a box, or drop a .snapblade file here to open it.';
 }
+// Version 2 files hold tabs; version 1 files (one diagram) still open.
+const diagramOf = d => ({ ...(d.type ? { type: d.type, parts: d.parts, rows: d.rows } : {}), nodes: d.nodes, edges: d.edges, settings: d.settings, title: d.title, legend: d.legend });
 function serialize() {
-  const seq = isSeq() ? { type: S.type, parts: S.parts, rows: S.rows } : {};
-  return JSON.stringify({ format: 'snapblade', version: 1, saved: new Date().toISOString(),
-    diagram: { ...seq, nodes: S.nodes, edges: S.edges, settings: S.settings, title: S.title, legend: S.legend } }, null, 2);
+  const b = bookData();
+  return JSON.stringify({ format: 'snapblade', version: 2, saved: new Date().toISOString(), active: b.active,
+    pages: b.pages.map(p => ({ name: p.name, diagram: diagramOf(p.diagram) })) }, null, 2);
 }
-function parseDiagram(text) {
+function parseBook(text) {
   let d;
   try { d = JSON.parse(text); } catch (e) { throw new Error("That file isn't a Snapblade diagram (it isn't valid JSON)."); }
-  if (d?.format === 'snapblade' && d.version > 1) throw new Error('That file was made by a newer version of Snapblade. Update the app to open it.');
-  const s = normalize(d?.format === 'snapblade' ? d.diagram : d);
-  if (!s) throw new Error("That file isn't a Snapblade diagram.");
-  return s;
+  if (d?.format === 'snapblade' && d.version > 2) throw new Error('That file was made by a newer version of Snapblade. Update the app to open it.');
+  const b = normalizeBook(d?.format === 'snapblade' ? (Array.isArray(d.pages) ? d : d.diagram) : d);
+  if (!b) throw new Error("That file isn't a Snapblade diagram.");
+  return b;
 }
+// The diagram on the tab a file opens at.
+function parseDiagram(text) { const b = parseBook(text); return b.pages[b.active].diagram; }
 function download(blob, name) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = name;
@@ -3299,21 +3370,20 @@ async function saveFile(asNew) {
   return true;
 }
 function loadDiagram(text, filename, handle) {
-  let s;
-  try { s = parseDiagram(text); } catch (e) { toast(e.message, true); return false; }
+  let b;
+  try { b = parseBook(text); } catch (e) { toast(e.message, true); return false; }
   // Draw the new diagram before committing to it. If that fails, put the current one back,
   // so a file this build can't draw never leaves a dead canvas or reaches the saved copy.
-  const prev = S, prevSel = [sel, multi, hover];
-  S = s; sel = null; multi = []; hover = null; seqNext = null; syncTypeUi();
+  const prev = [BOOK, S, undoStack, redoStack], prevSel = [sel, multi, hover];
+  openBook(b); sel = null; multi = []; hover = null; seqNext = null; syncTypeUi();
   try { layoutAll(false); refresh(true, false); }
   catch (e) {
-    S = prev; [sel, multi, hover] = prevSel; syncTypeUi(); refresh(true, false);
+    [BOOK, S, undoStack, redoStack] = prev; [sel, multi, hover] = prevSel; syncTypeUi(); renderTabs(); refresh(true, false);
     toast("That file couldn't be opened. Something in it can't be drawn.", true); return false;
   }
   fileHandle = handle || null;
   doc = { name: String(filename || 'Untitled diagram').replace(/\.(snapblade|json)$/i, ''), dirty: false };
-  undoStack.length = 0; redoStack.length = 0;
-  syncModeButtons(); save(false); updateDocUi(); fit();
+  syncModeButtons(); save(false); updateDocUi(); renderTabs(); fit();
   toast(`Opened ${filename}`);
   return true;
 }
@@ -3329,16 +3399,15 @@ async function openFile() {
   }
   document.getElementById('fileInput').click();
 }
+// A new file with one empty tab.
 async function newDiagram(type) {
   if (!(await confirmDiscard())) return;
-  const seq = type === 'sequence';
-  setContent({ ...(seq ? { type, parts: [], rows: [] } : {}), nodes: [], edges: [],
-    title: { ...titleDefaults(), pos: S.title.pos }, legend: { ...legendDefaults(), pos: S.legend.pos } });
-  fileHandle = null; doc = { name: seq ? 'Untitled sequence diagram' : 'Untitled diagram', dirty: false };
-  undoStack.length = 0; redoStack.length = 0; sel = null; multi = []; seqNext = null;
-  view = seq ? { x: 60, y: 90, k: 1 } : { x: 40, y: 40, k: 1 };
-  syncTypeUi(); refresh(true, false); save(false); updateDocUi();
-  if (seq) document.getElementById('quickIn').focus();
+  const d = emptyDiagram(type);
+  openBook({ pages: [{ name: pageName(d, 0), diagram: d }], active: 0 });
+  fileHandle = null; doc = { name: isSeq() ? 'Untitled sequence diagram' : 'Untitled diagram', dirty: false };
+  sel = null; multi = []; seqNext = null; view = startView();
+  syncTypeUi(); renderTabs(); refresh(true, false); save(false); updateDocUi();
+  if (isSeq()) document.getElementById('quickIn').focus();
 }
 // Put a sample back (undoable). The "Things to try" steps in Help refer to them.
 function loadSample(seq) {
@@ -3348,7 +3417,7 @@ function loadSample(seq) {
 }
 // Before replacing the diagram: if it has changes not saved to a file, ask first.
 async function confirmDiscard() {
-  if (!doc.dirty || !hasContent()) return true;
+  if (!doc.dirty || (BOOK.pages.length < 2 && !hasContent())) return true;
   const choice = await ask(`
     <h2 id="modalTitle">Save changes to “${esc(doc.name)}”?</h2>
     <p>Your work is kept in this browser, but these changes haven't been saved to a file.</p>
@@ -3449,6 +3518,12 @@ function guideHtml() {
       <li><b>Duplicate</b> (Ctrl+D) puts a copy of a message, note or participant right after it. <b>Delete message</b>, <b>Delete note</b>, <b>Delete participant</b> or the Delete key removes one.</li>
       <li>The <b>Sequence diagram</b> settings: <b>Number messages</b>, and <b>Participants at the bottom too</b>.</li>
       <li>Type in the box at the top of the canvas (or just start typing with nothing selected) and press Enter. It reads PlantUML: <code>A -&gt; B : label</code> (sync), <code>-&gt;&gt;</code> (async), <code>--&gt;</code> (reply), arrows pointing left, <code>participant "Long name" as X</code>, <code>note left of A : text</code> (or <code>right of</code>, <code>over A, B</code>, or a note block ending in <code>end note</code>), <code>autonumber</code>, <code>hide footbox</code> and <code>title</code>. New names become participants. Lines go in below the selected row. Paste a whole PlantUML diagram to bring it in; lines for things Snapblade doesn't draw yet (activate, alt, loop) are skipped, and lines it can't read stay in the box.</li></ul>`],
+    ['tabs', 'Tabs', `<p>One file can hold several diagrams, each on its own tab along the bottom of the canvas: an architecture view and the sequence diagrams that go with it, say.</p><ul>
+      <li><b>Add a tab</b> (the + at the end of the tabs) offers a <b>Box diagram</b>, a <b>Sequence diagram</b>, or <b>Duplicate this tab</b>. A new tab goes right after the open one.</li>
+      <li>Click a tab to open it. Double-click the open tab (or press F2 on it) to rename it; drag a tab sideways to move it. The arrow keys move between tabs when one has the focus.</li>
+      <li>Each tab has its own undo history, view, settings, title block and legend. With several tabs, an empty title block title shows the tab's name.</li>
+      <li><b>Delete tab</b> (the × on the open tab) asks first when the tab has something on it, because undo can't bring a tab back.</li>
+      <li>Copy and paste work between tabs. Saving saves every tab, and the file opens at the tab you were on.</li></ul>`],
     ['files', 'Files', `<ul>
       <li>Everything is kept in this browser as you work. The <b>File</b> menu has <b>New diagram</b>, <b>Open</b> (Ctrl+O), <b>Save</b> (Ctrl+S) and <b>Save as</b> (Ctrl+Shift+S), for <code>.snapblade</code> files. You can also drop a file onto the canvas.</li>
       <li>In Chrome and Edge, Save writes back to the same file; other browsers download it. A dot next to the name means changes not yet saved to a file. Click the name to rename the diagram.</li></ul>`],
@@ -3456,6 +3531,7 @@ function guideHtml() {
       <li><b>Format</b>: ${b(labels(EXPORT_FORMATS))}. <b>Theme</b>: ${b(labels(EXPORT_THEMES))}. <b>Background</b>: ${b(labels(EXPORT_BACKGROUNDS))}.</li>
       <li>PNG <b>Size</b>: ${b(labels(EXPORT_SCALES))}. PDF <b>Page</b>: ${b(labels(EXPORT_PAGES))}; PDFs stay sharp at any zoom.</li>
       <li><b>Include</b> the ${b(labels(EXPORT_SCOPES))}, and choose whether to include the <b>Title block &amp; legend</b> (${b(labels(EXPORT_ANNOTS))}).</li>
+      <li>With several tabs, <b>Tabs</b> picks ${b(labels(EXPORT_TABS))}. All tabs makes one PDF with a page per tab, or one SVG or PNG file per tab.</li>
       <li><b>Download</b> saves the file; <b>Copy to clipboard</b> puts an SVG or PNG on the clipboard for slides, chat or wikis.</li></ul>`],
     ['ai', 'Diagrams from an AI assistant', `<p>Snapblade files are plain JSON, so an AI assistant can write one. The <b>For AI agents</b> tab has instructions to give it (also at <a href="${APP_URL}llms.txt" target="_blank" rel="noopener">${APP_URL}llms.txt</a>). Describe the diagram you want, save the answer as a <code>.snapblade</code> file and open it here.</p>`],
     ['privacy', 'Privacy', `<p>Nothing you draw leaves this browser. The only requests are downloads: the page itself, its fonts, and the PDF library when you first export a PDF.</p>`],
@@ -3535,13 +3611,159 @@ function helpTabSwitch(b) {
 
 /* ---------- file menu ---------- */
 function closeMenu() {
-  const m = document.getElementById('fileMenu');
-  if (m && !m.hidden) { m.hidden = true; document.getElementById('fileBtn').setAttribute('aria-expanded', 'false'); }
+  for (const [menu, btn] of [['fileMenu', 'fileBtn'], ['tabMenu', 'tabAdd']]) {
+    const m = document.getElementById(menu);
+    if (m && !m.hidden) { m.hidden = true; document.getElementById(btn).setAttribute('aria-expanded', 'false'); }
+  }
 }
 function toggleMenu() {
   const m = document.getElementById('fileMenu'), open = m.hidden;
   m.hidden = !open; document.getElementById('fileBtn').setAttribute('aria-expanded', String(open));
   if (open) m.querySelector('button').focus();
+}
+/* ---------- tabs ----------
+   Each tab keeps its own diagram, undo history and view. S, undoStack and redoStack belong to the open tab. */
+function openBook(b) {
+  BOOK = { pages: b.pages.map(p => ({ name: p.name, S: p.diagram, undo: [], redo: [], view: null })), active: b.active };
+  const p = BOOK.pages[BOOK.active];
+  S = p.S; undoStack = p.undo; redoStack = p.redo;
+}
+const startView = () => isSeq() ? { x: 60, y: 90, k: 1 } : { x: 40, y: 40, k: 1 };
+// An empty diagram that keeps the open one's settings and block corners.
+const emptyDiagram = type => normalize({ ...(type === 'sequence' ? { type, parts: [], rows: [] } : {}), nodes: [], edges: [],
+  settings: S.settings, title: { ...titleDefaults(), pos: S.title.pos }, legend: { ...legendDefaults(), pos: S.legend.pos } });
+const tabName = () => BOOK ? BOOK.pages[BOOK.active].name : pageName(S, 0);
+// What an empty title block title shows: the file's name, or with several tabs the tab's name.
+const titleName = () => BOOK && BOOK.pages.length > 1 ? tabName() : doc.name;
+// Run fn with tab i's diagram as S (for exports that cover every tab).
+function withPage(i, fn) {
+  const keep = S; S = i === BOOK.active ? keep : BOOK.pages[i].S;
+  try { return fn(); } finally { S = keep; }
+}
+function uniqueName(base) {
+  const taken = new Set(BOOK.pages.map(p => p.name));
+  if (!/ \d+$/.test(base) && !taken.has(base) && !['Page', 'Sequence'].includes(base)) return base;
+  const stem = base.replace(/ \d+$/, '');
+  for (let n = 1; ; n++) if (!taken.has(`${stem} ${n}`)) return `${stem} ${n}`;
+}
+function switchTab(i) {
+  if (!BOOK.pages[i] || i === BOOK.active) return;
+  commitEditor();
+  const was = BOOK.active, cur = BOOK.pages[was];
+  cur.S = S; cur.view = { ...view };
+  const show = k => {
+    BOOK.active = k; const p = BOOK.pages[k];
+    S = p.S; undoStack = p.undo; redoStack = p.redo;
+    sel = null; multi = []; hover = null; seqNext = null; drag = null;
+    syncTypeUi(); syncModeButtons(); layoutAll(false);
+    if (p.view) { view = { ...p.view }; render(); } else { view = startView(); render(); fit(); }
+    renderPanel();
+  };
+  try { show(i); }
+  catch (e) { show(was); toast("That tab couldn't be drawn.", true); }
+  renderTabs(); updateDocUi(); save(false);
+}
+// kind: 'box' or 'sequence' for an empty tab, 'copy' for a copy of the open one. It goes right after the open tab.
+function addTab(kind) {
+  closeMenu();
+  if (BOOK.pages.length >= MAX_PAGES) { toast(`A file holds at most ${MAX_PAGES} tabs.`, true); return; }
+  const cur = BOOK.pages[BOOK.active], copy = kind === 'copy';
+  const d = copy ? JSON.parse(JSON.stringify(S)) : emptyDiagram(kind);
+  const name = copy ? uniqueName(`${cur.name} copy`.slice(0, MAX_NAME)) : uniqueName(d.type ? 'Sequence' : 'Page');
+  BOOK.pages.splice(BOOK.active + 1, 0, { name, S: d, undo: [], redo: [], view: copy ? { ...view } : (d.type ? { x: 60, y: 90, k: 1 } : { x: 40, y: 40, k: 1 }) });
+  switchTab(BOOK.active + 1);
+  save();
+  if (isSeq() && !copy) document.getElementById('quickIn').focus();
+}
+// Deleting a tab can't be undone (undo is per tab), so a tab with something on it asks first.
+async function deleteTab(i) {
+  if (BOOK.pages.length < 2 || !BOOK.pages[i]) return;
+  const p = BOOK.pages[i];
+  if (withPage(i, hasContent) && (await ask(`
+    <h2 id="modalTitle">Delete the tab “${esc(p.name)}”?</h2>
+    <p>Its diagram goes with it. Undo can't bring a deleted tab back.</p>
+    <div class="actions">
+      <button class="btn" type="button" data-choice="cancel">Cancel</button>
+      <button class="btn primary" type="button" data-choice="delete">Delete tab</button>
+    </div>`, 'small')) !== 'delete') return;
+  if (i === BOOK.active) switchTab(i ? i - 1 : 1);
+  BOOK.pages.splice(i, 1);
+  if (BOOK.active > i) BOOK.active--;
+  renderTabs(); save();
+}
+function renameTab(i, name) {
+  name = String(name).trim().slice(0, MAX_NAME);
+  if (!name || !BOOK.pages[i] || BOOK.pages[i].name === name) { renderTabs(); return; }
+  BOOK.pages[i].name = name;
+  renderTabs(); render(); renderPanel(); save();
+}
+// Move tab `from` to position `to` (counted without it).
+function moveTab(from, to) {
+  to = Math.max(0, Math.min(to, BOOK.pages.length - 1));
+  if (from === to) return;
+  const open = BOOK.pages[BOOK.active], [p] = BOOK.pages.splice(from, 1);
+  BOOK.pages.splice(to, 0, p);
+  BOOK.active = BOOK.pages.indexOf(open);
+  renderTabs(); save();
+}
+const TAB_ICONS = {
+  box: '<svg viewBox="0 0 14 12" aria-hidden="true"><rect x="0.75" y="0.75" width="5" height="4" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="8.25" y="7.25" width="5" height="4" rx="0.8" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.75 2.75H10.75V7.25" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>',
+  sequence: '<svg viewBox="0 0 14 12" aria-hidden="true"><path d="M2.5 0.5V11.5M11.5 0.5V11.5" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2 1.5"/><path d="M2.5 4H10.5M11.5 8H3.5" stroke="currentColor" stroke-width="1.3"/></svg>',
+};
+const CLOSE_ICON = '<svg viewBox="0 0 9 9" aria-hidden="true"><path d="M1 1l7 7M8 1L1 8" stroke="currentColor" stroke-width="1.5"/></svg>';
+function renderTabs() {
+  const list = document.getElementById('tablist'); if (!list || !BOOK) return;
+  list.innerHTML = BOOK.pages.map((p, i) => {
+    const on = i === BOOK.active, d = on ? S : p.S;
+    return `<div class="tab" role="tab" tabindex="${on ? 0 : -1}" aria-selected="${on}" data-tab="${i}" title="${esc(p.name)}${on ? ' · double-click to rename' : ''}">`
+      + `${TAB_ICONS[d.type === 'sequence' ? 'sequence' : 'box']}<span class="tname">${esc(p.name)}</span>`
+      + `${on && BOOK.pages.length > 1 ? `<span class="tx" role="button" data-tabdel="${i}" aria-label="Delete tab" title="Delete tab">${CLOSE_ICON}</span>` : ''}</div>`;
+  }).join('');
+}
+function startRename(i) {
+  const el = document.querySelector(`#tablist [data-tab="${i}"] .tname`); if (!el) return;
+  const input = document.createElement('input');
+  input.className = 'tname'; input.value = BOOK.pages[i].name; input.maxLength = MAX_NAME; input.setAttribute('aria-label', 'Tab name');
+  el.replaceWith(input); input.focus(); input.select();
+  let done = false;
+  const finish = keep => { if (done) return; done = true; keep ? renameTab(i, input.value) : renderTabs(); };
+  input.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') finish(true); if (ev.key === 'Escape') finish(false); });
+  input.addEventListener('blur', () => finish(true));
+  input.addEventListener('pointerdown', ev => ev.stopPropagation());
+}
+// Click a tab to open it, click the open one again quickly (or press F2) to rename it, drag a tab to move it.
+let tabPress = null, lastTabClick = { i: -1, t: 0 };
+function tabDown(ev) {
+  const t = ev.target.closest('[data-tab]'); if (!t || ev.button !== 0) return;
+  if (ev.target.closest('[data-tabdel]')) return;
+  tabPress = { i: +t.dataset.tab, x: ev.clientX, moved: false };
+  t.setPointerCapture(ev.pointerId);
+}
+function tabSlot(x, from) {
+  const tabs = [...document.querySelectorAll('#tablist [data-tab]')].filter(el => +el.dataset.tab !== from);
+  const i = tabs.filter(el => { const r = el.getBoundingClientRect(); return r.left + r.width / 2 < x; }).length;
+  const ref = tabs[i] || tabs[tabs.length - 1], r = ref?.getBoundingClientRect(), nav = document.getElementById('tabs').getBoundingClientRect();
+  return { i, x: ref ? (tabs[i] ? r.left : r.right) - nav.left - 1 : 8 };
+}
+function tabMove(ev) {
+  if (!tabPress) return;
+  if (!tabPress.moved && Math.abs(ev.clientX - tabPress.x) < 6) return;
+  tabPress.moved = true;
+  const nav = document.getElementById('tabs'), slot = tabSlot(ev.clientX, tabPress.i);
+  let mark = nav.querySelector('.tab-drop');
+  if (!mark) { mark = document.createElement('div'); mark.className = 'tab-drop'; nav.appendChild(mark); }
+  mark.style.left = slot.x + 'px';
+  document.querySelector(`#tablist [data-tab="${tabPress.i}"]`)?.classList.add('dragging');
+}
+function tabUp(ev) {
+  const p = tabPress; tabPress = null;
+  document.querySelector('#tabs .tab-drop')?.remove();
+  if (!p) return;
+  if (p.moved) { moveTab(p.i, tabSlot(ev.clientX, p.i).i); return; }
+  const now = performance.now(), again = lastTabClick.i === p.i && now - lastTabClick.t < 450;
+  lastTabClick = again ? { i: -1, t: 0 } : { i: p.i, t: now };
+  if (p.i !== BOOK.active) switchTab(p.i);
+  else if (again) startRename(p.i);
 }
 function fileCommand(cmd) {
   closeMenu();
@@ -3555,7 +3777,7 @@ function fileCommand(cmd) {
 /* =====================================================================
    Export: a clean, standalone SVG of the diagram, then PNG or PDF from it
    ===================================================================== */
-let exportOpts = { format: 'png', theme: 'light', background: 'white', scale: 2, page: 'fit', scope: 'all', annots: 'yes' };
+let exportOpts = { format: 'png', theme: 'light', background: 'white', scale: 2, page: 'fit', scope: 'all', annots: 'yes', tabs: 'current' };
 // Pinned versions with integrity hashes: the browser refuses a file that doesn't match.
 const PDF_LIBS = [
   ['https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js', 'sha384-qovJwSBbRDPP5cEjCp8S0UP66wrvnjaa60XMOGzTNanrThcrGfXfnZkvgY8N1KT3'],
@@ -3648,7 +3870,7 @@ function buildExportSvg(o) {
   }
   // Bounds of everything drawn (including the title block and legend), plus a margin.
   const B = seq ? seq.bounds : contentBounds(nodes, edges, R, labels);
-  const blocks = (o.scope === 'selection' && !seq) || o.annots === false ? [] : annotationLayout(B, fam, doc.name);
+  const blocks = (o.scope === 'selection' && !seq) || o.annots === false ? [] : annotationLayout(B, fam, o.title ?? titleName());
   let { x1, y1, x2, y2 } = B;
   for (const b of blocks) { x1 = Math.min(x1, b.x); y1 = Math.min(y1, b.y); x2 = Math.max(x2, b.x + b.w); y2 = Math.max(y2, b.y + b.h); }
   const pad = 32, ox = Math.floor(x1 - pad), oy = Math.floor(y1 - pad), W = Math.ceil(x2 - x1 + 2 * pad), H = Math.ceil(y2 - y1 + 2 * pad);
@@ -3745,39 +3967,51 @@ function loadScript([src, integrity]) {
     document.head.appendChild(el);
   });
 }
-async function svgToPdf(svgText, w, h, page) {
+// One PDF page per built SVG ({ svg, w, h }): a single tab, or every tab.
+async function svgToPdf(list, page) {
   for (const lib of PDF_LIBS) await loadScript(lib);
   const { jsPDF } = window.jspdf, pt = 0.75;   // CSS px -> PDF points
-  let pw = w * pt, ph = h * pt, margin = 0;
-  if (page !== 'fit') { const [a, b] = page === 'letter' ? [792, 612] : [841.89, 595.28]; [pw, ph] = w >= h ? [a, b] : [b, a]; margin = 36; }
-  const pdf = new jsPDF({ unit: 'pt', format: [pw, ph], orientation: pw >= ph ? 'landscape' : 'portrait' });
-  const s = Math.min((pw - 2 * margin) / (w * pt), (ph - 2 * margin) / (h * pt));
-  const host = document.createElement('div');
-  host.style.cssText = 'position:fixed;left:-100000px;top:0;';
-  host.innerHTML = svgText; document.body.appendChild(host);
-  try {
-    await pdf.svg(host.querySelector('svg'), { x: (pw - w * pt * s) / 2, y: (ph - h * pt * s) / 2, width: w * pt * s, height: h * pt * s });
-  } finally { host.remove(); }
+  let pdf = null;
+  for (const { svg: svgText, w, h } of list) {
+    let pw = w * pt, ph = h * pt, margin = 0;
+    if (page !== 'fit') { const [a, b] = page === 'letter' ? [792, 612] : [841.89, 595.28]; [pw, ph] = w >= h ? [a, b] : [b, a]; margin = 36; }
+    const orientation = pw >= ph ? 'landscape' : 'portrait';
+    if (!pdf) pdf = new jsPDF({ unit: 'pt', format: [pw, ph], orientation }); else pdf.addPage([pw, ph], orientation);
+    const s = Math.min((pw - 2 * margin) / (w * pt), (ph - 2 * margin) / (h * pt));
+    const host = document.createElement('div');
+    host.style.cssText = 'position:fixed;left:-100000px;top:0;';
+    host.innerHTML = svgText; document.body.appendChild(host);
+    try {
+      await pdf.svg(host.querySelector('svg'), { x: (pw - w * pt * s) / 2, y: (ph - h * pt * s) / 2, width: w * pt * s, height: h * pt * s });
+    } finally { host.remove(); }
+  }
   pdf.setProperties({ title: doc.name, creator: 'Snapblade' });
   return pdf.output('blob');
 }
-// Produce the chosen export as a Blob (for download or the clipboard).
-async function exportBlob(opts) {
+const allTabs = o => o.tabs === 'all' && BOOK?.pages.length > 1;
+// The SVGs to export: the open tab's, or one per tab that has something on it ({ name, built }).
+async function exportSvgs(opts) {
   const pdf = opts.format === 'pdf';
-  const built = buildExportSvg({ ...opts, annots: opts.annots !== 'no', pdf, background: pdf && opts.background === 'none' ? 'white' : opts.background, fontCss: pdf ? '' : await embeddedFontCss() });
+  const o = { ...opts, annots: opts.annots !== 'no', pdf, background: pdf && opts.background === 'none' ? 'white' : opts.background, fontCss: pdf ? '' : await embeddedFontCss() };
+  if (!allTabs(opts)) { const built = buildExportSvg(o); return built ? [{ name: tabName(), built }] : []; }
+  return BOOK.pages.map((p, i) => ({ name: p.name, built: withPage(i, () => buildExportSvg({ ...o, scope: 'all', title: p.name })) })).filter(x => x.built);
+}
+// Produce the chosen export as a Blob (for download or the clipboard). With all tabs, a PDF has a page per tab.
+async function exportBlob(opts) {
+  const list = await exportSvgs(opts), built = list[0]?.built;
   if (!built) throw new Error('There is nothing to export yet.');
   if (opts.format === 'svg') return { blob: new Blob([built.svg], { type: 'image/svg+xml' }), built };
   if (opts.format === 'png') return { blob: await svgToPng(built.svg, built.w, built.h, opts.scale), built };
-  return { blob: await svgToPdf(built.svg, built.w, built.h, opts.page), built };
+  return { blob: await svgToPdf(list.map(x => x.built), opts.page), built };
 }
 
 // Export dialog options; the Help guide lists them from here too.
 const EXPORT_FORMATS = [['svg', 'SVG'], ['png', 'PNG'], ['pdf', 'PDF']], EXPORT_THEMES = [['light', 'Light'], ['dark', 'Dark']];
 const EXPORT_BACKGROUNDS = [['white', 'White'], ['canvas', 'Canvas'], ['none', 'None']], EXPORT_SCALES = [[1, '1×'], [2, '2×'], [3, '3×']];
 const EXPORT_PAGES = [['fit', 'Fit diagram'], ['letter', 'Letter'], ['a4', 'A4']], EXPORT_SCOPES = [['all', 'Whole diagram'], ['selection', 'Selection']];
-const EXPORT_ANNOTS = [['yes', 'Include'], ['no', 'Leave out']];
+const EXPORT_ANNOTS = [['yes', 'Include'], ['no', 'Leave out']], EXPORT_TABS = [['current', 'This tab'], ['all', 'All tabs']];
 function exportDialogHtml() {
-  const o = exportOpts, hasSel = selectedIds().length > 0, pdf = o.format === 'pdf';
+  const o = exportOpts, all = allTabs(o), hasSel = selectedIds().length > 0 && !all, pdf = o.format === 'pdf';
   const exSeg = (key, opts, cur, disabled = []) => `<div class="seg" role="group">${opts.map(([v, l]) =>
     `<button type="button" data-ex="${key}" data-val="${v}" aria-pressed="${String(v) === String(cur)}"${disabled.includes(v) ? ' disabled' : ''}>${l}</button>`).join('')}</div>`;
   return `
@@ -3790,6 +4024,8 @@ function exportDialogHtml() {
         <div class="field"><span>Background</span>${exSeg('background', EXPORT_BACKGROUNDS, pdf && o.background === 'none' ? 'white' : o.background, pdf ? ['none'] : [])}</div>
         ${o.format === 'png' ? `<div class="field"><span>Size</span>${exSeg('scale', EXPORT_SCALES, o.scale)}</div>` : ''}
         ${pdf ? `<div class="field"><span>Page</span>${exSeg('page', EXPORT_PAGES, o.page)}</div>` : ''}
+        ${BOOK.pages.length > 1 ? `<div class="field"><span>Tabs</span>${exSeg('tabs', EXPORT_TABS, o.tabs)}</div>` : ''}
+        ${all ? `<p class="desc">${pdf ? 'One PDF with a page for each tab.' : `One ${o.format.toUpperCase()} file for each tab.`}</p>` : ''}
         <div class="field"><span>Include</span>${exSeg('scope', EXPORT_SCOPES, hasSel ? o.scope : 'all', hasSel ? [] : ['selection'])}</div>
         ${(S.title.show || S.legend.show) && !(hasSel && o.scope === 'selection') ? `<div class="field"><span>Title block &amp; legend</span>${exSeg('annots', EXPORT_ANNOTS, o.annots)}</div>` : ''}
         <p class="meta" id="exInfo"></p>
@@ -3799,30 +4035,43 @@ function exportDialogHtml() {
     </div>
     <div class="actions">
       <button class="btn" type="button" data-choice="cancel">Close</button>
-      ${pdf ? '' : '<button class="btn" type="button" data-choice="copy">Copy to clipboard</button>'}
+      ${pdf || all ? '' : '<button class="btn" type="button" data-choice="copy">Copy to clipboard</button>'}
       <button class="btn primary" type="button" data-choice="download">Download</button>
     </div>`;
 }
 let previewUrl = null;
 async function refreshExportPreview(box) {
-  const o = { ...exportOpts, scope: selectedIds().length ? exportOpts.scope : 'all' };
-  const built = buildExportSvg({ ...o, annots: o.annots !== 'no', pdf: o.format === 'pdf', background: o.format === 'pdf' && o.background === 'none' ? 'white' : o.background, fontCss: o.format === 'pdf' ? '' : await embeddedFontCss() });
+  const o = { ...exportOpts, scope: selectedIds().length && !allTabs(exportOpts) ? exportOpts.scope : 'all' };
+  const list = await exportSvgs(o), built = (list.find(x => x.name === tabName()) || list[0])?.built;
   const img = box.querySelector('#exPreview'); if (!img || !built) return;
   if (previewUrl) URL.revokeObjectURL(previewUrl);
   previewUrl = URL.createObjectURL(new Blob([built.svg], { type: 'image/svg+xml' }));
   img.src = previewUrl;
   const info = box.querySelector('#exInfo');
   const size = o.format === 'png' ? `${Math.round(built.w * o.scale)} × ${Math.round(built.h * o.scale)} px` : `${built.w} × ${built.h}`;
-  info.textContent = `${fileBase()}.${o.format}  ·  ${size}`;
+  const skipped = allTabs(o) ? BOOK.pages.length - list.length : 0;
+  info.textContent = allTabs(o) ? `${o.format === 'pdf' ? `${fileBase()}.pdf  ·  ${list.length} pages` : `${list.length} files`}${skipped ? ` (${skipped} empty tab${skipped > 1 ? 's' : ''} left out)` : ''}  ·  preview: ${tabName()}` : `${fileBase()}.${o.format}  ·  ${size}`;
 }
 async function openExport() {
-  if (!hasContent()) { toast('There is nothing to export yet.', true); return; }
+  const any = BOOK.pages.some((p, i) => withPage(i, hasContent));
+  if (!any) { toast('There is nothing to export yet.', true); return; }
+  if (!hasContent()) exportOpts.tabs = 'all';   // this tab is empty, the others aren't
   if (!selectedIds().length) exportOpts.scope = 'all';
   const choice = await ask(exportDialogHtml(), '', refreshExportPreview);
   if (choice !== 'download' && choice !== 'copy') return;
-  const o = { ...exportOpts, scope: selectedIds().length ? exportOpts.scope : 'all' }, name = `${fileBase()}.${o.format}`;
+  const o = { ...exportOpts, scope: selectedIds().length && !allTabs(exportOpts) ? exportOpts.scope : 'all' }, name = `${fileBase()}.${o.format}`;
   try {
     if (choice === 'copy') await copyExport(o);
+    else if (allTabs(o) && o.format !== 'pdf') {
+      // SVG and PNG: a file per tab, named after it.
+      const list = await exportSvgs(o);
+      for (const { name: tab, built } of list) {
+        const blob = o.format === 'svg' ? new Blob([built.svg], { type: 'image/svg+xml' }) : await svgToPng(built.svg, built.w, built.h, o.scale);
+        download(blob, `${fileBase()} - ${tab.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'tab'}.${o.format}`);
+        await new Promise(r => setTimeout(r, 150));
+      }
+      toast(`Exported ${list.length} files`);
+    }
     else { const { blob } = await exportBlob(o); download(blob, name); toast(`Exported ${name}`); }
   } catch (e) { toast(e.message || 'Export failed.', true); }
 }
@@ -3871,15 +4120,42 @@ function quickEnter() {
 function init() {
   svg = document.getElementById('cv'); stage = document.getElementById('stage'); panel = document.getElementById('panel');
   statusEl = document.getElementById('status'); editor = document.getElementById('editor');
-  S = load() || sample();
+  const fresh = () => ({ pages: [{ name: 'Page 1', diagram: sample() }], active: 0 });
+  openBook(loadBook() || fresh());
   try { doc = { ...doc, ...JSON.parse(localStorage.getItem(META_KEY)) }; } catch (e) { /* keep defaults */ }
   // First draw. A saved diagram that can't be drawn must not lock the app: set it aside and start from the sample.
-  try { layoutAll(false); fit(); render(); }
+  try { syncTypeUi(); layoutAll(false); fit(); render(); }
   catch (e) {
-    setAside(); S = sample(); doc = { name: 'Untitled diagram', dirty: false }; layoutAll(false); fit();
+    setAside(); openBook(fresh()); doc = { name: 'Untitled diagram', dirty: false }; syncTypeUi(); layoutAll(false); fit();
     toast("The diagram saved in this browser couldn't be drawn. It was set aside, and the sample loaded instead.", true);
   }
-  syncModeButtons(); syncTypeUi(); renderPanel(); updateDocUi();
+  syncModeButtons(); syncTypeUi(); renderPanel(); renderTabs(); updateDocUi();
+
+  // Tabs
+  const tablist = document.getElementById('tablist');
+  tablist.addEventListener('pointerdown', tabDown);
+  tablist.addEventListener('pointermove', tabMove);
+  tablist.addEventListener('pointerup', tabUp);
+  tablist.addEventListener('pointercancel', () => { tabPress = null; document.querySelector('#tabs .tab-drop')?.remove(); renderTabs(); });
+  tablist.addEventListener('click', ev => { const x = ev.target.closest('[data-tabdel]'); if (x) deleteTab(+x.dataset.tabdel); });
+  tablist.addEventListener('keydown', ev => {
+    const t = ev.target.closest('[data-tab]'); if (!t || ev.target.tagName === 'INPUT') return;
+    const i = +t.dataset.tab;
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); ev.stopPropagation(); switchTab(i); }
+    else if (ev.key === 'F2') { ev.preventDefault(); ev.stopPropagation(); if (i !== BOOK.active) switchTab(i); startRename(BOOK.active); }
+    else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+      ev.preventDefault(); ev.stopPropagation();
+      const j = Math.max(0, Math.min(BOOK.pages.length - 1, i + (ev.key === 'ArrowLeft' ? -1 : 1)));
+      switchTab(j); document.querySelector(`#tablist [data-tab="${j}"]`)?.focus();
+    }
+  });
+  document.getElementById('tabAdd').addEventListener('click', ev => {
+    ev.stopPropagation();
+    const m = document.getElementById('tabMenu'), open = m.hidden;
+    closeMenu(); m.hidden = !open; ev.currentTarget.setAttribute('aria-expanded', String(open));
+    if (open) m.querySelector('button').focus();
+  });
+  document.getElementById('tabMenu').addEventListener('click', ev => { const b = ev.target.closest('[data-tabadd]'); if (b) addTab(b.dataset.tabadd); });
 
   // Files and export
   const docName = document.getElementById('docName');
