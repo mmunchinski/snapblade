@@ -854,8 +854,12 @@ test('sequence diagrams: New, + Participant, double-click adds a participant, dr
   await page.click('#fileBtn'); await page.click('[data-file="newseq"]'); await page.waitForTimeout(100);
   assert.equal(await h.ev(() => S.type), 'sequence');
   assert.deepEqual(await h.ev(() => ['addBox', 'addGroup', 'modeSeg', 'addPart', 'addNote'].map(id => document.getElementById(id).hidden)), [true, true, true, false, false]);
-  // + Participant adds one after the selected one, named as you type.
-  for (const name of ['Customer', 'Web app', 'Orders API']) { await page.click('#addPart'); await page.keyboard.type(name); await page.keyboard.press('Enter'); }
+  // + Participant adds one after the selected one, named as you type. A new diagram stays centered on the canvas as it grows.
+  const centered = () => h.ev(() => { const r = svg.getBoundingClientRect(), B = lastGeom.seq.bounds; return Math.abs(view.x + (B.x1 + B.x2) / 2 * view.k - r.width / 2) <= 1; });
+  for (const name of ['Customer', 'Web app', 'Orders API']) {
+    await page.click('#addPart'); await page.keyboard.type(name); await page.keyboard.press('Enter');
+    assert.ok(await centered(), `centered with ${name}`);
+  }
   assert.deepEqual(await h.ev(() => S.parts.map(p => p.label)), ['Customer', 'Web app', 'Orders API']);
   const [c, w, o] = await h.ev(() => S.parts.map(p => p.id));
   await page.keyboard.press('Escape');
@@ -866,12 +870,17 @@ test('sequence diagrams: New, + Participant, double-click adds a participant, dr
   }
   assert.deepEqual(await rows(h), [`${c}>${w} sync: checkout`, `${w}>${o} sync: POST /orders`]);
 
+  // Panning ends the centering: the view stays where you put it.
+  await page.mouse.move(700, 600); await page.mouse.down({ button: 'right' }); await page.mouse.move(640, 600, { steps: 4 }); await page.mouse.up({ button: 'right' });
+  const x0 = await h.ev(() => view.x);
+  assert.equal(await h.ev(() => view.follow), undefined);
   // Double-click right of the last head: a participant there, named as you type.
   const lastHead = await seqAt(h, o, 20);
   await page.mouse.dblclick(lastHead.x + 200, lastHead.y); await page.waitForTimeout(80);
   assert.equal((await h.editor()).open, true);
   await page.keyboard.type('Payments'); await page.keyboard.press('Enter');
   assert.deepEqual(await h.ev(() => S.parts.map(p => p.label)), ['Customer', 'Web app', 'Orders API', 'Payments']);
+  assert.equal(await h.ev(() => view.x), x0, 'adding a participant after panning leaves the view alone');
   const pay = await h.ev(() => S.parts[3].id);
 
   // Drag from one lifeline to another below the last row: a message at the end, label editor open.

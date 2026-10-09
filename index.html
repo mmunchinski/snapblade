@@ -380,7 +380,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 33</span>
+      Snapblade <span class="tag">playground &middot; build 34</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -2602,6 +2602,7 @@ function render() {
 // A sequence diagram: drawn from seqLayout(), with previews for the drag in progress.
 function renderSeq() {
   const L = seqLayout(), selId = sel?.type === 'seq' ? sel.id : null, d = drag?.moved ? drag : null;
+  if (view.follow) followView(L);
   const ghost = d && (d.kind === 'rowmove' || d.kind === 'partmove') && !seqOwner(d.id) ? d.id : null, hot = d?.kind === 'msgnew' ? d.over : seqNext?.from;
   const span = sel?.to && seqSpan(sel.id, sel.to), picked = new Set(span ? S.rows.slice(span[0], span[1] + 1).map(r => r.id) : [selId]);
   lastGeom = { R: {}, labels: dict(), seq: L };
@@ -3285,7 +3286,14 @@ function fit() {
   view = { k, x: (r.width - (x2 - x1) * k) / 2 - x1 * k, y: B ? top - y1 * k : (r.height - 30 - (y2 - y1) * k) / 2 - y1 * k };
   render();
 }
+// A new sequence diagram stays centered across the canvas as participants come and go, until you pan or zoom.
+// Once it's wider than the canvas, its left edge stays in view instead.
+function followView(L) {
+  const r = svg.getBoundingClientRect(), { x1, x2 } = L.bounds, w = (x2 - x1) * view.k, pad = 48;
+  view.x = Math.round(w + 2 * pad <= r.width ? (r.width - w) / 2 - x1 * view.k : pad - x1 * view.k);
+}
 function zoomAt(f, mx, my) {
+  delete view.follow;
   const k2 = Math.min(4, Math.max(0.2, view.k * f));
   view.x = mx - (mx - view.x) * k2 / view.k; view.y = my - (my - view.y) * k2 / view.k; view.k = k2;
   render();
@@ -3432,7 +3440,7 @@ function onMove(ev) {
     if (id !== hover) { hover = id; render(); }
     return;
   }
-  if (drag.kind === 'pan') { view.x = drag.vx + ev.clientX - drag.sx; view.y = drag.vy + ev.clientY - drag.sy; render(); return; }
+  if (drag.kind === 'pan') { view.x = drag.vx + ev.clientX - drag.sx; view.y = drag.vy + ev.clientY - drag.sy; delete view.follow; render(); return; }
   if (drag.kind === 'marquee') { drag.cur = p; render(); return; }
   if (drag.kind === 'annot') {
     if (!drag.moved && Math.hypot(p.x - drag.start.x, p.y - drag.start.y) < 4 / view.k) return;
@@ -3821,7 +3829,7 @@ function guideHtml() {
       <li><b>Position</b>: ${b(labels(CORNERS))}, or drag the block toward a corner. Blocks sit just outside the diagram and never cover it. <b>Hide title block</b> and <b>Hide legend</b> turn them off.</li></ul>`],
     ['settings', 'Diagram settings', `<p>With nothing selected, a box diagram's <b>Diagram</b> panel holds: <b>Connector routing</b> (${b(labels(ROUTINGS))}), <b>Connector labels sit near</b> (${b(labels(LABEL_SPOTS))}), <b>Grid snap</b> (${b(labels(GRIDS))}, the step shapes move in), <b>Corner radius</b>, <b>Show anchor points</b> and <b>Shapes can't overlap</b>. A sequence diagram's settings are under Sequence diagrams. Settings belong to the tab they're set on.</p>`],
     ['seq', 'Sequence diagrams', `<p><b>New sequence diagram</b> in the File menu starts one. Participants run left to right and messages top to bottom. Nothing is placed by hand: columns are as wide as the labels between them need, and rows are evenly spaced.</p><ul>
-      <li><b>+ Participant</b> adds a participant after the selected one; double-clicking empty canvas adds one there. Drag a head sideways to reorder; the messages follow.</li>
+      <li><b>+ Participant</b> adds a participant after the selected one; double-clicking empty canvas adds one there. Drag a head sideways to reorder; the messages follow. A new sequence diagram stays centered on the canvas as it grows, until you pan or zoom.</li>
       <li>Drag from one lifeline to another to add a message at that row (rows below shift down). Drag along a lifeline and let go on it for a self-message. Type the label and press Enter: then click the lifeline the next message goes to, and keep going. Esc stops.</li>
       <li>Drag a message or note up or down to move its row. The arrow keys do the same (left and right for a participant).</li>
       <li>The <b>Message</b> panel sets its <b>Label</b>, <b>From</b> and <b>To</b>, and its <b>Kind</b>: ${b(labels(MSG_TYPES))}. Sync is a call that waits (filled arrowhead), Async doesn't wait (open arrowhead), Reply is the answer (dashed). A message that answers the sync call right above it starts out as a Reply. <b>Move up</b>, <b>Move down</b> and <b>Reverse direction</b> are there too.</li>
@@ -3949,7 +3957,7 @@ function openBook(b) {
   const p = BOOK.pages[BOOK.active];
   S = p.S; undoStack = p.undo; redoStack = p.redo;
 }
-const startView = () => isSeq() ? { x: 60, y: 90, k: 1 } : { x: 40, y: 40, k: 1 };
+const startView = () => isSeq() ? { x: 60, y: 90, k: 1, follow: true } : { x: 40, y: 40, k: 1 };
 // An empty diagram that keeps the open one's settings and block corners.
 const emptyDiagram = type => normalize({ ...(type === 'sequence' ? { type, parts: [], rows: [] } : {}), nodes: [], edges: [],
   settings: S.settings, title: { ...titleDefaults(), pos: S.title.pos }, legend: { ...legendDefaults(), pos: S.legend.pos } });
@@ -3991,7 +3999,7 @@ function addTab(kind) {
   const cur = BOOK.pages[BOOK.active], copy = kind === 'copy';
   const d = copy ? JSON.parse(JSON.stringify(S)) : emptyDiagram(kind);
   const name = copy ? uniqueName(`${cur.name} copy`.slice(0, MAX_NAME)) : uniqueName(d.type ? 'Sequence' : 'Page');
-  BOOK.pages.splice(BOOK.active + 1, 0, { name, S: d, undo: [], redo: [], view: copy ? { ...view } : (d.type ? { x: 60, y: 90, k: 1 } : { x: 40, y: 40, k: 1 }) });
+  BOOK.pages.splice(BOOK.active + 1, 0, { name, S: d, undo: [], redo: [], view: copy ? { ...view } : (d.type ? { x: 60, y: 90, k: 1, follow: true } : { x: 40, y: 40, k: 1 }) });
   switchTab(BOOK.active + 1);
   save();
 }
@@ -4502,7 +4510,7 @@ function init() {
     const r = svg.getBoundingClientRect(), unit = ev.deltaMode === 1 ? 16 : 1;
     if (ev.shiftKey) {
       // Shift+wheel pans sideways
-      view.x -= (ev.deltaY || ev.deltaX) * unit;
+      view.x -= (ev.deltaY || ev.deltaX) * unit; delete view.follow;
       render(); return;
     }
     // Wheel zooms toward the cursor. Trackpad pinch arrives as ctrl+wheel with small deltas, so it gets a stronger factor.
