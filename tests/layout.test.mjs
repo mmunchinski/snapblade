@@ -204,9 +204,10 @@ test('every option the panels offer survives a reload and a file round trip', ()
     for (const k in settings) for (const v of settings[k]) { S.settings[k] = v; trip('settings.' + k + ' = ' + v); }
     S = normalize(seqSample());
     for (const [type] of FRAME_TYPES) { seqWrap('m1', 'm2', type, type + ' label'); if (BRANCHED.includes(type)) seqAddElse(S.rows[0].id); }
+    for (const [kind] of BREAKS) S.rows.push({ id: 'b-' + kind, kind, label: kind });
     for (const [head] of HEADS) S.parts.push({ id: 'h-' + head, kind: 'participant', label: head, ...(head === 'box' ? {} : { head }) });
     for (const [t] of MSG_TYPES) for (const [side] of NOTE_SIDES) S.rows.push({ id: 'r' + i++, from: 'web', to: 'orders', type: t, label: t }, { id: 'r' + i++, kind: 'note', side, on: ['web'], label: side });
-    trip('a sequence diagram with every kind of head, frame, message and note');
+    trip('a sequence diagram with every kind of head, frame, message, note, divider and delay');
     return trips;
   })()`);
   assert.ok(trips.length > 20);
@@ -498,6 +499,42 @@ test('sequence heads: actor, database and queue heads sit on their lifelines; a 
   // A diagram of boxes keeps the head row it had.
   run(`S = normalize({ type: 'sequence', parts: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B', head: 'database' }], rows: [] })`);
   assert.equal(json('seqLayout().H'), json('SEQ.headH'));
+});
+
+test('sequence dividers and delays: rows across the whole diagram; a delay dots the lifelines; frames and bars ignore them', () => {
+  run(`S = normalize(seqSample());
+    S.rows.splice(3, 0, { id: 'dv', kind: 'divider', label: 'Payment' });
+    S.rows.splice(S.rows.findIndex(r => r.id === 'm7'), 0, { id: 'dl', kind: 'delay', label: 'up to 5 s later' }, { id: 'd0', kind: 'delay', label: '' });
+    S = normalize(JSON.parse(JSON.stringify(S)))`);
+  assert.deepEqual(json(`['dv', 'dl', 'd0'].map(id => S.rows.find(r => r.id === id))`),
+    [{ id: 'dv', kind: 'divider', label: 'Payment' }, { id: 'dl', kind: 'delay', label: 'up to 5 s later' }, { id: 'd0', kind: 'delay', label: '' }], 'kept by normalize');
+  const L = json(`(() => { const L = seqLayout(); return { bounds: L.bounds, P: L.P.map(q => q.x), R: L.R.map(g => ({ id: g.r.id, y: g.y, h: g.h, brk: g.brk, cx: g.cx, lw: g.lw })) }; })()`);
+  const g = Object.fromEntries(L.R.map(o => [o.id, o]));
+  assert.equal(g.dv.brk, 'divider'); assert.equal(g.dl.brk, 'delay');
+  const mid = (L.P[0] + L.P.at(-1)) / 2;
+  assert.equal(g.dv.cx, mid, 'labels center on the participants');
+  assert.ok(g.dl.h >= json('SEQ.delayH') && g.d0.h >= json('SEQ.delayH'), 'a delay leaves a gap, labeled or not');
+  for (const [i, o] of L.R.entries()) if (L.R[i + 1]) assert.ok(L.R[i + 1].y >= o.y + o.h + 14, `${L.R[i + 1].id} starts below ${o.id}`);
+  // Frames still find their columns (the delay inside the alt frame doesn't touch a lifeline), and bars carry on through a delay.
+  assert.equal(json(`seqLayout().R.find(g => g.r.id === 'f1').x1 < seqLayout().P[0].x`), true, 'the alt frame still covers Customer');
+  const bars = rows => json(`(rows => seqActivations(rows).map(b => [rows[b.i].id, rows[b.end].id, b.p, b.level]))(${rows})`);
+  assert.deepEqual(bars('S.rows'), bars(`S.rows.filter(r => r.kind !== 'divider' && r.kind !== 'delay')`), 'activation bars ignore dividers and delays');
+  // Drawn: the divider's two lines run edge to edge; a delay turns every lifeline dotted for its stretch.
+  run(`globalThis.marks = []; seqMarkup(seqLayout(), new Proxy({}, { get: (_, k) => (...a) => { if (k === 'life') marks.push(a[1] ? 'wait' : 'line'); return ''; } }))`);
+  assert.equal(json('marks.filter(m => m === "wait").length'), 2 * json('S.parts.length'), 'one dotted stretch per lifeline per delay');
+  run(`globalThis.acts = []; seqMarkup(seqLayout(), new Proxy({}, { get: (_, k) => (...a) => { if (k === 'act') acts.push(!!a[1]); return ''; } }))`);
+  assert.ok(json('acts.filter(Boolean).length') >= 3, 'bars crossing a delay are dashed for that stretch');
+  assert.equal(json('acts.filter(w => !w).length'), json('seqActivations(S.rows).length') + json('acts.filter(Boolean).length'), 'and solid on either side');
+  const draw = json(`seqMarkup(seqLayout(), new Proxy({}, { get: () => () => '' }))`);
+  assert.ok(draw.includes(`M${L.bounds.x1},`) && draw.includes(`H${L.bounds.x2}`), 'the divider spans the diagram');
+  assert.ok(draw.includes('>Payment<') && draw.includes('>up to 5 s later<'));
+  // Moving and removing treat them as rows; numbering skips them.
+  run('S.settings.autonumber = true');
+  assert.deepEqual(json(`seqLayout().R.filter(g => !g.mark && !g.note && !g.brk).slice(0, 4).map(g => g.ls[0].split('.')[0])`), ['1', '2', '3', '4']);
+  assert.equal(json(`seqMoveTo('dv', 0)`), true);
+  assert.equal(json('S.rows[0].id'), 'dv');
+  run(`seqRemove('dl')`);
+  assert.equal(json(`S.rows.some(r => r.id === 'dl')`), false);
 });
 
 test('sequence: numbering prefixes messages only, and widens the columns it needs to', () => {

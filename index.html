@@ -279,6 +279,15 @@ dl.keys dd { margin: 0; }
 .f-kind { font: 700 11px var(--ui); fill: var(--ink); pointer-events: none; }
 .f-guard { font: 500 12px var(--ui); fill: var(--ink); cursor: pointer; }
 .f-else { fill: none; stroke: var(--ink-2); stroke-width: 1.25; stroke-dasharray: 6 4; }
+.s-life.wait { stroke-dasharray: 0.5 4.5; stroke-linecap: round; stroke-width: 2.5; }
+.s-act.wait { fill: none; stroke-dasharray: 3 3; }
+.brk { cursor: pointer; }
+.brk .hit { fill: none; stroke: transparent; stroke-width: 12; }
+.brk.sel .hit, .brk:hover .hit { stroke: var(--accent-soft); }
+.d-line { fill: none; stroke: var(--ink-2); stroke-width: 1.25; }
+.d-box { fill: var(--paper); stroke: var(--ink-2); stroke-width: 1.25; }
+.brk.sel .d-line, .brk.sel .d-box { stroke: var(--accent); }
+.brk.sel .s-label { fill: var(--accent); }
 .frame.sel .f-box, .frame.sel .f-tab, .fsec.sel .f-else, .frame:hover .f-tab { stroke: var(--accent); }
 .frame.sel .f-box, .fsec.sel .f-else { stroke-width: 2; }
 .frame.sel .f-kind, .frame.sel .f-guard, .fsec.sel .f-guard { fill: var(--accent); }
@@ -382,7 +391,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 37</span>
+      Snapblade <span class="tag">playground &middot; build 38</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -405,6 +414,10 @@ dl.keys dd { margin: 0; }
       <button class="btn" id="addGroup" type="button">+ Container</button>
       <button class="btn" id="addPart" type="button" hidden>+ Participant</button>
       <button class="btn" id="addNote" type="button" hidden>+ Note</button>
+      <div class="menu-wrap" id="breakWrap" hidden>
+        <button class="btn" id="addBreak" type="button" aria-haspopup="menu" aria-expanded="false" title="Add a divider or a delay below the selected row">+ Divider &#9662;</button>
+        <div class="menu" id="breakMenu" role="menu" hidden></div>
+      </div>
       <div class="menu-wrap" id="frameWrap" hidden>
         <button class="btn" id="addFrame" type="button" aria-haspopup="menu" aria-expanded="false" title="Put the selected rows in a frame">+ Frame &#9662;</button>
         <div class="menu" id="frameMenu" role="menu" hidden></div>
@@ -1413,19 +1426,23 @@ function straighten(ids) {
    a message from one lifeline to another (or to itself), or a note beside, over or across lifelines. Nothing has a
    position: seqLayout() sizes each column from the labels next to it and spaces the rows evenly, so it stays tidy. */
 const SEQ = { minW: 100, padX: 14, headH: 40, nameLh: 16, gap: 40, rowTop: 30, rowGap: 14, lh: 15, labelPad: 12, head: 10,
-  actorW: 60, fig: 34, cap: 5, qcap: 7, self: 36, selfH: 20, noteGap: 12, notePad: 8, fold: 8, span: 18, tail: 26, framePad: 12, tabH: 18, tabCut: 6, actHalf: 5, actStep: 5, actStub: 16 };
+  delayH: 40, actorW: 60, fig: 34, cap: 5, qcap: 7, self: 36, selfH: 20, noteGap: 12, notePad: 8, fold: 8, span: 18, tail: 26, framePad: 12, tabH: 18, tabCut: 6, actHalf: 5, actStep: 5, actStub: 16 };
 const MAX_PARTS = 100, MAX_ROWS = 1000;   // the most a file (or a paste) can add
 const MAX_DEPTH = 20;                      // frames inside frames
 const HEADS = [['box', 'Box'], ['actor', 'Actor'], ['database', 'Database'], ['queue', 'Queue']];   // a participant's head shape
 const MSG_TYPES = [['sync', 'Sync'], ['async', 'Async'], ['reply', 'Reply']];
 const NOTE_SIDES = [['left', 'Left of'], ['right', 'Right of'], ['over', 'Over']];
 const FRAME_TYPES = [['alt', 'Alt'], ['opt', 'Opt'], ['loop', 'Loop'], ['par', 'Par']];
+// Rows that cross the whole diagram: a divider between phases (PlantUML's == label ==) and a delay (... label ...).
+const BREAKS = [['divider', 'Divider'], ['delay', 'Delay']];
+const BREAK_HINTS = { divider: 'a new phase', delay: 'time passes' };
 const BRANCHED = ['alt', 'par'];          // frames that else lines split into sections
 const FRAME_HINTS = { alt: 'one of several paths', opt: 'only if the condition holds', loop: 'repeats while it holds', par: 'sections run at the same time' };
 const isSeq = () => S?.type === 'sequence';
 const isNote = r => r.kind === 'note';
 const isMsg = r => !r.kind;
 const isMark = r => r.kind === 'frame' || r.kind === 'else' || r.kind === 'end';
+const isBreak = r => r.kind === 'divider' || r.kind === 'delay';
 const secWord = type => type === 'par' ? 'And' : 'Else';
 // A frame's condition, as UML writes it: in brackets.
 const guard = label => { const t = oneLine(label).trim(); return !t ? '' : /^\[.*\]$/.test(t) ? t : `[${t}]`; };
@@ -1545,6 +1562,10 @@ function seqLayout(fam = UI_STACK) {
     if (r.kind === 'frame') return { r, mark: 'frame', h: SEQ.tabH + 2 };
     if (r.kind === 'else') return { r, mark: 'else', h: guard(r.label) ? SEQ.lh + 4 : 4 };
     if (r.kind === 'end') return { r, mark: 'end', h: 0 };
+    if (isBreak(r)) {
+      const ls = r.label ? linesOf(r.label) : [], lh = ls.length * SEQ.lh;
+      return { r, brk: r.kind, ls, lw: widest(ls, textFont), lh, h: r.kind === 'delay' ? Math.max(SEQ.delayH, lh + 20) : Math.max(lh + 6, 12) };
+    }
     if (isNote(r)) {
       const ls = linesOf(r.label), w = Math.max(60, widest(ls, textFont) + 2 * SEQ.notePad + SEQ.fold), h = ls.length * SEQ.lh + 2 * SEQ.notePad;
       const a = at[r.on[0]], b = r.side === 'over' && r.on.length > 1 ? at[r.on[1]] : a;
@@ -1573,9 +1594,11 @@ function seqLayout(fam = UI_STACK) {
   let y = H + SEQ.rowTop, x1 = 0, x2 = 0;
   const grow = (a, b) => { x1 = Math.min(x1, a); x2 = Math.max(x2, b); };
   for (const q of P) grow(q.x - q.w / 2, q.x + q.w / 2);
+  const cx = P.length ? (P[0].x + P[P.length - 1].x) / 2 : 0;   // dividers and delays center their labels here
   for (const g of R) {
     g.y = y; y += g.h + SEQ.rowGap;
-    if (g.note) {
+    if (g.brk) { g.cx = cx; if (g.lw) grow(cx - g.lw / 2 - 10, cx + g.lw / 2 + 10); }
+    else if (g.note) {
       const xa = P[g.a].x, xb = P[g.b].x;
       if (g.r.side === 'right') g.x = xa + g.ext + SEQ.noteGap;
       else if (g.r.side === 'left') g.x = xa - g.ext - SEQ.noteGap - g.w;
@@ -1613,7 +1636,7 @@ function seqFrameSpans(R, P, apart, fam) {
     if (g.mark === 'frame') { const f = { g, i, secs: [], kids: [], items: [], a: Infinity, b: -Infinity, levels: 0 }; stack.at(-1)?.kids.push(f); stack.push(f); }
     else if (g.mark === 'else') stack.at(-1)?.secs.push(g);
     else if (g.mark === 'end') { const f = stack.pop(); if (!f) return; f.end = g; f.j = i; out.push(f); }
-    else {
+    else if (!g.brk) {
       // What reaches past a lifeline: {c: column, l: px to its left, r: px to its right}.
       const side = g.r.side, w = g.w, gap = (g.ext || 0) + SEQ.noteGap + w;
       const items = !g.note ? (g.self ? [{ c: g.a, l: 0, r: g.out + SEQ.self + (g.lw ? g.lw + 8 : 0) }] : [{ c: Math.min(g.a, g.b), l: 0, r: 0 }, { c: Math.max(g.a, g.b), l: 0, r: 0 }])
@@ -1646,7 +1669,7 @@ function seqFramePlace(f, R, P) {
     const g = R[i];
     if (g.note) take(g.x, g.x + g.w);
     else if (g.self) take(Math.min(g.x1, g.x2), g.xr + (g.lw ? g.lw + 8 : 0));
-    else if (!g.mark) take(Math.min(g.x1, g.x2), Math.max(g.x1, g.x2));
+    else if (!g.mark && !g.brk) take(Math.min(g.x1, g.x2), Math.max(g.x1, g.x2));
   }
   for (const k of f.kids) take(k.x1, k.x2);
   if (f.a <= f.b) take(P[f.a].x - SEQ.actHalf, P[f.b].x + SEQ.actHalf);   // its lifelines, and the bars on them
@@ -1663,7 +1686,14 @@ function seqMarkup(L, p) {
   const texts = (ls, x, top, lh, size, attrs, anchor) => ls.map((t, i) =>
     `<text x="${r2(x)}" y="${r2(top + i * lh + lh / 2 + size * 0.35)}" text-anchor="${anchor}" ${attrs}>${esc(t)}</text>`).join('');
   let out = '';
-  for (const q of P) out += `<line x1="${q.x}" y1="${H}" x2="${q.x}" y2="${end}" ${p.life(q)}/>` + p.lifeHit(q, H, end);
+  // Lifelines, dotted through each delay.
+  const waits = R.filter(g => g.brk === 'delay').map(g => [g.y, g.y + g.h]);
+  const seg = (q, a, b, wait) => b > a ? `<line x1="${q.x}" y1="${r2(a)}" x2="${q.x}" y2="${r2(b)}" ${p.life(q, wait)}/>` : '';
+  for (const q of P) {
+    let y = H;
+    for (const [a, b] of waits) { out += seg(q, y, a) + seg(q, a, b, true); y = b; }
+    out += seg(q, y, end) + p.lifeHit(q, H, end);
+  }
   // Heads: a box, a stick figure (name under it, or over it at the bottom), a cylinder, or a queue lying on its side.
   const head = (q, foot) => {
     const y = foot ? end : q.top, h = q.hh, w = q.w, x1 = q.x - w / 2, x2 = x1 + w, n = q.ls.length * SEQ.nameLh;
@@ -1687,7 +1717,13 @@ function seqMarkup(L, p) {
   };
   for (const q of P) out += head(q) + (S.settings.footbox ? head(q, true) : '');
   // Activation bars, then frames over them (their tabs and conditions stay readable), then the messages.
-  for (const a of A) out += `<rect x="${a.x}" y="${r2(a.y1)}" width="${a.w}" height="${r2(a.y2 - a.y1)}" ${p.act(a)}/>`;
+  // A bar that crosses a delay is dashed for that stretch: still busy, while time passes.
+  const bar = (a, y1, y2, wait) => y2 > y1 ? `<rect x="${a.x}" y="${r2(y1)}" width="${a.w}" height="${r2(y2 - y1)}" ${p.act(a, wait)}/>` : '';
+  for (const a of A) {
+    let y = a.y1;
+    for (const [w1, w2] of waits) if (w2 > y && w1 < a.y2) { out += bar(a, y, Math.max(y, w1)) + bar(a, Math.max(y, w1), Math.min(a.y2, w2), true); y = Math.min(a.y2, w2); }
+    out += bar(a, y, a.y2);
+  }
   // Frames go under the messages: a box, a tab naming the kind, the condition beside it, else lines across.
   for (const g of R) {
     if (!g.mark) continue;
@@ -1705,8 +1741,21 @@ function seqMarkup(L, p) {
         + '</g>';
     } else out += `<g ${p.frameEnd(g)}>${p.hit(across)}</g>`;
   }
+  // Dividers run edge to edge with their label boxed in the middle; a delay's label sits on the dotted stretch.
   for (const g of R) {
-    if (g.mark) continue;
+    if (!g.brk) continue;
+    const ym = r2(g.y + g.h / 2), { x1, x2 } = L.bounds, bw = g.lw + 16, bh = g.lh + 6;
+    const text = g.ls.length ? texts(g.ls, g.cx, ym - g.lh / 2, SEQ.lh, 12, p.label(g), 'middle') : '';
+    if (g.brk === 'divider') {
+      out += `<g ${p.brk(g)}>${p.hit(`M${x1},${ym} H${x2}`)}<path d="M${x1},${ym - 2} H${x2} M${x1},${ym + 2} H${x2}" ${p.divLine(g)}/>`
+        + (text ? `<rect x="${r2(g.cx - bw / 2)}" y="${r2(ym - bh / 2)}" width="${bw}" height="${bh}" rx="2" ${p.divBox(g)}/>` + text : '') + '</g>';
+    } else {
+      out += `<g ${p.brk(g)}>${p.hit(`M${x1},${ym} H${x2}`)}`
+        + (text ? `<rect x="${r2(g.cx - bw / 2)}" y="${r2(ym - bh / 2)}" width="${bw}" height="${bh}" rx="2" ${p.labelBg(g)}/>` + text : '') + '</g>';
+    }
+  }
+  for (const g of R) {
+    if (g.mark || g.brk) continue;
     if (g.note) {
       const { x, y, w, h } = g, f = SEQ.fold;
       out += `<g ${p.note(g)}><path d="M${x},${y} H${x + w - f} L${x + w},${y + f} V${y + h} H${x} Z" ${p.noteBody(g)}/>`
@@ -1987,6 +2036,7 @@ function cleanSeq(s) {
     if (r.kind === 'frame') return [{ id: r.id, kind: 'frame', type: oneOf(r.type, valuesOf(FRAME_TYPES), 'alt'), label: strOr(r.label) }];
     if (r.kind === 'else') return [{ id: r.id, kind: 'else', label: strOr(r.label) }];
     if (r.kind === 'end') return [{ id: r.id, kind: 'end' }];
+    if (isBreak(r)) return [{ id: r.id, kind: r.kind, label: strOr(r.label) }];
     if (r.kind === 'note') {
       const side = oneOf(r.side, valuesOf(NOTE_SIDES), 'right');
       const on = [...new Set(Array.isArray(r.on) ? r.on.filter(has) : [])].slice(0, side === 'over' ? 2 : 1);
@@ -2229,6 +2279,7 @@ A sequence diagram is a different kind of file: participants left to right, and 
 - A message: \`{"id": "m1", "from": "cust", "to": "web", "type": "sync", "label": "Place order"}\`. \`from\` and \`to\` are participant ids, the same one for a self-message; a message naming a participant that doesn't exist is dropped. \`type\` is ${or(valuesOf(MSG_TYPES).map(q))}: a call that waits for an answer (filled arrowhead), one that doesn't wait (open arrowhead), or the answer (dashed). Default \`"sync"\`. \`style\`: \`line\` and \`dash\` only; a reply is dashed unless \`dash\` says otherwise.
 - A note: \`{"id": "n1", "kind": "note", "side": "right", "on": ["gw"], "label": "Can take up to 5 s"}\`. \`side\` is ${or(valuesOf(NOTE_SIDES).map(q))}. \`on\` lists the participant it sits beside, or for \`"over"\` one or two participants (the note spans from one to the other). A note takes a row of its own. \`style\` works as for boxes.
 - A frame (alt, opt, loop, par) is rows around the rows it holds: a start \`{"id": "f1", "kind": "frame", "type": "alt", "label": "approved"}\`, then the rows, then an end \`{"id": "f1x", "kind": "end"}\`. For an alt or par, an else line \`{"id": "f1e", "kind": "else", "label": "declined"}\` between them starts the next section. \`type\` is ${or(valuesOf(FRAME_TYPES).map(q))}: ${FRAME_TYPES.map(([v]) => FRAME_HINTS[v]).join(', ')}. Default ${q('alt')}. \`label\` is the condition, shown in brackets (leave the brackets out). Frames nest, at most ${MAX_DEPTH} deep. An end with no start, or an else line outside an alt or par, is dropped; a start with no end is closed after the last row. A frame is drawn as wide as the lifelines its rows touch.
+- A divider \`{"id": "d1", "kind": "divider", "label": "Fulfilment"}\` is a row that marks a new phase: a double line across the whole diagram with the label in the middle. A delay \`{"id": "d2", "kind": "delay", "label": "5 minutes later"}\` is a row that shows time passing: the lifelines go dotted for a stretch. \`kind\` is ${or(valuesOf(BREAKS).map(q))}; \`label\` may be empty. Either can sit inside a frame.
 - \`settings.autonumber\` numbers the messages, \`settings.footbox\` repeats the participants at the bottom, and \`settings.activation\` (default \`true\`) draws activation bars. Bars are automatic: a sync call starts one on the participant it calls, and a reply back closes the latest open call between the two (in an alt, each section's reply counts and the bar runs to the last). A call with no reply lasts to that participant's last message before the caller sends again. A caller with no bar of its own gets one for as long as it waits. Async messages start none. So send a reply for every call you want to read as finished. The other settings don't apply. The title block and legend work as above.
 - Put each reply right after the call it answers. Keep labels short: an operation, an endpoint or an event name.
 
@@ -2665,14 +2716,15 @@ function renderSeq() {
     part: q => `class="${cls('part', q.id)}" data-role="part" data-id="${esc(q.id)}" style="${styleVars(q.p)}"`,
     body: () => 'class="b-body"', figure: () => 'class="b-line"', name: () => 'class="s-name"',
     headHit: (x, y, w, h) => `<rect class="s-headhit" x="${x}" y="${y}" width="${w}" height="${h}"/>`,
-    life: q => `class="s-life${q.id === hot ? ' hot' : seqNext ? ' pick' : q.id === selId ? ' sel' : ''}" style="${styleVars(q.p)}"`,
+    life: (q, wait) => `class="s-life${q.id === hot ? ' hot' : seqNext ? ' pick' : q.id === selId ? ' sel' : ''}${wait ? ' wait' : ''}" style="${styleVars(q.p)}"`,
+    brk: g => `class="${cls('brk', g.r.id)}" data-role="row" data-id="${esc(g.r.id)}"`, divLine: () => 'class="d-line"', divBox: () => 'class="d-box"',
     lifeHit: (q, y1, y2) => `<rect class="s-lifehit" data-role="life" data-id="${esc(q.id)}" x="${q.x - 8}" y="${y1}" width="16" height="${y2 - y1}"/>`,
     msg: g => `class="${cls('msg', g.r.id)}" data-role="row" data-id="${esc(g.r.id)}" style="${styleVars(withDash(g.r))}"`,
     hit: path => `<path class="hit" d="${path}"/>`, line: () => 'class="s-line"', fill: () => 'class="s-fill"', open: () => 'class="s-open"',
     labelBg: () => 'class="s-label-bg"', label: () => 'class="s-label"',
     note: g => `class="${cls('note', g.r.id)}" data-role="row" data-id="${esc(g.r.id)}" style="${styleVars(g.r)}"`,
     noteBody: () => 'class="n-body"', fold: () => 'class="n-fold"', noteText: () => 'class="n-text"',
-    act: a => `class="s-act" style="${styleVars(barStyle(a.q.p))}"`,
+    act: (a, wait) => `class="s-act${wait ? ' wait' : ''}" style="${styleVars(barStyle(a.q.p))}"`,
     frame: g => `class="${cls('frame', g.r.id)}" data-role="row" data-id="${esc(g.r.id)}"`,
     frameBox: () => 'class="f-box"', tab: () => 'class="f-tab"', kind: () => 'class="f-kind"', guard: () => 'class="f-guard"',
     sec: g => `class="${cls('fsec', g.r.id)}" data-role="row" data-id="${esc(g.r.id)}"`, secLine: () => 'class="f-else"',
@@ -2708,6 +2760,7 @@ function seqStatus() {
   if (o.kind === 'else') return `${secWord(seqFrames()[seqOwner(o.id)]?.r.type)} line  ·  drag it or press ↑/↓ to move it`;
   if (o.kind === 'participant') return `Participant  ·  ${S.rows.filter(r => isMsg(r) && (r.from === o.id || r.to === o.id)).length} messages  ·  ←/→ moves it`;
   if (isNote(o)) return `Note ${o.side === 'over' ? 'over' : o.side + ' of'} ${o.on.map(name).join(' and ')}  ·  ↑/↓ moves it`;
+  if (isBreak(o)) return `${o.kind === 'divider' ? 'Divider' : 'Delay'}${o.label ? ': ' + oneLine(o.label) : ''}  ·  drag it or press ↑/↓ to move it`;
   return `${name(o.from)} → ${name(o.to)}  ·  ${o.type}  ·  ↑/↓ moves it`;
 }
 
@@ -2852,6 +2905,14 @@ function seqPanel(o) {
     </section>
     <div class="row"><button class="btn danger" type="button" data-act="delete">Delete line</button></div>`;
   }
+  if (isBreak(o)) return `<section>
+      <p class="eyebrow">${o.kind === 'divider' ? 'Divider' : 'Delay'}</p>
+      <label class="field"><span>Label</span><textarea id="f-label" data-field="label" rows="2" placeholder="No label">${esc(o.label)}</textarea></label>
+      <div class="field"><span>Kind</span>${seg('breakKind', BREAKS, o.kind)}</div>
+      <p class="desc">A divider marks a new phase with a double line across the diagram. A delay shows time passing: the lifelines go dotted.</p>
+      ${moveButtons('Move up', 'Move down')}
+    </section>
+    <div class="row"><button class="btn" type="button" data-act="duplicate">Duplicate</button><button class="btn danger" type="button" data-act="delete">Delete ${o.kind}</button></div>`;
   if (isNote(o)) return `<section>
       <p class="eyebrow">Note</p>
       <label class="field"><span>Text</span><textarea id="f-label" data-field="label" rows="2">${esc(o.label)}</textarea></label>
@@ -3247,6 +3308,7 @@ function onAct(b) {
   if (sel?.type === 'seq') {
     const o = seqItem(sel.id);
     if (act === 'msgType') o.type = val;
+    if (act === 'breakKind') o.kind = val;
     if (act === 'partHead') { if (val === 'box') delete o.head; else o.head = val; }
     if (act === 'noteSide') { o.side = val; if (val !== 'over') o.on = o.on.slice(0, 1); }
     if (act === 'reverse') [o.from, o.to] = [o.to, o.from];
@@ -3327,6 +3389,16 @@ function addSeqNote() {
   sel = { type: 'seq', id: n.id }; seqNext = null;
   refresh(true, true); openSeqEditor(n.id, true);
 }
+// A divider or delay below the selected row (or at the end), labeled as you type.
+function addBreak(kind) {
+  closeMenu();
+  const o = sel?.type === 'seq' && seqItem(sel.id);
+  const i = !o || o.kind === 'participant' ? S.rows.length : sel.to ? seqSpan(sel.id, sel.to)[1] + 1 : S.rows.indexOf(o) + 1;
+  pushUndo();
+  const r = seqInsert({ id: nid(kind === 'divider' ? 'dv' : 'dl'), kind, label: '' }, i);
+  sel = { type: 'seq', id: r.id }; seqNext = null;
+  refresh(true, true); openSeqEditor(r.id, true);
+}
 // Put the selected rows (a message, a note, or a run picked with Shift+click or a box) in a new frame, then type its condition.
 function addFrame(type) {
   closeMenu();
@@ -3401,6 +3473,7 @@ function openSeqEditor(id, fresh) {
     if (g.mark === 'frame') b = { x: g.x1 + g.tw + 2, y: g.y - 4, w: Math.max(180, g.gw + 30), h: SEQ.tabH + 8 };
     else if (g.mark === 'else') b = { x: g.x1 + 4, y: g.y, w: Math.max(180, g.gw + 30), h: SEQ.lh + 10 };
     else if (isNote(o)) b = { x: g.x, y: g.y, w: g.w, h: g.h };
+    else if (g.brk) { const w = Math.max(180, g.lw + 30); b = { x: g.cx - w / 2, y: g.y + g.h / 2 - 16, w, h: Math.max(32, g.lh + 10) }; }
     else if (g.self) b = { x: g.xr + 4, y: g.y, w: Math.max(140, g.lw + 20), h: Math.max(30, g.h) };
     else { const w = Math.max(140, g.lw + 20); b = { x: (g.x1 + g.x2) / 2 - w / 2, y: g.y - 4, w, h: Math.max(30, g.lh + 10) }; }
   }
@@ -3715,7 +3788,7 @@ function updateDocUi() {
 function syncTypeUi() {
   const seq = isSeq();
   for (const id of ['addBox', 'addGroup', 'modeSeg', 'modeLbl']) document.getElementById(id).hidden = seq;
-  for (const id of ['addPart', 'addNote', 'frameWrap']) document.getElementById(id).hidden = !seq;
+  for (const id of ['addPart', 'addNote', 'breakWrap', 'frameWrap']) document.getElementById(id).hidden = !seq;
   document.getElementById('emptyHint').textContent = seq ? 'Double-click to add a participant, then drag from one lifeline to another to add a message.'
     : 'Double-click anywhere to add a box, or drop a .snapblade file here to open it.';
 }
@@ -3905,6 +3978,7 @@ function guideHtml() {
       <li>Drag a message or note up or down to move its row. The arrow keys do the same (left and right for a participant).</li>
       <li>The <b>Message</b> panel sets its <b>Label</b>, <b>From</b> and <b>To</b>, and its <b>Kind</b>: ${b(labels(MSG_TYPES))}. Sync is a call that waits (filled arrowhead), Async doesn't wait (open arrowhead), Reply is the answer (dashed). A message that answers a call still waiting for its answer starts out as a Reply. <b>Move up</b>, <b>Move down</b> and <b>Reverse direction</b> are there too.</li>
       <li><b>+ Note</b> adds a <b>Note</b> below the selected row. Its <b>Position</b> is ${b(labels(NOTE_SIDES))} its <b>Participant</b>; an Over note <b>Spans to</b> a second one. A note takes its own row, so nothing overlaps.</li>
+      <li><b>+ Divider</b> adds a row below the selected one, ready to label: a <b>Divider</b> (${BREAK_HINTS.divider}: a double line across the whole diagram, its label boxed in the middle, like PlantUML's <code>== Setup ==</code>) or a <b>Delay</b> (${BREAK_HINTS.delay}: the lifelines go dotted for a stretch, with an optional label such as <code>5 minutes later</code>). Its panel's <b>Kind</b> switches between the two; drag it or use the arrow keys to move it, like any row, and <b>Delete divider</b> (or <b>Delete delay</b>) removes it.</li>
       <li>The <b>Participant</b> panel has <b>Move left</b> and <b>Move right</b>; <b>Delete participant</b> also deletes its messages and notes. Participants, messages and notes take colors and patterns like boxes and connectors, and get legend rows the same way.</li>
       <li><b>+ Frame</b> puts the selected message or note in a frame: ${FRAME_TYPES.map(([v, l]) => `<b>${l}</b> (${FRAME_HINTS[v]})`).join(', ')}. To take in several rows, drag a box over them from empty canvas (only how far up and down it reaches counts; Shift+drag adds to the rows already selected), or click the first and Shift+click the last; the <b>Rows</b> panel then offers <b>Put in a frame</b> and <b>Delete rows</b> too. A frame the rows cut into is taken in whole. Type the condition and press Enter; it shows in brackets beside the kind.</li>
       <li>The <b>Frame</b> panel sets its <b>Kind</b> and <b>Condition</b>. In an Alt, <b>+ Else line</b> starts another section (in a Par, <b>+ And line</b>): it goes in at the bottom of the frame, and you drag it up to where its section starts. An <b>Else line</b> or <b>And line</b> has its own Condition, and <b>Delete line</b>. Switching to Opt or Loop removes the lines, not the rows.</li>
@@ -3983,6 +4057,7 @@ function helpHtml() {
       <li>Drag the bottom edge of the alt frame up past <b>Show payment error</b> to leave it out.</li>
       <li>Select <b>Payments API</b> and click <b>+ Note</b>: a note goes right of its lifeline, ready to type.</li>
       <li>Select a message and switch its Kind between Sync, Async and Reply.</li>
+      <li>Select <b>Validate cart</b>, then <b>+ Divider</b> &gt; Divider and type <code>Payment</code> to mark the next phase.</li>
       <li>Click the + at the end of the tabs and add a Box diagram tab: one file can hold the architecture and its sequence diagrams. Double-click a tab to rename it.</li>
     </ol>
     <div class="row"><button class="btn" type="button" data-choice="seqsample">Load the sequence sample</button><span class="desc">Replaces the canvas. Ctrl+Z undoes it.</span></div>`,
@@ -4011,7 +4086,7 @@ function helpTabSwitch(b) {
 
 /* ---------- file menu ---------- */
 function closeMenu() {
-  for (const [menu, btn] of [['fileMenu', 'fileBtn'], ['tabMenu', 'tabAdd'], ['frameMenu', 'addFrame']]) {
+  for (const [menu, btn] of [['fileMenu', 'fileBtn'], ['tabMenu', 'tabAdd'], ['frameMenu', 'addFrame'], ['breakMenu', 'addBreak']]) {
     const m = document.getElementById(menu);
     if (m && !m.hidden) { m.hidden = true; document.getElementById(btn).setAttribute('aria-expanded', 'false'); }
   }
@@ -4291,7 +4366,8 @@ function buildExportSvg(o) {
       body: q => { const c = col(q.p); return `fill="${c.fill}"${fo(c)} stroke="${c.line}" stroke-width="1.5"${dash(q.p.style)}`; },
       figure: q => `fill="none" stroke="${col(q.p).line}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"${dash(q.p.style)}`,
       name: () => `${fontAttrs(13, 500)} fill="${ink}"`,
-      life: q => `stroke="${q.p.style?.line ? col(q.p).line : parseColor(T['group-stroke']).hex}" stroke-width="1.25" stroke-dasharray="5 4"`,
+      life: (q, wait) => `stroke="${q.p.style?.line ? col(q.p).line : parseColor(T['group-stroke']).hex}" ${wait ? 'stroke-width="2.5" stroke-dasharray="0.5 4.5" stroke-linecap="round"' : 'stroke-width="1.25" stroke-dasharray="5 4"'}`,
+      brk: () => '', divLine: () => `fill="none" stroke="${frameInk}" stroke-width="1.25"`, divBox: () => `fill="${labelBg}" stroke="${frameInk}" stroke-width="1.25"`,
       line: g => `fill="none" stroke="${col(g.r).line}" stroke-width="1.5" stroke-linejoin="round"${dash(withDash(g.r).style)}`,
       fill: g => `fill="${col(g.r).line}"`,
       open: g => `fill="none" stroke="${col(g.r).line}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"`,
@@ -4299,7 +4375,7 @@ function buildExportSvg(o) {
       noteBody: g => { const c = col(g.r); return `fill="${c.fill}"${fo(c)} stroke="${c.line}" stroke-width="1.25" stroke-linejoin="round"${dash(g.r.style)}`; },
       fold: g => `fill="none" stroke="${col(g.r).line}" stroke-width="1.25" stroke-linejoin="round"`,
       noteText: () => `${fontAttrs(12, 500)} fill="${ink}"`,
-      act: a => { const c = col(barStyle(a.q.p)); return `fill="${c.fill}"${fo(c)} stroke="${c.line}" stroke-width="1.25"`; },
+      act: (a, wait) => { const c = col(barStyle(a.q.p)); return wait ? `fill="none" stroke="${c.line}" stroke-width="1.25" stroke-dasharray="3 3"` : `fill="${c.fill}"${fo(c)} stroke="${c.line}" stroke-width="1.25"`; },
       frame: () => '', sec: () => '', frameEnd: () => '',
       frameBox: () => `fill="none" stroke="${frameInk}" stroke-width="1.25"`,
       tab: () => `fill="${labelBg}" stroke="${frameInk}" stroke-width="1.25" stroke-linejoin="round"`,
@@ -4616,6 +4692,15 @@ function init() {
     if (open) frameMenu.querySelector('button').focus();
   });
   frameMenu.addEventListener('click', ev => { const b = ev.target.closest('[data-frame]'); if (b) addFrame(b.dataset.frame); });
+  const breakMenu = document.getElementById('breakMenu');
+  breakMenu.innerHTML = BREAKS.map(([v, l]) => `<button type="button" role="menuitem" data-break="${v}">${l}<kbd>${BREAK_HINTS[v]}</kbd></button>`).join('');
+  document.getElementById('addBreak').addEventListener('click', ev => {
+    ev.stopPropagation();
+    const open = breakMenu.hidden;
+    closeMenu(); breakMenu.hidden = !open; ev.currentTarget.setAttribute('aria-expanded', String(open));
+    if (open) breakMenu.querySelector('button').focus();
+  });
+  breakMenu.addEventListener('click', ev => { const b = ev.target.closest('[data-break]'); if (b) addBreak(b.dataset.break); });
   document.getElementById('undoBtn').addEventListener('click', () => restore(undoStack, redoStack));
   document.getElementById('redoBtn').addEventListener('click', () => restore(redoStack, undoStack));
   document.getElementById('fitBtn').addEventListener('click', fit);

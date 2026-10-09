@@ -68,6 +68,7 @@ const CONTEXTS = [
   ['participant', "seqOn(); sel = { type: 'seq', id: 'orders' }; multi = []"],
   ['message', "seqOn(); sel = { type: 'seq', id: 'm4' }; multi = []"],
   ['note', "seqOn(); sel = { type: 'seq', id: 'n1' }; multi = []"],
+  ['divider or delay', "seqOn(); if (!S.rows.some(r => r.id === 'dv')) { S.rows.splice(3, 0, { id: 'dv', kind: 'divider', label: 'Payment' }); save(); } sel = { type: 'seq', id: 'dv' }; multi = []"],
   // The else line goes before the frame: switching the frame to Opt or Loop removes it.
   ['run of rows', "seqOn(); sel = { type: 'seq', id: 'm2', to: 'm4' }; multi = []"],
   ['else line', "seqOn(); sel = { type: 'seq', id: 'f1e' }; multi = []"],
@@ -1107,6 +1108,59 @@ test('sequence heads: pick actor, database or queue in the participant panel; un
   const svgText = await h.ev(() => buildExportSvg({ theme: 'light', background: 'white', scope: 'all' }).svg);
   assert.ok(svgText.includes('<circle') && / A[\d.]+,5 0 0 1 /.test(svgText), 'actor figure and database cylinder in the export');
   assert.ok(!svgText.includes('var(--'), 'no CSS variables in the export');
+  const kept = await h.ev(() => JSON.parse(JSON.stringify(S)));
+  await page.reload(); await page.waitForTimeout(300);
+  assert.deepStrictEqual(await h.ev(() => JSON.parse(JSON.stringify(S))), kept);
+  assert.deepEqual(h.errors, []);
+});
+
+test('sequence dividers and delays: + Divider menu adds one below the selected row, labeled as you type; Kind switches it; Delete and undo', async () => {
+  const h = await open(), { page } = h;
+  await seqSampleOn(h);
+  // Select Validate cart, + Divider > Divider, type the phase.
+  await page.mouse.click(...Object.values(await seqRow(h, 'm3')));
+  assert.equal(await page.isVisible('#addBreak'), true);
+  await page.click('#addBreak'); await page.click('[data-break="divider"]');
+  assert.equal((await h.editor()).open, true);
+  await page.keyboard.type('Payment'); await page.keyboard.press('Enter');
+  const all = await ids(h), dv = all[all.indexOf('m3') + 1];
+  assert.deepEqual(await h.ev(id => S.rows.find(r => r.id === id), dv), { id: dv, kind: 'divider', label: 'Payment' });
+  assert.deepEqual(await h.ev(() => sel), { type: 'seq', id: dv });
+  assert.equal(await h.ev(() => document.querySelector('#panel .eyebrow').textContent), 'Divider');
+  // It spans the diagram: its double line runs from one edge of the bounds to the other.
+  const across = await h.ev(id => { const d = document.querySelector(`#cv .brk[data-id="${id}"] .d-line`).getAttribute('d'), B = lastGeom.seq.bounds; return d.startsWith(`M${B.x1},`) && d.includes(`H${B.x2}`); }, dv);
+  assert.ok(across);
+  // One undo step takes it away, label and all.
+  await page.keyboard.press('Control+z');
+  assert.equal(await h.ev(id => S.rows.some(r => r.id === id), dv), false);
+  await page.keyboard.press('Control+y');
+  // A delay after Charge card, with no label: the lifelines go dotted for its stretch.
+  await page.mouse.click(...Object.values(await seqRow(h, 'm5')));
+  await page.click('#addBreak'); await page.click('[data-break="delay"]');
+  await page.keyboard.press('Enter');
+  const dl = await h.ev(() => sel.id);
+  assert.deepEqual(await h.ev(id => S.rows.find(r => r.id === id), dl), { id: dl, kind: 'delay', label: '' });
+  assert.equal(await h.ev(() => document.querySelectorAll('#cv .s-life.wait').length), await h.ev(() => S.parts.length));
+  assert.match(await page.textContent('#status'), /^Delay/);
+  // Clicking the divider selects it; Kind turns it into a delay and back; ArrowUp moves it.
+  await page.keyboard.press('Escape');
+  const ym = await h.ev(id => { const g = lastGeom.seq.R.find(g => g.r.id === id), r = svg.getBoundingClientRect(); return { x: r.left + view.x + (g.cx + 120) * view.k, y: r.top + view.y + (g.y + g.h / 2) * view.k }; }, dv);
+  await page.mouse.click(ym.x, ym.y);
+  assert.deepEqual(await h.ev(() => sel), { type: 'seq', id: dv });
+  await h.button('Delay');
+  assert.equal(await h.ev(id => S.rows.find(r => r.id === id).kind, dv), 'delay');
+  assert.equal(await h.ev(() => document.querySelectorAll('#cv .s-life.wait').length), 2 * await h.ev(() => S.parts.length));
+  await h.button('Divider');
+  const at = (await ids(h)).indexOf(dv);
+  await page.keyboard.press('ArrowUp');
+  assert.equal((await ids(h)).indexOf(dv), at - 1);
+  // Delete removes it; the export draws what's left; a reload keeps it all.
+  await page.mouse.click(...Object.values(await h.ev(id => { const g = lastGeom.seq.R.find(g => g.r.id === id), r = svg.getBoundingClientRect(); return { x: r.left + view.x + (g.cx + 120) * view.k, y: r.top + view.y + (g.y + g.h / 2) * view.k }; }, dl)));
+  assert.deepEqual(await h.ev(() => sel), { type: 'seq', id: dl });
+  await page.keyboard.press('Delete');
+  assert.equal(await h.ev(id => S.rows.some(r => r.id === id), dl), false);
+  const svgText = await h.ev(() => buildExportSvg({ theme: 'light', background: 'white', scope: 'all' }).svg);
+  assert.ok(svgText.includes('>Payment<') && !svgText.includes('var(--'));
   const kept = await h.ev(() => JSON.parse(JSON.stringify(S)));
   await page.reload(); await page.waitForTimeout(300);
   assert.deepStrictEqual(await h.ev(() => JSON.parse(JSON.stringify(S))), kept);
