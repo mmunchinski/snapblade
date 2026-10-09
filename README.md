@@ -62,7 +62,7 @@ npx playwright install chromium   # first time only
 npm test                          # layout tests (Node) + interaction tests (headless Chromium)
 ```
 
-- `tests/layout.test.mjs` exercises the core without a browser: anchors, routing, bundling, labels, arrange, hard walls, sequence layout, frames and activation bars, the file format and the checks every opened file goes through.
+- `tests/layout.test.mjs` exercises the core without a browser: anchors, routing, bundling, labels, arrange, hard walls, sequence layout (heads, dividers and delays, frames, activation bars), the file format and the checks every opened file goes through.
 - `tests/browser.test.mjs` drives the real app with mouse and keyboard input, including files, exports, tabs and hostile files.
 
 ## Privacy
