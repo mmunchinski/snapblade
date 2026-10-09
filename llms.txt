@@ -3,7 +3,7 @@
 Snapblade is a browser editor for box-and-line diagrams (architecture, systems, data flows) and sequence diagrams: https://mmunchinski.github.io/snapblade/
 You write a diagram as JSON. The user saves your answer as a file ending in `.snapblade` (or `.json`) and opens it in Snapblade (File > Open, or drop it on the canvas).
 
-You decide what the shapes are and where they go. Snapblade draws the connectors itself: it picks the sides, spaces the anchor points, routes right-angled lines around the shapes and places the labels. So give every shape a sensible position and size, and leave the connector details on automatic.
+In a box diagram you decide what the shapes are and where they go. Snapblade draws the connectors itself: it picks the sides, spaces the anchor points, routes right-angled lines around the shapes and places the labels. So give every shape a sensible position and size, and leave the connector details on automatic. A sequence diagram has no positions at all: you list the participants and the messages in order, and Snapblade lays it out (see Sequence diagrams). One file can also hold several diagrams as tabs (see the last section).
 
 These instructions are generated from the app's own rules, so they always match the current version.
 
@@ -13,9 +13,9 @@ One JSON object and nothing else (no comments, no trailing commas), in a single 
 
     {"format": "snapblade", "version": 1, "diagram": {"nodes": [...], "edges": [...], "settings": {...}, "title": {...}, "legend": {...}}}
 
-Only `nodes` and `edges` are required. Anything missing gets its default. Anything not described here, or not one of the listed values, is dropped or reset to its default when the file is opened.
+That is a box diagram, where only `nodes` and `edges` are required. A sequence diagram puts `"type": "sequence"`, `parts` and `rows` in `diagram` instead of `nodes` and `edges`. For several diagrams in one file, use version 2 with a `pages` list. Anything missing gets its default. Anything not described here, or not one of the listed values, is dropped or reset to its default when the file is opened.
 
-## Coordinates
+## Coordinates (box diagrams)
 
 Pixels. `x` grows to the right and `y` grows downward; `x` and `y` are a shape's top-left corner. Positions must be within -1000000 to 1000000, sizes from 1 to 100000. Use multiples of 10.
 
@@ -101,6 +101,8 @@ Usually leave `settings` out.
 
 - Valid JSON. Every id unique. Every `from.node`, `to.node` and `parent` names an existing shape, and every `parent` is a `"group"`.
 - No two shapes overlap or sit closer than 20 px, except a container and the shapes inside it. Opening a file never moves anything, so this is up to you.
+- In a sequence diagram: every `from`, `to` and note `on` names a participant in `parts`, ids are unique across participants and rows, and each reply comes right after its call.
+- With tabs: version 2, a `pages` list, and each page's `diagram` follows the rules above.
 - Only the fields and values described here.
 
 ## Example

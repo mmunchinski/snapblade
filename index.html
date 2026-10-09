@@ -376,7 +376,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 29</span>
+      Snapblade <span class="tag">playground &middot; build 30</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -1840,7 +1840,7 @@ function agentSpec() {
 Snapblade is a browser editor for box-and-line diagrams (architecture, systems, data flows) and sequence diagrams: ${APP_URL}
 You write a diagram as JSON. The user saves your answer as a file ending in \`.snapblade\` (or \`.json\`) and opens it in Snapblade (File > Open, or drop it on the canvas).
 
-You decide what the shapes are and where they go. Snapblade draws the connectors itself: it picks the sides, spaces the anchor points, routes right-angled lines around the shapes and places the labels. So give every shape a sensible position and size, and leave the connector details on automatic.
+In a box diagram you decide what the shapes are and where they go. Snapblade draws the connectors itself: it picks the sides, spaces the anchor points, routes right-angled lines around the shapes and places the labels. So give every shape a sensible position and size, and leave the connector details on automatic. A sequence diagram has no positions at all: you list the participants and the messages in order, and Snapblade lays it out (see Sequence diagrams). One file can also hold several diagrams as tabs (see the last section).
 
 These instructions are generated from the app's own rules, so they always match the current version.
 
@@ -1850,9 +1850,9 @@ One JSON object and nothing else (no comments, no trailing commas), in a single 
 
     {"format": "snapblade", "version": 1, "diagram": {"nodes": [...], "edges": [...], "settings": {...}, "title": {...}, "legend": {...}}}
 
-Only \`nodes\` and \`edges\` are required. Anything missing gets its default. Anything not described here, or not one of the listed values, is dropped or reset to its default when the file is opened.
+That is a box diagram, where only \`nodes\` and \`edges\` are required. A sequence diagram puts \`"type": "sequence"\`, \`parts\` and \`rows\` in \`diagram\` instead of \`nodes\` and \`edges\`. For several diagrams in one file, use version 2 with a \`pages\` list. Anything missing gets its default. Anything not described here, or not one of the listed values, is dropped or reset to its default when the file is opened.
 
-## Coordinates
+## Coordinates (box diagrams)
 
 Pixels. \`x\` grows to the right and \`y\` grows downward; \`x\` and \`y\` are a shape's top-left corner. Positions must be within ${-MAX_POS} to ${MAX_POS}, sizes from 1 to ${MAX_SIZE}. Use multiples of 10.
 
@@ -1930,6 +1930,8 @@ ${Object.entries(settingsDocs()).map(([k, d]) => `- \x60${k}\x60: ${d}`).join('\
 
 - Valid JSON. Every id unique. Every \`from.node\`, \`to.node\` and \`parent\` names an existing shape, and every \`parent\` is a \`"group"\`.
 - No two shapes overlap or sit closer than ${WALL} px, except a container and the shapes inside it. Opening a file never moves anything, so this is up to you.
+- In a sequence diagram: every \`from\`, \`to\` and note \`on\` names a participant in \`parts\`, ids are unique across participants and rows, and each reply comes right after its call.
+- With tabs: version 2, a \`pages\` list, and each page's \`diagram\` follows the rules above.
 - Only the fields and values described here.
 
 ## Example
@@ -3463,7 +3465,7 @@ function guideHtml() {
   const b = list => or(list.map(l => `<b>${l}</b>`)), labels = list => list.map(o => o[1]);
   const icons = keys => keys.map(k => `<span class="gicon"><svg viewBox="0 0 20 16" aria-hidden="true">${ARRANGE_ICONS[k]}</svg>${lineUpName(k)}</span>`).join('');
   const sections = [
-    ['around', 'Getting around', `<p>The canvas is in the middle. The panel on the right shows whatever is selected, or the diagram's settings when nothing is.</p><ul>
+    ['around', 'Getting around', `<p>The canvas is in the middle. The panel on the right shows whatever is selected, or the diagram's settings when nothing is. Tabs along the bottom hold the file's diagrams: box diagrams (boxes, containers and connectors) and sequence diagrams.</p><ul>
       <li>Pan with right-drag, middle-drag or Space+drag. The wheel zooms toward the cursor, and Shift+wheel scrolls sideways. <b>Fit</b> frames the whole diagram; the buttons in the bottom-right corner zoom in and out, and the percentage between them goes back to 100%.</li>
       <li>Click a shape or connector to select it. Drag on empty canvas to draw a selection box around shapes; Shift- or Ctrl-click adds or removes one. Ctrl+A selects everything.</li>
       <li><b>Undo</b> and <b>Redo</b> (Ctrl+Z and Ctrl+Y) cover every change to the diagram.</li>
@@ -3507,7 +3509,7 @@ function guideHtml() {
       <li>The title block has a <b>Title</b> (the diagram's name if empty), <b>Version</b>, <b>Date</b> (<b>Set date to today</b>) and <b>Author</b>, which is remembered for new diagrams. Empty fields are left out.</li>
       <li>The legend makes its own <b>Rows</b>, one per color and line style in use. Type what each one means; <b>Hide</b> leaves a row out. Its <b>Heading</b> can be changed.</li>
       <li><b>Position</b>: ${b(labels(CORNERS))}, or drag the block toward a corner. Blocks sit just outside the diagram and never cover it. <b>Hide title block</b> and <b>Hide legend</b> turn them off.</li></ul>`],
-    ['settings', 'Diagram settings', `<p>With nothing selected, the <b>Diagram</b> panel holds: <b>Connector routing</b> (${b(labels(ROUTINGS))}), <b>Connector labels sit near</b> (${b(labels(LABEL_SPOTS))}), <b>Grid snap</b> (${b(labels(GRIDS))}, the step shapes move in), <b>Corner radius</b>, <b>Show anchor points</b> and <b>Shapes can't overlap</b>.</p>`],
+    ['settings', 'Diagram settings', `<p>With nothing selected, a box diagram's <b>Diagram</b> panel holds: <b>Connector routing</b> (${b(labels(ROUTINGS))}), <b>Connector labels sit near</b> (${b(labels(LABEL_SPOTS))}), <b>Grid snap</b> (${b(labels(GRIDS))}, the step shapes move in), <b>Corner radius</b>, <b>Show anchor points</b> and <b>Shapes can't overlap</b>. A sequence diagram's settings are under Sequence diagrams. Settings belong to the tab they're set on.</p>`],
     ['seq', 'Sequence diagrams', `<p><b>New sequence diagram</b> in the File menu starts one. Participants run left to right and messages top to bottom. Nothing is placed by hand: columns are as wide as the labels between them need, and rows are evenly spaced.</p><ul>
       <li><b>+ Participant</b> adds a participant after the selected one; double-clicking empty canvas adds one there. Drag a head sideways to reorder; the messages follow.</li>
       <li>Drag from one lifeline to another to add a message at that row (rows below shift down). Drag along a lifeline and let go on it for a self-message. Type the label and press Enter: then click the lifeline the next message goes to, and keep going. Esc stops.</li>
@@ -3525,7 +3527,7 @@ function guideHtml() {
       <li><b>Delete tab</b> (the × on the open tab) asks first when the tab has something on it, because undo can't bring a tab back.</li>
       <li>Copy and paste work between tabs. Saving saves every tab, and the file opens at the tab you were on.</li></ul>`],
     ['files', 'Files', `<ul>
-      <li>Everything is kept in this browser as you work. The <b>File</b> menu has <b>New diagram</b>, <b>Open</b> (Ctrl+O), <b>Save</b> (Ctrl+S) and <b>Save as</b> (Ctrl+Shift+S), for <code>.snapblade</code> files. You can also drop a file onto the canvas.</li>
+      <li>Everything is kept in this browser as you work. The <b>File</b> menu has <b>New diagram</b>, <b>New sequence diagram</b>, <b>Open</b> (Ctrl+O), <b>Save</b> (Ctrl+S) and <b>Save as</b> (Ctrl+Shift+S), for <code>.snapblade</code> files. A file holds all of its tabs. You can also drop a file onto the canvas.</li>
       <li>In Chrome and Edge, Save writes back to the same file; other browsers download it. A dot next to the name means changes not yet saved to a file. Click the name to rename the diagram.</li></ul>`],
     ['export', 'Export', `<p><b>Export</b> makes a picture of the diagram, with a preview.</p><ul>
       <li><b>Format</b>: ${b(labels(EXPORT_FORMATS))}. <b>Theme</b>: ${b(labels(EXPORT_THEMES))}. <b>Background</b>: ${b(labels(EXPORT_BACKGROUNDS))}.</li>
@@ -3548,7 +3550,7 @@ function helpHtml() {
     <div class="row"><button class="btn primary" type="button" data-copy-spec>Copy instructions</button></div>
     <pre class="spec">${esc(agentSpec())}</pre>`,
     keys: `<dl class="keys">
-      <dt>Double-click</dt><dd>Rename a box, container or connector, or add a box on empty canvas (a participant in a sequence diagram)</dd>
+      <dt>Double-click</dt><dd>Rename a box, container or connector, or add a box on empty canvas (a participant in a sequence diagram). On the open tab: rename the tab</dd>
       <dt>F2 / Enter</dt><dd>Rename the selection. Or just start typing to replace its text</dd>
       <dt>Arrow keys</dt><dd>Nudge by one grid step (Shift: 1 px). In a sequence diagram, move the selected row up or down, or participant left or right</dd>
       <dt>Alt+drag</dt><dd>Move or resize a shape so it overlaps others (shapes otherwise stay ${WALL} px apart)</dd>
@@ -3561,6 +3563,9 @@ function helpHtml() {
       <dt>Ctrl+Shift+C / V</dt><dd>Copy a shape's or connector's colors, paste them onto the selection</dd>
       <dt>Wheel</dt><dd>Zoom toward the cursor (Shift+wheel scrolls sideways)</dd>
       <dt>Right-drag</dt><dd>Pan (middle-drag or Space+drag also work)</dd>
+      <dt>Typing</dt><dd>In a sequence diagram with nothing selected, goes to the quick-entry box (A -&gt; B : label, then Enter)</dd>
+      <dt>Enter</dt><dd>After labeling a new message: click the lifeline the next one goes to. Esc stops</dd>
+      <dt>F2 on a tab</dt><dd>Rename it. ←/→ move between tabs</dd>
       <dt>F1 / ?</dt><dd>Open this help (? only with nothing selected)</dd>
     </dl>`,
     try: `<p>These steps use the sample diagram.</p>
@@ -3584,6 +3589,7 @@ function helpHtml() {
       <li>Drag <b>Validate cart</b> down a few rows, or select it and press the arrow keys.</li>
       <li>Click in the box at the top of the canvas and type <code>Orders API --&gt; Customer : email</code>, then Enter.</li>
       <li>Select a message and switch its Kind between Sync, Async and Reply.</li>
+      <li>Click the + at the end of the tabs and add a Box diagram tab: one file can hold the architecture and its sequence diagrams. Double-click a tab to rename it.</li>
     </ol>
     <div class="row"><button class="btn" type="button" data-choice="seqsample">Load the sequence sample</button><span class="desc">Replaces the canvas. Ctrl+Z undoes it.</span></div>`,
     anchors: `<p>Choose a mode with the Anchors buttons in the top bar. It decides where connectors attach to a box's side.</p>
