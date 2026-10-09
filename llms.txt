@@ -162,6 +162,7 @@ A sequence diagram is a different kind of file: participants left to right, and 
 - A note: `{"id": "n1", "kind": "note", "side": "right", "on": ["gw"], "label": "Can take up to 5 s"}`. `side` is "left", "right" or "over". `on` lists the participant it sits beside, or for `"over"` one or two participants (the note spans from one to the other). A note takes a row of its own. `style` works as for boxes.
 - A frame (alt, opt, loop, par) is rows around the rows it holds: a start `{"id": "f1", "kind": "frame", "type": "alt", "label": "approved"}`, then the rows, then an end `{"id": "f1x", "kind": "end"}`. For an alt or par, an else line `{"id": "f1e", "kind": "else", "label": "declined"}` between them starts the next section. `type` is "alt", "opt", "loop" or "par": one of several paths, only if the condition holds, repeats while it holds, sections run at the same time. Default "alt". `label` is the condition, shown in brackets (leave the brackets out). Frames nest, at most 20 deep. An end with no start, or an else line outside an alt or par, is dropped; a start with no end is closed after the last row. A frame is drawn as wide as the lifelines its rows touch.
 - A divider `{"id": "d1", "kind": "divider", "label": "Fulfilment"}` is a row that marks a new phase: a double line across the whole diagram with the label in the middle. A delay `{"id": "d2", "kind": "delay", "label": "5 minutes later"}` is a row that shows time passing: the lifelines go dotted for a stretch. `kind` is "divider" or "delay"; `label` may be empty. Either can sit inside a frame.
+- `groups` (optional): boxes around neighbouring participants, like PlantUML's `box ... end box`: `{"id": "platform", "kind": "group", "label": "Our platform", "parts": ["web", "orders", "pay"]}`. `parts` lists participant ids that sit side by side in `parts` order; a participant is in one group at most, and groups don't nest. `style` works as for containers. The ids share the namespace with participants and rows.
 - `settings.autonumber` numbers the messages, `settings.footbox` repeats the participants at the bottom, and `settings.activation` (default `true`) draws activation bars. Bars are automatic: a sync call starts one on the participant it calls, and a reply back closes the latest open call between the two (in an alt, each section's reply counts and the bar runs to the last). A call with no reply lasts to that participant's last message before the caller sends again. A caller with no bar of its own gets one for as long as it waits. Async messages start none. So send a reply for every call you want to read as finished. The other settings don't apply. The title block and legend work as above.
 - Put each reply right after the call it answers. Keep labels short: an operation, an endpoint or an event name.
 
@@ -199,6 +200,9 @@ The sequence sample that ships with Snapblade:
       {"id":"m12","from":"orders","to":"web","type":"reply","label":"402 Payment required"},
       {"id":"m13","from":"web","to":"cust","type":"reply","label":"Show payment error"},
       {"id":"f1x","kind":"end"}
+    ],
+    "groups": [
+      {"id":"platform","kind":"group","label":"Our platform","parts":["web","orders","pay"]}
     ],
     "settings": {"mode":"straighten","grid":10,"showSlots":true,"routing":"ortho","radius":6,"labelPos":"start","walls":true,"autonumber":false,"footbox":true,"activation":true},
     "title": {"show":true,"title":"Checkout","version":"0.3","date":"2026-10-07","author":"","pos":"bottom-right"},

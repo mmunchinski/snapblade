@@ -206,8 +206,9 @@ test('every option the panels offer survives a reload and a file round trip', ()
     for (const [type] of FRAME_TYPES) { seqWrap('m1', 'm2', type, type + ' label'); if (BRANCHED.includes(type)) seqAddElse(S.rows[0].id); }
     for (const [kind] of BREAKS) S.rows.push({ id: 'b-' + kind, kind, label: kind });
     for (const [head] of HEADS) S.parts.push({ id: 'h-' + head, kind: 'participant', label: head, ...(head === 'box' ? {} : { head }) });
+    S.groups.push({ id: 'grp1', kind: 'group', label: 'Grouped', parts: ['h-actor', 'h-database'], style: { line: 'violet', dash: 'dashed' } });
     for (const [t] of MSG_TYPES) for (const [side] of NOTE_SIDES) S.rows.push({ id: 'r' + i++, from: 'web', to: 'orders', type: t, label: t }, { id: 'r' + i++, kind: 'note', side, on: ['web'], label: side });
-    trip('a sequence diagram with every kind of head, frame, message, note, divider and delay');
+    trip('a sequence diagram with every kind of head, frame, message, note, divider and delay, and a group');
     return trips;
   })()`);
   assert.ok(trips.length > 20);
@@ -473,9 +474,10 @@ test('sequence: columns make room for every head, label and note, and rows never
     else assert.ok(Math.abs(g.x2 - g.x1) >= g.tw + 24, `label of ${g.r} fits between its lifelines`);
   }
   assert.ok(L.bounds.x1 <= Math.min(...L.R.filter(g => g.note).map(g => g.x)), 'bounds hold the notes');
-  assert.equal(L.bounds.y2, L.end + L.H, 'participants at the bottom too');
+  const pad = json('SEQ.groupPad');   // the sample's group runs a margin past the bottom heads
+  assert.equal(L.bounds.y2, L.end + L.H - L.G + pad, 'participants at the bottom too');
   run('S.settings.footbox = false');
-  assert.equal(json('seqLayout().bounds.y2'), json('seqLayout().end'));
+  assert.equal(json('seqLayout().bounds.y2'), json('seqLayout().end') + pad);
 });
 
 test('sequence heads: actor, database and queue heads sit on their lifelines; a box head stays out of the file', () => {
@@ -537,6 +539,60 @@ test('sequence dividers and delays: rows across the whole diagram; a delay dots 
   assert.equal(json(`S.rows.some(r => r.id === 'dl')`), false);
 });
 
+test('sequence groups: a labeled box behind neighbouring participants; members stay side by side through moves, adds and deletes', () => {
+  // normalize: members must exist, belong to one group, and sit side by side (the longest run is kept).
+  run(`S = normalize({ type: 'sequence', parts: ['a', 'b', 'c', 'd', 'e'].map(id => ({ id, label: id.toUpperCase() })), rows: [],
+    groups: [{ id: 'g1', label: 'Platform', parts: ['b', 'c', 'zz', 'e', 'b'], style: { line: 'teal' } }, { id: 'g2', label: 'Dup', parts: ['c', 'd'] },
+      { id: 'g3', parts: [] }, { id: 'a', parts: ['a'] }, { id: '<x>', parts: ['a'] }, 'junk'] })`);
+  assert.deepEqual(json('S.groups'), [{ id: 'g1', kind: 'group', label: 'Platform', parts: ['b', 'c'], style: { line: 'teal' } }, { id: 'g2', kind: 'group', label: 'Dup', parts: ['d'] }]);
+  // Layout: a strip above the heads for the labels; each box covers its members' heads and fits its label.
+  const geo = () => json(`(() => { const L = seqLayout(); return { H: L.H, G: L.G, end: L.end, bounds: L.bounds, P: L.P.map(q => ({ id: q.id, x: q.x, w: q.w, top: q.top, hh: q.hh })), groups: L.groups.map(o => ({ id: o.g.id, x1: o.x1, x2: o.x2, y1: o.y1, y2: o.y2 })) }; })()`);
+  let L = geo();
+  const q = Object.fromEntries(L.P.map(o => [o.id, o]));
+  assert.equal(L.G, json('SEQ.groupH'));
+  assert.equal(L.H, L.G + json('SEQ.headH'), 'heads move down by the strip');
+  for (const o of L.P) assert.equal(o.top + o.hh, L.H);
+  const g1 = L.groups.find(o => o.id === 'g1');
+  assert.ok(g1.x1 <= q.b.x - q.b.w / 2 - 10 && g1.x2 >= q.c.x + q.c.w / 2 + 10, 'covers its members');
+  assert.ok(g1.x2 <= q.d.x - q.d.w / 2 && L.groups.find(o => o.id === 'g2').x1 >= g1.x2 + 10, 'clear of the next head and the next group');
+  assert.ok(q.a.x + q.a.w / 2 <= g1.x1, 'clear of the head before it');
+  assert.equal(g1.y1, 0); assert.ok(g1.y2 >= L.end + L.H - L.G, 'runs down past the bottom heads');
+  assert.ok(L.bounds.y2 >= g1.y2);
+  // A long label widens the box, and the columns make room for it.
+  run(`S.groups[1].label = 'A much longer group label than one head'`);
+  L = geo();
+  const g2 = L.groups.find(o => o.id === 'g2');
+  assert.ok(g2.x2 - g2.x1 >= json(`textWidth('A MUCH LONGER GROUP LABEL THAN ONE HEAD', '600 11.5px ' + UI_STACK)`) + 16);
+  assert.ok(g2.x2 <= L.P[4].x - L.P[4].w / 2 && g2.x1 >= L.groups[0].x2 + 10, 'neighbours keep clear of the wider box');
+  // Moving: between two members joins, anywhere else leaves; members stay side by side.
+  run(`S = normalize({ type: 'sequence', parts: ['a', 'b', 'c', 'd', 'e'].map(id => ({ id, label: id })), rows: [], groups: [{ id: 'g', label: 'G', parts: ['b', 'c', 'd'] }] })`);
+  const members = () => json('S.groups.map(g => g.parts)');
+  run(`seqMoveTo('a', 2)`); assert.deepEqual(json('S.parts.map(p => p.id)'), ['b', 'c', 'a', 'd', 'e']); assert.deepEqual(members(), [['b', 'c', 'a', 'd']], 'dropped between two members: joins');
+  run(`seqMoveTo('a', 0)`); assert.deepEqual(members(), [['b', 'c', 'd']], 'dropped outside: leaves');
+  run(`seqMoveTo('b', 3)`); assert.deepEqual(json('S.parts.map(p => p.id)'), ['a', 'c', 'd', 'b', 'e']); assert.deepEqual(members(), [['c', 'd']], 'a member dropped at the edge leaves');
+  run(`seqMoveTo('e', 2)`); assert.deepEqual(members(), [['c', 'e', 'd']]);
+  // Removing a member, or all of them.
+  run(`seqRemove('e')`); assert.deepEqual(members(), [['c', 'd']]);
+  run(`seqRemove('c'); seqRemove('d')`); assert.deepEqual(members(), [], 'an empty group goes');
+  // Wrapping: a run of participants becomes a group, unless one of them is already in a group.
+  run(`S = normalize({ type: 'sequence', parts: ['a', 'b', 'c', 'd', 'e'].map(id => ({ id, label: id })), rows: [], groups: [{ id: 'g', label: 'G', parts: ['d', 'e'] }] })`);
+  assert.equal(json(`seqGroupWrap('c', 'a').parts.join()`), 'a,b,c');
+  assert.equal(json(`seqGroupWrap('c', 'd')`), null, 'd is already in a group');
+  // Moving a group: its members move as a block, never into another group.
+  const gid = json(`S.groups[1].id`);
+  run(`seqMoveGroup('g', 0)`); assert.deepEqual(json('S.parts.map(p => p.id)'), ['d', 'e', 'a', 'b', 'c']);
+  run(`seqMoveGroup('g', 2)`); assert.deepEqual(json('S.parts.map(p => p.id)'), ['a', 'b', 'c', 'd', 'e'], 'a spot inside another group snaps to its nearer edge');
+  run(`seqStepGroup('g', -1)`); assert.deepEqual(json('S.parts.map(p => p.id)'), ['d', 'e', 'a', 'b', 'c'], 'a step hops over a whole group');
+  run(`seqRemove('${gid}')`); assert.deepEqual(json('S.groups.map(g => g.id)'), ['g'], 'ungrouping keeps the participants');
+  assert.equal(json('S.parts.length'), 5);
+  // Styled groups get a legend row, named as groups.
+  run(`S.groups[0].style = { line: 'teal' }`);
+  assert.deepEqual(json(`legendEntries().filter(e => e.key.startsWith('group:')).map(e => e.auto)`), ['Teal group']);
+  // A diagram without groups keeps its head row.
+  run(`S = normalize({ type: 'sequence', parts: [{ id: 'a', label: 'A' }], rows: [] })`);
+  assert.deepEqual(json('[S.groups, seqLayout().G, seqLayout().H]'), [[], 0, json('SEQ.headH')]);
+});
+
 test('sequence: numbering prefixes messages only, and widens the columns it needs to', () => {
   run(`S = normalize({ type: 'sequence', parts: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }],
     rows: [{ id: 'm1', from: 'a', to: 'b', label: 'x'.repeat(30) }, { id: 'n', kind: 'note', on: ['a'], label: 'n' }, { id: 'm2', from: 'b', to: 'a', label: '' }] })`);
@@ -575,6 +631,7 @@ test('sequence: normalize drops what a sequence diagram cannot hold', () => {
     parts: [{ id: 'a', kind: 'participant', label: 'A', style: { line: 'red' } }, { id: 'b', kind: 'participant', label: '' }],
     rows: [{ id: 'm', from: 'a', to: 'b', type: 'sync', label: 'ok' }, { id: 'n1', kind: 'note', side: 'right', on: ['a'], label: '' },
       { id: 'n2', kind: 'note', side: 'over', on: ['b', 'a'], label: '' }, { id: '__proto__', from: 'b', to: 'b', type: 'sync', label: '' }],
+    groups: [],
     settings: sample().settings, title: normalize({ nodes: [], edges: [] }).title, legend: normalize({ nodes: [], edges: [] }).legend })`));
   run(`S = normalize({ type: 'sequence', parts: Array.from({ length: 300 }, (_, i) => ({ id: 'p' + i })), rows: Array.from({ length: 3000 }, (_, i) => ({ id: 'r' + i, from: 'p0', to: 'p1' })) })`);
   assert.deepEqual(json('[S.parts.length, S.rows.length]'), [100, 1000]);

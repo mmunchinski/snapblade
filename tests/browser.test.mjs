@@ -68,6 +68,8 @@ const CONTEXTS = [
   ['participant', "seqOn(); sel = { type: 'seq', id: 'orders' }; multi = []"],
   ['message', "seqOn(); sel = { type: 'seq', id: 'm4' }; multi = []"],
   ['note', "seqOn(); sel = { type: 'seq', id: 'n1' }; multi = []"],
+  ['group', "seqOn(); sel = { type: 'seq', id: 'platform' }; multi = []"],
+  ['run of participants', "seqOn(); sel = { type: 'seq', id: 'gw', to: 'bus' }; multi = []"],
   ['divider or delay', "seqOn(); if (!S.rows.some(r => r.id === 'dv')) { S.rows.splice(3, 0, { id: 'dv', kind: 'divider', label: 'Payment' }); save(); } sel = { type: 'seq', id: 'dv' }; multi = []"],
   // The else line goes before the frame: switching the frame to Opt or Loop removes it.
   ['run of rows', "seqOn(); sel = { type: 'seq', id: 'm2', to: 'm4' }; multi = []"],
@@ -846,6 +848,7 @@ const seqAt = (h, id, y) => h.ev(([id, y]) => { const q = lastGeom.seq.P.find(q 
 const seqRow = (h, id) => h.ev(id => { const g = lastGeom.seq.R.find(g => g.r.id === id), r = svg.getBoundingClientRect();
   const p = g.note ? { x: g.x + g.w / 2, y: g.y + g.h / 2 } : g.self ? { x: g.x1 + SEQ.self, y: (g.ay + g.by) / 2 } : { x: (g.x1 + g.x2) / 2, y: g.ay };
   return { x: r.left + view.x + p.x * view.k, y: r.top + view.y + p.y * view.k }; }, id);
+const seqHeadY = h => h.ev(() => lastGeom.seq.H - 15);   // the middle of the box heads (below any group's label strip)
 const seqBottom = h => h.ev(() => lastGeom.seq.end - 12);
 const seqSampleOn = h => h.ev(() => { loadSample(true); undoStack.length = 0; });
 const rows = h => h.ev(() => S.rows.map(r => r.kind === 'note' ? `note ${r.side} ${r.on.join(',')}: ${r.label}` : r.kind ? `${r.kind} ${r.type || ''}: ${r.label || ''}` : `${r.from}>${r.to} ${r.type}: ${r.label}`));
@@ -919,14 +922,14 @@ test('sequence diagrams: drag rows and participants to reorder, arrow keys, pane
   await h.drag(await seqRow(h, 'm1'), { ...(await seqRow(h, 'm3')), y: (await seqRow(h, 'm3')).y + 12 });
   assert.deepEqual(await h.ev(() => S.rows.slice(0, 3).map(r => r.id)), ['m2', 'm3', 'm1']);
   // Drag the Event bus head left of Orders API.
-  await h.drag(await seqAt(h, 'bus', 20), { ...(await seqAt(h, 'orders', 20)), x: (await seqAt(h, 'orders', 20)).x - 70 });
+  await h.drag(await seqAt(h, 'bus', await seqHeadY(h)), { ...(await seqAt(h, 'orders', await seqHeadY(h))), x: (await seqAt(h, 'orders', await seqHeadY(h))).x - 70 });
   assert.deepEqual(await h.ev(() => S.parts.map(p => p.id)), ['cust', 'web', 'bus', 'orders', 'pay', 'gw']);
   // Arrow keys move the selection: a row up or down, a participant left or right.
   await page.mouse.click(...Object.values(await seqRow(h, 'm1')));
   assert.deepEqual(await h.ev(() => sel), { type: 'seq', id: 'm1' });
   await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowUp');
   assert.deepEqual(await h.ev(() => S.rows.slice(0, 3).map(r => r.id)), ['m1', 'm2', 'm3']);
-  await page.mouse.click(...Object.values(await seqAt(h, 'bus', 20)));
+  await page.mouse.click(...Object.values(await seqAt(h, 'bus', await seqHeadY(h))));
   await page.keyboard.press('ArrowRight');
   assert.deepEqual(await h.ev(() => S.parts.map(p => p.id)), ['cust', 'web', 'orders', 'bus', 'pay', 'gw']);
   // The message panel: kind, ends, reverse.
@@ -943,7 +946,7 @@ test('sequence diagrams: drag rows and participants to reorder, arrow keys, pane
   assert.deepEqual(await h.ev(() => S.rows.find(r => r.id === 'n1')), { id: 'n1', kind: 'note', side: 'over', on: ['pay', 'cust'], label: 'mTLS. Can take up to 5 s.' });
   // Deleting a participant takes its messages and notes; undo brings them back.
   const all = await rows(h);
-  await page.mouse.click(...Object.values(await seqAt(h, 'gw', 20)));
+  await page.mouse.click(...Object.values(await seqAt(h, 'gw', await seqHeadY(h))));
   await page.keyboard.press('Delete');
   assert.ok(await h.ev(() => !partOf('gw') && S.rows.every(r => isNote(r) ? !r.on.includes('gw') : r.from !== 'gw' && r.to !== 'gw')));
   await page.keyboard.press('Control+z');
@@ -1161,6 +1164,81 @@ test('sequence dividers and delays: + Divider menu adds one below the selected r
   assert.equal(await h.ev(id => S.rows.some(r => r.id === id), dl), false);
   const svgText = await h.ev(() => buildExportSvg({ theme: 'light', background: 'white', scope: 'all' }).svg);
   assert.ok(svgText.includes('>Payment<') && !svgText.includes('var(--'));
+  const kept = await h.ev(() => JSON.parse(JSON.stringify(S)));
+  await page.reload(); await page.waitForTimeout(300);
+  assert.deepStrictEqual(await h.ev(() => JSON.parse(JSON.stringify(S))), kept);
+  assert.deepEqual(h.errors, []);
+});
+
+test('sequence groups: pick heads (Shift+click or a box), Group, drag the label to move it, members join and leave, ungroup', async () => {
+  const h = await open(), { page } = h;
+  await seqSampleOn(h);
+  const order = () => h.ev(() => S.parts.map(p => p.id));
+  const members = () => h.ev(() => S.groups.map(g => g.parts.join()));
+  const labelAt = id => h.ev(id => { const g = lastGeom.seq.groups.find(o => o.g.id === id), r = svg.getBoundingClientRect(); return { x: r.left + view.x + (g.x1 + 40) * view.k, y: r.top + view.y + 13 * view.k }; }, id);
+  const head = async id => seqAt(h, id, await seqHeadY(h));
+  // The sample groups Web app, Orders API and Payments API as Our platform.
+  assert.deepEqual(await members(), ['web,orders,pay']);
+  assert.ok((await h.ev(() => svg.textContent)).includes('OUR PLATFORM'));
+  // Click the label: the group's panel; the arrow keys move it, hopping over a participant.
+  await page.mouse.click(...Object.values(await labelAt('platform')));
+  assert.deepEqual(await h.ev(() => sel), { type: 'seq', id: 'platform' });
+  assert.equal(await h.ev(() => document.querySelector('#panel .eyebrow').textContent), 'Group');
+  await page.keyboard.press('ArrowRight');
+  assert.deepEqual(await order(), ['cust', 'gw', 'web', 'orders', 'pay', 'bus']);
+  await page.keyboard.press('Control+z');
+  // Drag the label left of Customer: the members move as a block. (Wait out the double-click window first.)
+  await page.waitForTimeout(500);
+  await h.drag(await labelAt('platform'), { x: (await head('cust')).x - 80, y: (await labelAt('platform')).y });
+  assert.deepEqual(await order(), ['web', 'orders', 'pay', 'cust', 'gw', 'bus']);
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await order(), ['cust', 'web', 'orders', 'pay', 'gw', 'bus']);
+  // Drag Payments API out past the gateway: it leaves the group. Dragged back between two members, it joins again.
+  await h.drag(await head('pay'), { ...(await head('gw')), x: (await head('gw')).x + 60 });
+  assert.deepEqual(await order(), ['cust', 'web', 'orders', 'gw', 'pay', 'bus']);
+  assert.deepEqual(await members(), ['web,orders']);
+  await h.drag(await head('pay'), { ...(await head('web')), x: ((await head('web')).x + (await head('orders')).x) / 2 });
+  assert.deepEqual(await members(), ['web,pay,orders']);
+  await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z');
+  // A box over the gateway and Event bus heads picks them; Group wraps them and opens the label.
+  const gw = await head('gw'), bus = await head('bus');
+  await page.mouse.move(gw.x - 40, await h.ev(() => svg.getBoundingClientRect().top + view.y - 20 * view.k)); await page.mouse.down();
+  await page.mouse.move(bus.x + 30, gw.y, { steps: 6 });
+  assert.match(await page.textContent('#status'), /2 participants/);
+  await page.mouse.up();
+  assert.deepEqual(await h.ev(() => sel), { type: 'seq', id: 'gw', to: 'bus' });
+  assert.equal(await h.ev(() => document.querySelector('#panel .eyebrow').textContent), 'Participants');
+  await h.button('Group');
+  assert.equal((await h.editor()).open, true);
+  await page.keyboard.type('Outside'); await page.keyboard.press('Enter');
+  assert.deepEqual(await members(), ['web,orders,pay', 'gw,bus']);
+  assert.equal(await h.ev(() => S.groups[1].label), 'Outside');
+  // One undo step takes the new group and its label away.
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await members(), ['web,orders,pay']);
+  await page.keyboard.press('Control+y');
+  // Shift+click heads: Customer then Web app; Web app is grouped, so Group is off.
+  await page.mouse.click(...Object.values(await head('cust')));
+  await page.keyboard.down('Shift'); await page.mouse.click(...Object.values(await head('web'))); await page.keyboard.up('Shift');
+  assert.deepEqual(await h.ev(() => sel), { type: 'seq', id: 'cust', to: 'web' });
+  assert.equal(await page.isDisabled('#panel button[data-act="groupWrap"]'), true);
+  // The participant panel's Group select puts Customer in Our platform, next to its last member.
+  await page.mouse.click(...Object.values(await head('cust')));
+  await page.selectOption('#f-partGroup', 'platform');
+  assert.deepEqual(await order(), ['web', 'orders', 'pay', 'cust', 'gw', 'bus']);
+  assert.deepEqual(await members(), ['web,orders,pay,cust', 'gw,bus']);
+  await page.keyboard.press('Control+z');
+  // F2 renames a group; Delete ungroups it and keeps the participants.
+  await page.mouse.click(...Object.values(await labelAt('platform')));
+  await page.keyboard.press('F2'); await page.keyboard.type('Checkout platform'); await page.keyboard.press('Enter');
+  assert.equal(await h.ev(() => S.groups[0].label), 'Checkout platform');
+  await page.keyboard.press('Delete');
+  assert.deepEqual(await members(), ['gw,bus']);
+  assert.equal(await h.ev(() => S.parts.length), 6);
+  await page.keyboard.press('Control+z');
+  // Exports draw the groups; a reload keeps them.
+  const svgText = await h.ev(() => buildExportSvg({ theme: 'light', background: 'white', scope: 'all' }).svg);
+  assert.ok(svgText.includes('CHECKOUT PLATFORM') && svgText.includes('OUTSIDE') && !svgText.includes('var(--'));
   const kept = await h.ev(() => JSON.parse(JSON.stringify(S)));
   await page.reload(); await page.waitForTimeout(300);
   assert.deepStrictEqual(await h.ev(() => JSON.parse(JSON.stringify(S))), kept);
