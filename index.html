@@ -269,6 +269,16 @@ dl.keys dd { margin: 0; }
 .n-fold { fill: none; stroke: var(--ln, var(--note-stroke)); stroke-width: 1.25; stroke-linejoin: round; }
 .note.sel .n-body, .note.sel .n-fold { stroke: var(--accent); stroke-width: 2; }
 .n-text { font: 500 12px var(--ui); fill: var(--ink); pointer-events: none; }
+.frame, .fsec, .fend { cursor: row-resize; }
+.frame .hit, .fsec .hit, .fend .hit { fill: none; stroke: transparent; stroke-width: 12; }
+.f-box { fill: none; stroke: var(--ink-2); stroke-width: 1.25; pointer-events: none; }
+.f-tab { fill: var(--paper); stroke: var(--ink-2); stroke-width: 1.25; stroke-linejoin: round; cursor: pointer; }
+.f-kind { font: 700 11px var(--ui); fill: var(--ink); pointer-events: none; }
+.f-guard { font: 500 12px var(--ui); fill: var(--ink); cursor: pointer; }
+.f-else { fill: none; stroke: var(--ink-2); stroke-width: 1.25; stroke-dasharray: 6 4; }
+.frame.sel .f-box, .frame.sel .f-tab, .fsec.sel .f-else, .frame:hover .f-tab { stroke: var(--accent); }
+.frame.sel .f-box, .fsec.sel .f-else { stroke-width: 2; }
+.frame.sel .f-kind, .frame.sel .f-guard, .fsec.sel .f-guard { fill: var(--accent); }
 .s-gap { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; pointer-events: none; }
 .ghost { opacity: .35; }
 
@@ -369,7 +379,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 31</span>
+      Snapblade <span class="tag">playground &middot; build 32</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -392,6 +402,10 @@ dl.keys dd { margin: 0; }
       <button class="btn" id="addGroup" type="button">+ Container</button>
       <button class="btn" id="addPart" type="button" hidden>+ Participant</button>
       <button class="btn" id="addNote" type="button" hidden>+ Note</button>
+      <div class="menu-wrap" id="frameWrap" hidden>
+        <button class="btn" id="addFrame" type="button" aria-haspopup="menu" aria-expanded="false" title="Put the selected rows in a frame">+ Frame &#9662;</button>
+        <div class="menu" id="frameMenu" role="menu" hidden></div>
+      </div>
       <span class="sep"></span>
       <button class="btn" id="undoBtn" type="button" title="Ctrl+Z">Undo</button>
       <button class="btn" id="redoBtn" type="button" title="Ctrl+Y">Redo</button>
@@ -1396,12 +1410,21 @@ function straighten(ids) {
    a message from one lifeline to another (or to itself), or a note beside, over or across lifelines. Nothing has a
    position: seqLayout() sizes each column from the labels next to it and spaces the rows evenly, so it stays tidy. */
 const SEQ = { minW: 100, padX: 14, headH: 40, nameLh: 16, gap: 40, rowTop: 30, rowGap: 14, lh: 15, labelPad: 12, head: 10,
-  self: 36, selfH: 20, noteGap: 12, notePad: 8, fold: 8, span: 18, tail: 26 };
+  self: 36, selfH: 20, noteGap: 12, notePad: 8, fold: 8, span: 18, tail: 26, framePad: 12, tabH: 18, tabCut: 6 };
 const MAX_PARTS = 100, MAX_ROWS = 1000;   // the most a file (or a paste) can add
+const MAX_DEPTH = 20;                      // frames inside frames
 const MSG_TYPES = [['sync', 'Sync'], ['async', 'Async'], ['reply', 'Reply']];
 const NOTE_SIDES = [['left', 'Left of'], ['right', 'Right of'], ['over', 'Over']];
+const FRAME_TYPES = [['alt', 'Alt'], ['opt', 'Opt'], ['loop', 'Loop'], ['par', 'Par']];
+const BRANCHED = ['alt', 'par'];          // frames that else lines split into sections
+const FRAME_HINTS = { alt: 'one of several paths', opt: 'only if the condition holds', loop: 'repeats while it holds', par: 'sections run at the same time' };
 const isSeq = () => S?.type === 'sequence';
 const isNote = r => r.kind === 'note';
+const isMsg = r => !r.kind;
+const isMark = r => r.kind === 'frame' || r.kind === 'else' || r.kind === 'end';
+const secWord = type => type === 'par' ? 'And' : 'Else';
+// A frame's condition, as UML writes it: in brackets.
+const guard = label => { const t = oneLine(label).trim(); return !t ? '' : /^\[.*\]$/.test(t) ? t : `[${t}]`; };
 const partOf = id => S.parts.find(p => p.id === id);
 const seqItem = id => partOf(id) || S.rows.find(r => r.id === id);
 const hasContent = () => isSeq() ? S.parts.length > 0 : S.nodes.length > 0;
@@ -1420,8 +1443,13 @@ function seqSample() {
       M('m1', 'cust', 'web', 'Place order'), M('m2', 'web', 'orders', 'POST /orders'), M('m3', 'orders', 'orders', 'Validate cart'),
       M('m4', 'orders', 'pay', 'Authorize payment'), M('m5', 'pay', 'gw', 'Charge card'),
       { id: 'n1', kind: 'note', side: 'over', on: ['pay', 'gw'], label: 'mTLS. Can take up to 5 s.' },
-      M('m6', 'gw', 'pay', 'Approved', 'reply'), M('m7', 'pay', 'orders', 'Authorized', 'reply'),
+      M('m6', 'gw', 'pay', 'Result', 'reply'),
+      { id: 'f1', kind: 'frame', type: 'alt', label: 'approved' },
+      M('m7', 'pay', 'orders', 'Authorized', 'reply'),
       M('m8', 'orders', 'bus', 'OrderPlaced', 'async'), M('m9', 'orders', 'web', '201 Created', 'reply'), M('m10', 'web', 'cust', 'Order confirmed', 'reply'),
+      { id: 'f1e', kind: 'else', label: 'declined' },
+      M('m11', 'pay', 'orders', 'Declined', 'reply'), M('m12', 'orders', 'web', '402 Payment required', 'reply'), M('m13', 'web', 'cust', 'Show payment error', 'reply'),
+      { id: 'f1x', kind: 'end' },
     ],
     settings: { ...sample().settings },
     title: { ...titleDefaults(), show: true, title: 'Checkout', version: '0.3', date: todayIso() },
@@ -1442,6 +1470,9 @@ function seqLayout(fam = UI_STACK) {
   for (let i = 1; i < P.length; i++) apart(i - 1, i, (P[i - 1].w + P[i].w) / 2 + SEQ.gap);
   let num = 0;
   const R = S.rows.map(r => {
+    if (r.kind === 'frame') return { r, mark: 'frame', h: SEQ.tabH + 2 };
+    if (r.kind === 'else') return { r, mark: 'else', h: guard(r.label) ? SEQ.lh + 4 : 4 };
+    if (r.kind === 'end') return { r, mark: 'end', h: 0 };
     if (isNote(r)) {
       const ls = linesOf(r.label), w = Math.max(60, widest(ls, textFont) + 2 * SEQ.notePad + SEQ.fold), h = ls.length * SEQ.lh + 2 * SEQ.notePad;
       const a = at[r.on[0]], b = r.side === 'over' && r.on.length > 1 ? at[r.on[1]] : a;
@@ -1461,6 +1492,7 @@ function seqLayout(fam = UI_STACK) {
     apart(a, b, lw + 2 * SEQ.labelPad);
     return { r, ls, lw, lh, a, b, h: (ls.length ? lh + 5 : 6) + 10 };
   });
+  const frames = seqFrameSpans(R, P, apart, fam);
   P.forEach((q, j) => { q.x = Math.round(j ? Math.max(...need[j].map(([i, d]) => P[i].x + d)) : q.w / 2); });
   // Rows, top to bottom, and where each one's pieces go.
   let y = H + SEQ.rowTop, x1 = 0, x2 = 0;
@@ -1478,12 +1510,55 @@ function seqLayout(fam = UI_STACK) {
     } else if (g.self) {
       g.x1 = g.x2 = P[g.a].x; g.ay = g.y + 5; g.by = g.ay + g.loop;
       grow(g.x1, g.x1 + SEQ.self + (g.lw ? g.lw + 8 : 0));
-    } else {
+    } else if (!g.mark) {
       g.x1 = P[g.a].x; g.x2 = P[g.b].x; g.ay = g.y + g.h - 5;
     }
   }
+  for (const f of frames) { seqFramePlace(f, R, P); grow(f.x1, f.x2); }
   const end = (R.length ? y - SEQ.rowGap : H + SEQ.rowTop) + SEQ.tail;   // where lifelines stop (and the bottom heads start)
   return { H, P, R, end, bounds: { x1, y1: 0, x2, y2: S.settings.footbox ? end + H : end } };
+}
+// Frames, innermost first: the rows each holds, the columns they touch, and room for its tab and condition.
+// A frame is as wide as the lifelines its rows touch plus a margin, so a frame inside another sits inset.
+function seqFrameSpans(R, P, apart, fam) {
+  const font = `500 12px ${fam}`;
+  const out = [], stack = [];
+  R.forEach((g, i) => {
+    if (g.mark === 'frame') { const f = { g, i, secs: [], kids: [], a: Infinity, b: -Infinity, levels: 0 }; stack.at(-1)?.kids.push(f); stack.push(f); }
+    else if (g.mark === 'else') stack.at(-1)?.secs.push(g);
+    else if (g.mark === 'end') { const f = stack.pop(); if (!f) return; f.end = g; f.j = i; out.push(f); }
+    else for (const f of stack) { f.a = Math.min(f.a, g.a, g.b); f.b = Math.max(f.b, g.a, g.b); }
+  });
+  for (const f of out) {   // innermost first, so a frame knows what's inside it
+    for (const k of f.kids) { f.a = Math.min(f.a, k.a); f.b = Math.max(f.b, k.b); f.levels = Math.max(f.levels, k.levels + 1); }
+    const r = f.g.r, kw = Math.ceil(textWidth(r.type, `700 11px ${fam}`)), tw = kw + 2 * 7 + SEQ.tabCut;
+    const width = g => { const t = guard(g.r.label); return (g.gw = t ? Math.ceil(textWidth(t, font)) : 0); };
+    const gw = width(f.g), sw = Math.max(0, ...f.secs.map(width));
+    f.g.tw = tw;
+    f.need = Math.max(tw + (gw ? gw + 16 : 0), sw ? sw + 24 : 0);
+    if (f.a > f.b) continue;   // nothing inside yet
+    const pad = SEQ.framePad * (f.levels + 1);
+    if (f.a < f.b) apart(f.a, f.b, f.need - 2 * pad);
+    else apart(f.a, f.a + 1, f.need - pad + SEQ.framePad);
+  }
+  return out;
+}
+function seqFramePlace(f, R, P) {
+  let x1 = Infinity, x2 = -Infinity;
+  const take = (a, b) => { x1 = Math.min(x1, a); x2 = Math.max(x2, b); };
+  for (let i = f.i + 1; i < f.j; i++) {
+    const g = R[i];
+    if (g.note) take(g.x, g.x + g.w);
+    else if (g.self) take(g.x1, g.x1 + SEQ.self + (g.lw ? g.lw + 8 : 0));
+    else if (!g.mark) take(Math.min(g.x1, g.x2), Math.max(g.x1, g.x2));
+  }
+  for (const k of f.kids) take(k.x1, k.x2);
+  if (x1 > x2) { const a = P[0]?.x ?? 0, b = P[P.length - 1]?.x ?? a; x1 = a - SEQ.framePad; x2 = b + SEQ.framePad; }
+  else { x1 -= SEQ.framePad; x2 += SEQ.framePad; }
+  x2 = Math.max(x2, x1 + f.need);
+  Object.assign(f, { x1, x2, y1: f.g.y, y2: f.end.y });
+  for (const g of [f.g, ...f.secs, f.end]) Object.assign(g, { x1, x2, frame: f.g.r.id });
+  f.g.y2 = f.end.y;
 }
 // Draw a layout. `p` paints: CSS classes and hit areas on the canvas, plain colors in exports.
 function seqMarkup(L, p) {
@@ -1495,7 +1570,25 @@ function seqMarkup(L, p) {
   const head = (q, y, foot) => `<g ${p.part(q, foot)}><rect x="${q.x - q.w / 2}" y="${y}" width="${q.w}" height="${H}" rx="3" ${p.body(q)}/>`
     + texts(q.ls, q.x, y + (H - q.ls.length * SEQ.nameLh) / 2, SEQ.nameLh, 13, p.name(q), 'middle') + '</g>';
   for (const q of P) out += head(q, 0) + (S.settings.footbox ? head(q, end, true) : '');
+  // Frames go under the messages: a box, a tab naming the kind, the condition beside it, else lines across.
   for (const g of R) {
+    if (!g.mark) continue;
+    const { x1, x2, y } = g, t = g.r, gd = guard(t.label), across = `M${x1},${y} H${x2}`;
+    if (g.mark === 'frame') {
+      const c = SEQ.tabCut, th = SEQ.tabH, gx = x1 + g.tw + 6;
+      out += `<g ${p.frame(g)}><rect x="${x1}" y="${y}" width="${x2 - x1}" height="${g.y2 - y}" ${p.frameBox(g)}/>${p.hit(across)}`
+        + `<path d="M${x1},${y} H${x1 + g.tw} V${y + th - c} L${x1 + g.tw - c},${y + th} H${x1} Z" ${p.tab(g)}/>`
+        + texts([t.type], x1 + 7, y, th, 11, p.kind(g), 'start')
+        + (gd ? `<rect x="${gx - 3}" y="${y + 1}" width="${g.gw + 6}" height="${th - 2}" rx="2" ${p.labelBg(g)}/>` + texts([gd], gx, y, th, 12, p.guard(g), 'start') : '')
+        + '</g>';
+    } else if (g.mark === 'else') {
+      out += `<g ${p.sec(g)}>${p.hit(across)}<path d="${across}" ${p.secLine(g)}/>`
+        + (gd ? `<rect x="${x1 + 5}" y="${y + 2}" width="${g.gw + 6}" height="${SEQ.lh}" rx="2" ${p.labelBg(g)}/>` + texts([gd], x1 + 8, y + 2, SEQ.lh, 12, p.guard(g), 'start') : '')
+        + '</g>';
+    } else out += `<g ${p.frameEnd(g)}>${p.hit(across)}</g>`;
+  }
+  for (const g of R) {
+    if (g.mark) continue;
     if (g.note) {
       const { x, y, w, h } = g, f = SEQ.fold;
       out += `<g ${p.note(g)}><path d="M${x},${y} H${x + w - f} L${x + w},${y + f} V${y + h} H${x} Z" ${p.noteBody(g)}/>`
@@ -1530,6 +1623,13 @@ function seqMarkup(L, p) {
 // Where a row or column would go, for drops and their previews. skip: the one being moved.
 const rowsBut = (L, skip) => L.R.filter(g => g.r.id !== skip);
 const seqIndexAt = (L, y, skip) => rowsBut(L, skip).filter(g => g.y + g.h / 2 < y).length;
+// Where a row dragged to y lands. A frame's edge or else line stops at the nearest spot that keeps it in its frame.
+function seqDropAt(L, y, id) {
+  let k = seqIndexAt(L, y, id);
+  const j = S.rows.findIndex(r => r.id === id);
+  if (j >= 0 && isMark(S.rows[j])) while (k !== j && !seqFits(j, k)) k += Math.sign(j - k);
+  return k;
+}
 function seqGapY(L, i, skip) {
   const R = rowsBut(L, skip), last = R[R.length - 1];
   if (!R.length) return L.H + SEQ.rowTop / 2;
@@ -1549,25 +1649,119 @@ function seqLifeAt(L, x, tol = 0) {
 }
 // A message that answers the sync call just above it starts out as a reply.
 function guessType(from, to, i) {
-  const prev = S.rows.slice(0, i).reverse().find(r => !isNote(r));
+  const prev = S.rows.slice(0, i).reverse().find(isMsg);
   return from !== to && prev?.type === 'sync' && prev.from === to && prev.to === from ? 'reply' : 'sync';
 }
 function seqInsert(row, i = S.rows.length) { S.rows.splice(Math.max(0, Math.min(i, S.rows.length)), 0, row); return row; }
 const seqMessage = (from, to, i, label = '') => seqInsert({ id: nid('m'), from, to, type: guessType(from, to, i), label }, i);
 // Move a participant or a row to position i in its list (counted without it). True if it moved.
+// A frame's start, else line or end only goes where it still belongs to the same frame (the nearest such spot).
 function seqMoveTo(id, i) {
   const list = partOf(id) ? S.parts : S.rows, j = list.findIndex(o => o.id === id);
   if (j < 0) return false;
-  const [o] = list.splice(j, 1), k = Math.max(0, Math.min(i, list.length));
+  let k = Math.max(0, Math.min(i, list.length - 1));
+  if (list === S.rows && isMark(list[j])) while (k !== j && !seqFits(j, k)) k += Math.sign(j - k);
+  const [o] = list.splice(j, 1);
   list.splice(k, 0, o);
   return k !== j;
 }
-// Remove a participant (with the messages and notes that involve it) or a row.
-function seqRemove(id) {
+
+/* Frames (alt, opt, loop, par) are rows too, as PlantUML writes them: a start ({kind: 'frame', type, label}),
+   else lines for alt and par ({kind: 'else', label}) and an end ({kind: 'end'}). A frame holds the rows between
+   its start and end, so moving a message past an edge moves it in or out, and dragging an edge resizes it. */
+// For each frame start, else line and end: the id of its frame. Null if the rows don't nest (or nest too deep).
+function seqOwners(rows) {
+  const own = dict(), stack = [];
+  for (const r of rows) {
+    if (r.kind === 'frame') { if (stack.length >= MAX_DEPTH) return null; stack.push(r); own[r.id] = r.id; }
+    else if (r.kind === 'else') { const f = stack[stack.length - 1]; if (!f || !BRANCHED.includes(f.type)) return null; own[r.id] = f.id; }
+    else if (r.kind === 'end') { const f = stack.pop(); if (!f) return null; own[r.id] = f.id; }
+  }
+  return stack.length ? null : own;
+}
+// Whether row j can go to position t (counted without it) with every frame line keeping its frame.
+function seqFits(j, t) {
+  const rest = S.rows.filter((_, x) => x !== j), own = seqOwners([...rest.slice(0, t), S.rows[j], ...rest.slice(t)]), was = seqOwners(S.rows);
+  return !!own && (!was || Object.keys(was).every(id => own[id] === was[id]));
+}
+// Each frame by id: where it starts, its else lines and its end, as indexes into S.rows.
+function seqFrames() {
+  const F = dict(), stack = [];
+  S.rows.forEach((r, i) => {
+    if (r.kind === 'frame') { const f = { r, i, elses: [], end: -1 }; F[r.id] = f; stack.push(f); }
+    else if (r.kind === 'else') stack[stack.length - 1]?.elses.push(i);
+    else if (r.kind === 'end') { const f = stack.pop(); if (f) f.end = i; }
+  });
+  return F;
+}
+// The frame a frame line belongs to (a start is its own); null for messages and notes.
+const seqOwner = id => seqOwners(S.rows)?.[id] ?? null;
+// Arrow keys on an else line: the next spot up or down that keeps it in its frame.
+function seqStep(id, step) {
+  const j = S.rows.findIndex(r => r.id === id);
+  for (let t = j + step; t >= 0 && t < S.rows.length; t += step) if (seqFits(j, t)) return seqMoveTo(id, t);
+  return false;
+}
+// Move a whole frame, with what's in it, one row up or down (the row it passes goes to its other side).
+function seqMoveBlock(id, step) {
+  const f = seqFrames()[id]; if (!f) return false;
+  const k = step < 0 ? f.i - 1 : f.end + 1;
+  if (k < 0 || k >= S.rows.length) return false;
+  const rows = [...S.rows], [o] = rows.splice(k, 1);
+  rows.splice(step < 0 ? f.end : f.i, 0, o);
+  if (!seqOwners(rows)) return false;   // it would nest too deep
+  S.rows = rows; return true;
+}
+// The rows from a to b (ids, either order), widened to take in whole any frame they cut into. [first, last] indexes.
+function seqSpan(a, b) {
+  let i = S.rows.findIndex(r => r.id === a), j = S.rows.findIndex(r => r.id === b);
+  if (i < 0 || j < 0) return null;
+  [i, j] = [Math.min(i, j), Math.max(i, j)];
+  const F = Object.values(seqFrames());
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const f of F) if ([f.i, ...f.elses, f.end].some(x => x >= i && x <= j) && (f.i < i || f.end > j)) { i = Math.min(i, f.i); j = Math.max(j, f.end); grew = true; }
+  }
+  return [i, j];
+}
+// Put rows a..b in a new frame. Null if they'd nest too deep.
+function seqWrap(a, b, type, label = '') {
+  const span = seqSpan(a, b); if (!span) return null;
+  const f = { id: nid('f'), kind: 'frame', type, label }, rows = [...S.rows];
+  rows.splice(span[1] + 1, 0, { id: nid('fx'), kind: 'end' });
+  rows.splice(span[0], 0, f);
+  if (!seqOwners(rows)) return null;
+  S.rows = rows; return f;
+}
+// A frame's kind. Opt and loop have one section, so their else lines go.
+function seqFrameType(id, type) {
+  const f = seqFrames()[id]; if (!f) return;
+  const drop = new Set(BRANCHED.includes(type) ? [] : f.elses.map(i => S.rows[i].id));
+  f.r.type = type; S.rows = S.rows.filter(r => !drop.has(r.id));
+}
+// A new else line at the bottom of an alt or par frame, for the last section.
+function seqAddElse(id) {
+  const f = seqFrames()[id]; if (!f || !BRANCHED.includes(f.r.type)) return null;
+  return seqInsert({ id: nid('fe'), kind: 'else', label: '' }, f.end);
+}
+// Remove a participant (with the messages and notes that involve it) or a row. Removing a frame keeps what's in it;
+// with `contents`, what's in it goes too.
+function seqRemove(id, contents = false) {
   if (partOf(id)) {
     S.parts = S.parts.filter(p => p.id !== id);
-    S.rows = S.rows.filter(r => isNote(r) ? !r.on.includes(id) : r.from !== id && r.to !== id);
-  } else S.rows = S.rows.filter(r => r.id !== id);
+    S.rows = S.rows.filter(r => isNote(r) ? !r.on.includes(id) : !isMsg(r) || r.from !== id && r.to !== id);
+    return;
+  }
+  const r = S.rows.find(x => x.id === id), f = r && (r.kind === 'frame' || r.kind === 'end') ? seqFrames()[seqOwner(id)] : null;
+  if (!f) { S.rows = S.rows.filter(x => x.id !== id); return; }
+  const gone = contents ? new Set(S.rows.slice(f.i, f.end + 1).map(r => r.id)) : new Set([f.i, ...f.elses, f.end].map(i => S.rows[i].id));
+  S.rows = S.rows.filter(r => !gone.has(r.id));
+}
+// Remove the messages and notes in rows i..j, and the frames that lie wholly inside them.
+function seqRemoveRows(i, j) {
+  const gone = new Set(S.rows.slice(i, j + 1).filter(r => !isMark(r)).map(r => r.id));
+  for (const f of Object.values(seqFrames())) if (f.i >= i && f.end <= j) [f.i, ...f.elses, f.end].forEach(x => gone.add(S.rows[x].id));
+  S.rows = S.rows.filter(r => !gone.has(r.id));
 }
 
 /* =====================================================================
@@ -1661,6 +1855,9 @@ function cleanSeq(s) {
   const parts = firstById(list(s.parts)).slice(0, MAX_PARTS).map(p => withStyle({ id: p.id, kind: 'participant', label: strOr(p.label) }, p));
   const ids = new Set(parts.map(p => p.id)), has = v => isId(v) && ids.has(v);
   const rows = firstById(list(s.rows).filter(r => !ids.has(r.id))).flatMap(r => {
+    if (r.kind === 'frame') return [{ id: r.id, kind: 'frame', type: oneOf(r.type, valuesOf(FRAME_TYPES), 'alt'), label: strOr(r.label) }];
+    if (r.kind === 'else') return [{ id: r.id, kind: 'else', label: strOr(r.label) }];
+    if (r.kind === 'end') return [{ id: r.id, kind: 'end' }];
     if (r.kind === 'note') {
       const side = oneOf(r.side, valuesOf(NOTE_SIDES), 'right');
       const on = [...new Set(Array.isArray(r.on) ? r.on.filter(has) : [])].slice(0, side === 'over' ? 2 : 1);
@@ -1668,7 +1865,27 @@ function cleanSeq(s) {
     }
     return has(r.from) && has(r.to) ? [withStyle({ id: r.id, from: r.from, to: r.to, type: oneOf(r.type, valuesOf(MSG_TYPES), 'sync'), label: strOr(r.label) }, r)] : [];
   }).slice(0, MAX_ROWS);
-  return { type: 'sequence', nodes: [], edges: [], parts, rows };
+  return { type: 'sequence', nodes: [], edges: [], parts, rows: nestFrames(rows, ids) };
+}
+// Frames must nest: an else line only inside an alt or par, an end only after a start, at most MAX_DEPTH deep.
+// Lines that break this are dropped (with what belongs to a dropped frame); a frame left open is closed at the end.
+function nestFrames(rows, ids) {
+  const out = [], stack = [];
+  for (const r of rows) {
+    const top = stack[stack.length - 1];
+    if (r.kind === 'frame') { const keep = stack.filter(f => f.keep).length < MAX_DEPTH && (!top || top.keep); stack.push({ r, keep }); if (keep) out.push(r); }
+    else if (r.kind === 'else') { if (top?.keep && BRANCHED.includes(top.r.type)) out.push(r); }
+    else if (r.kind === 'end') { if (stack.pop()?.keep) out.push(r); }
+    else out.push(r);
+  }
+  const used = new Set([...ids, ...rows.map(r => r.id)]);
+  let n = 0;
+  for (const f of stack.reverse()) {
+    if (!f.keep) continue;
+    let id; do id = 'end' + ++n; while (used.has(id));
+    used.add(id); out.push({ id, kind: 'end' });
+  }
+  return out;
 }
 function normalize(s) {
   if (!isObj(s)) return null;
@@ -1860,7 +2077,7 @@ ${Object.entries(settingsDocs()).map(([k, d]) => `- \x60${k}\x60: ${d}`).join('\
 
 - Valid JSON. Every id unique. Every \`from.node\`, \`to.node\` and \`parent\` names an existing shape, and every \`parent\` is a \`"group"\`.
 - No two shapes overlap or sit closer than ${WALL} px, except a container and the shapes inside it. Opening a file never moves anything, so this is up to you.
-- In a sequence diagram: every \`from\`, \`to\` and note \`on\` names a participant in \`parts\`, ids are unique across participants and rows, and each reply comes right after its call.
+- In a sequence diagram: every \`from\`, \`to\` and note \`on\` names a participant in \`parts\`, ids are unique across participants and rows, each reply comes right after its call, and every frame start has its end below it.
 - With tabs: version 2, a \`pages\` list, and each page's \`diagram\` follows the rules above.
 - Only the fields and values described here.
 
@@ -1871,15 +2088,16 @@ The sample diagram that ships with Snapblade:
 ${exampleJson(exampleDiagram())}
 ## Sequence diagrams
 
-A sequence diagram is a different kind of file: participants left to right, and rows (messages and notes) top to bottom. Nothing in it has a position. Snapblade makes each column as wide as the labels next to it need and spaces the rows evenly, so you only decide the order.
+A sequence diagram is a different kind of file: participants left to right, and rows (messages, notes and frames) top to bottom. Nothing in it has a position. Snapblade makes each column as wide as the labels next to it need and spaces the rows evenly, so you only decide the order.
 
     {"format": "snapblade", "version": 1, "diagram": {"type": "sequence", "parts": [...], "rows": [...], "settings": {...}, "title": {...}, "legend": {...}}}
 
 - \`type\` (required): \`"sequence"\`. Leave out \`nodes\` and \`edges\`; a sequence diagram doesn't use them.
 - \`parts\`: the participants, in order from left to right, at most ${MAX_PARTS}: \`{"id": "orders", "kind": "participant", "label": "Orders API"}\`. \`id\` follows the shape id rules, \`label\` is the text (\`\\n\` for a second line), \`kind\` may be left out, and \`style\` works as for boxes.
-- \`rows\`: messages and notes in the order things happen, at most ${MAX_ROWS}. Ids are unique across participants and rows.
+- \`rows\`: messages, notes and frame lines in the order things happen, at most ${MAX_ROWS}. Ids are unique across participants and rows.
 - A message: \`{"id": "m1", "from": "cust", "to": "web", "type": "sync", "label": "Place order"}\`. \`from\` and \`to\` are participant ids, the same one for a self-message; a message naming a participant that doesn't exist is dropped. \`type\` is ${or(valuesOf(MSG_TYPES).map(q))}: a call that waits for an answer (filled arrowhead), one that doesn't wait (open arrowhead), or the answer (dashed). Default \`"sync"\`. \`style\`: \`line\` and \`dash\` only; a reply is dashed unless \`dash\` says otherwise.
 - A note: \`{"id": "n1", "kind": "note", "side": "right", "on": ["gw"], "label": "Can take up to 5 s"}\`. \`side\` is ${or(valuesOf(NOTE_SIDES).map(q))}. \`on\` lists the participant it sits beside, or for \`"over"\` one or two participants (the note spans from one to the other). A note takes a row of its own. \`style\` works as for boxes.
+- A frame (alt, opt, loop, par) is rows around the rows it holds: a start \`{"id": "f1", "kind": "frame", "type": "alt", "label": "approved"}\`, then the rows, then an end \`{"id": "f1x", "kind": "end"}\`. For an alt or par, an else line \`{"id": "f1e", "kind": "else", "label": "declined"}\` between them starts the next section. \`type\` is ${or(valuesOf(FRAME_TYPES).map(q))}: ${FRAME_TYPES.map(([v]) => FRAME_HINTS[v]).join(', ')}. Default ${q('alt')}. \`label\` is the condition, shown in brackets (leave the brackets out). Frames nest, at most ${MAX_DEPTH} deep. An end with no start, or an else line outside an alt or par, is dropped; a start with no end is closed after the last row. A frame is drawn as wide as the lifelines its rows touch.
 - \`settings.autonumber\` numbers the messages and \`settings.footbox\` repeats the participants at the bottom; the other settings don't apply. The title block and legend work as above.
 - Put each reply right after the call it answers. Keep labels short: an operation, an endpoint or an event name.
 
@@ -1918,7 +2136,7 @@ function refresh(withPanel, persist) {
   if (persist) save();
 }
 function select(s) {
-  const same = !multi.length && s?.type === sel?.type && s?.id === sel?.id;
+  const same = !multi.length && s?.type === sel?.type && s?.id === sel?.id && s?.to === sel?.to;
   multi = []; sel = s;
   if (!same) renderPanel();
 }
@@ -2053,11 +2271,18 @@ function cutSel() { if (copySel()) { pasteN = -1; deleteSel(); } }
 function duplicateSel() {
   if (sel?.type !== 'seq') { if (copySel()) paste(); return; }
   // A participant or row: a copy right after it (a participant's copy has no messages).
-  const o = seqItem(sel.id); if (!o) return;
+  const o = seqItem(sel.id); if (!o || sel.to) return;
   pushUndo();
-  const list = o.kind === 'participant' ? S.parts : S.rows, c = { ...JSON.parse(JSON.stringify(o)), id: nid(o.kind === 'participant' ? 'p' : isNote(o) ? 'nt' : 'm') };
-  list.splice(list.indexOf(o) + 1, 0, c);
-  sel = { type: 'seq', id: c.id };
+  const copy = r => ({ ...JSON.parse(JSON.stringify(r)), id: nid(({ participant: 'p', note: 'nt', frame: 'f', else: 'fe', end: 'fx' })[r.kind] || 'm') });
+  if (o.kind === 'frame') {   // the whole frame, with what's in it, right below it
+    const f = seqFrames()[o.id], block = S.rows.slice(f.i, f.end + 1).map(copy);
+    S.rows.splice(f.end + 1, 0, ...block);
+    sel = { type: 'seq', id: block[0].id };
+  } else {
+    const list = o.kind === 'participant' ? S.parts : S.rows, c = copy(o);
+    list.splice(list.indexOf(o) + 1, 0, c);
+    sel = { type: 'seq', id: c.id };
+  }
   refresh(true, true);
 }
 
@@ -2093,7 +2318,7 @@ function hitEdge(p) {
   return best;
 }
 function startEditing(initial) {
-  if (multi.length) return false;
+  if (multi.length || sel?.to) return false;
   // Title block / legend: their text lives in the side panel.
   if (sel?.type === 'annot') { const f = panel.querySelector('input[type=text]'); if (f) { f.focus(); f.select(); } return true; }
   if (sel?.type === 'node') openEditor(byId(sel.id));
@@ -2299,9 +2524,10 @@ function render() {
 // A sequence diagram: drawn from seqLayout(), with previews for the drag in progress.
 function renderSeq() {
   const L = seqLayout(), selId = sel?.type === 'seq' ? sel.id : null, d = drag?.moved ? drag : null;
-  const ghost = d && (d.kind === 'rowmove' || d.kind === 'partmove') ? d.id : null, hot = d?.kind === 'msgnew' ? d.over : seqNext?.from;
+  const ghost = d && (d.kind === 'rowmove' || d.kind === 'partmove') && !seqOwner(d.id) ? d.id : null, hot = d?.kind === 'msgnew' ? d.over : seqNext?.from;
+  const span = sel?.to && seqSpan(sel.id, sel.to), picked = new Set(span ? S.rows.slice(span[0], span[1] + 1).map(r => r.id) : [selId]);
   lastGeom = { R: {}, labels: dict(), seq: L };
-  const cls = (base, id) => `${base}${id === selId ? ' sel' : ''}${id === ghost ? ' ghost' : ''}`;
+  const cls = (base, id) => `${base}${picked.has(id) ? ' sel' : ''}${id === ghost ? ' ghost' : ''}`;
   let h = canvasStart() + seqMarkup(L, {
     part: q => `class="${cls('part', q.id)}" data-role="part" data-id="${esc(q.id)}" style="${styleVars(q.p)}"`,
     body: () => 'class="b-body"', name: () => 'class="s-name"',
@@ -2312,6 +2538,10 @@ function renderSeq() {
     labelBg: () => 'class="s-label-bg"', label: () => 'class="s-label"',
     note: g => `class="${cls('note', g.r.id)}" data-role="row" data-id="${esc(g.r.id)}" style="${styleVars(g.r)}"`,
     noteBody: () => 'class="n-body"', fold: () => 'class="n-fold"', noteText: () => 'class="n-text"',
+    frame: g => `class="${cls('frame', g.r.id)}" data-role="row" data-id="${esc(g.r.id)}"`,
+    frameBox: () => 'class="f-box"', tab: () => 'class="f-tab"', kind: () => 'class="f-kind"', guard: () => 'class="f-guard"',
+    sec: g => `class="${cls('fsec', g.r.id)}" data-role="row" data-id="${esc(g.r.id)}"`, secLine: () => 'class="f-else"',
+    frameEnd: g => `class="${cls('fend', g.frame)}" data-role="row" data-id="${esc(g.r.id)}"`,
   });
   // Where the message being drawn, or the row or participant being moved, will land.
   if (d?.kind === 'msgnew') {
@@ -2319,21 +2549,24 @@ function renderSeq() {
     h += to === q ? `<path class="temp" d="M${q.x},${y} H${q.x + SEQ.self} V${y + SEQ.selfH} H${q.x}"/>`
       : `<path class="temp" d="M${q.x},${y} H${to ? to.x : d.cur.x}"/>`;
   }
-  if (d?.kind === 'rowmove') { const y = seqGapY(L, seqIndexAt(L, d.cur.y, d.id), d.id); h += `<line class="s-gap" x1="${L.bounds.x1 - 12}" y1="${y}" x2="${L.bounds.x2 + 12}" y2="${y}"/>`; }
+  if (d?.kind === 'rowmove') { const y = seqGapY(L, seqDropAt(L, d.cur.y, d.id), d.id); h += `<line class="s-gap" x1="${L.bounds.x1 - 12}" y1="${y}" x2="${L.bounds.x2 + 12}" y2="${y}"/>`; }
   if (d?.kind === 'partmove') { const x = seqGapX(L, seqColAt(L, d.cur.x, d.id), d.id); h += `<line class="s-gap" x1="${x}" y1="-12" x2="${x}" y2="${L.bounds.y2 + 12}"/>`; }
   canvasDone(canvasEnd(h, L.bounds));
 }
 function seqStatus() {
   const name = id => oneLine(partOf(id)?.label || ''), o = sel?.type === 'seq' && seqItem(sel.id);
   if (drag?.kind === 'msgnew') return drag.over ? `${name(drag.from)} → ${name(drag.over)}${drag.over === drag.from ? '  ·  self-message' : ''}` : `Message from ${name(drag.from)}: drop on a lifeline (its own for a self-message)`;
-  if (drag?.kind === 'rowmove' && drag.moved) return 'Drop where the row should go';
+  if (drag?.kind === 'rowmove' && drag.moved) return seqOwner(drag.id) ? 'Drop where this edge of the frame should go. It takes in the rows it passes.' : 'Drop where the row should go';
   if (drag?.kind === 'partmove' && drag.moved) return 'Drop where the participant should go';
   if (seqNext) return `Next message from ${name(seqNext.from)}: click the lifeline it goes to (its own for a self-message). Esc to stop.`;
   if (!o) {
-    const notes = S.rows.filter(isNote).length;
-    return `${S.parts.length} participants  ·  ${S.rows.length - notes} messages  ·  ${notes} notes`;
+    const count = (k, word) => `${k} ${word}${k === 1 ? '' : 's'}`, n = f => S.rows.filter(f).length, frames = n(r => r.kind === 'frame');
+    return [count(S.parts.length, 'participant'), count(n(isMsg), 'message'), count(n(isNote), 'note'), ...(frames ? [count(frames, 'frame')] : [])].join('  ·  ');
   }
-  if (o.kind === 'participant') return `Participant  ·  ${S.rows.filter(r => !isNote(r) && (r.from === o.id || r.to === o.id)).length} messages  ·  ←/→ moves it`;
+  if (sel.to) { const [i, j] = seqSpan(sel.id, sel.to); return `${j - i + 1} rows  ·  + Frame puts them in a frame  ·  Shift+click another row to change the run`; }
+  if (o.kind === 'frame') return `${o.type} frame  ·  drag its top or bottom edge to take in more or fewer rows  ·  ↑/↓ moves it`;
+  if (o.kind === 'else') return `${secWord(seqFrames()[seqOwner(o.id)]?.r.type)} line  ·  drag it or press ↑/↓ to move it`;
+  if (o.kind === 'participant') return `Participant  ·  ${S.rows.filter(r => isMsg(r) && (r.from === o.id || r.to === o.id)).length} messages  ·  ←/→ moves it`;
   if (isNote(o)) return `Note ${o.side === 'over' ? 'over' : o.side + ' of'} ${o.on.map(name).join(' and ')}  ·  ↑/↓ moves it`;
   return `${name(o.from)} → ${name(o.to)}  ·  ${o.type}  ·  ↑/↓ moves it`;
 }
@@ -2371,7 +2604,7 @@ const num = (f, v, label, dis) => `<label class="num"><span>${label}</span><inpu
 function renderPanel() {
   if (!panel) return;
   let h;
-  if (isSeq() && sel?.type !== 'annot') h = sel?.type === 'seq' && seqItem(sel.id) ? seqPanel(seqItem(sel.id)) : seqDiagramPanel();
+  if (isSeq() && sel?.type !== 'annot') h = sel?.type === 'seq' && seqItem(sel.id) ? (sel.to ? seqRunPanel() : seqPanel(seqItem(sel.id))) : seqDiagramPanel();
   else if (multi.length) h = multiPanel();
   else if (sel?.type === 'node' && byId(sel.id)) h = nodePanel(byId(sel.id));
   else if (sel?.type === 'edge' && S.edges.some(e => e.id === sel.id)) h = edgePanel(S.edges.find(e => e.id === sel.id));
@@ -2440,7 +2673,7 @@ const moveButtons = (a, b) => `<div class="row"><button class="btn" type="button
 function seqPanel(o) {
   const name = id => esc(oneLine(partOf(id)?.label || ''));
   if (o.kind === 'participant') {
-    const n = S.rows.filter(r => !isNote(r) && (r.from === o.id || r.to === o.id)).length;
+    const n = S.rows.filter(r => isMsg(r) && (r.from === o.id || r.to === o.id)).length;
     return `<section>
       <p class="eyebrow">Participant</p>
       <label class="field"><span>Text</span><textarea id="f-label" data-field="label" rows="2">${esc(o.label)}</textarea></label>
@@ -2450,6 +2683,32 @@ function seqPanel(o) {
     ${styleSections([o])}
     <div class="row"><button class="btn" type="button" data-act="duplicate">Duplicate</button><button class="btn danger" type="button" data-act="delete">Delete participant</button></div>
     <p class="desc">Deleting a participant also deletes its messages and notes.</p>`;
+  }
+  if (o.kind === 'frame') {
+    const f = seqFrames()[o.id], inside = S.rows.slice(f.i + 1, f.end).filter(r => !isMark(r)).length;
+    return `<section>
+      <p class="eyebrow">Frame</p>
+      <div class="field"><span>Kind</span>${seg('frameType', FRAME_TYPES, o.type)}</div>
+      <p class="desc">${FRAME_TYPES.map(([v, l]) => `${l}: ${FRAME_HINTS[v]}.`).join(' ')}</p>
+      <label class="field"><span>Condition</span><textarea id="f-label" data-field="label" rows="1" placeholder="No condition">${esc(o.label)}</textarea></label>
+      ${BRANCHED.includes(o.type) ? `<div class="row"><button class="btn" type="button" data-act="addElse">+ ${secWord(o.type)} line</button></div>
+      <p class="desc">Each ${secWord(o.type)} line starts the next section. A new one goes in at the bottom of the frame: drag it up to where its section starts.</p>` : ''}
+      ${moveButtons('Move up', 'Move down')}
+      <p class="meta">${inside} row${inside === 1 ? '' : 's'} inside</p>
+      <p class="desc">Drag the frame's top or bottom edge to take in more or fewer rows. Move up and Move down move it whole.</p>
+    </section>
+    <div class="row"><button class="btn" type="button" data-act="duplicate">Duplicate</button><button class="btn danger" type="button" data-act="delete">Remove frame</button><button class="btn danger" type="button" data-act="deleteAll">Delete with contents</button></div>
+    <p class="desc">Remove frame keeps what's inside it.</p>`;
+  }
+  if (o.kind === 'else') {
+    const w = secWord(seqFrames()[seqOwner(o.id)]?.r.type);
+    return `<section>
+      <p class="eyebrow">${w} line</p>
+      <label class="field"><span>Condition</span><textarea id="f-label" data-field="label" rows="1" placeholder="No condition">${esc(o.label)}</textarea></label>
+      ${moveButtons('Move up', 'Move down')}
+      <p class="desc">Rows below the line, down to the next line or the frame's bottom, are this section.</p>
+    </section>
+    <div class="row"><button class="btn danger" type="button" data-act="delete">Delete line</button></div>`;
   }
   if (isNote(o)) return `<section>
       <p class="eyebrow">Note</p>
@@ -2472,6 +2731,18 @@ function seqPanel(o) {
     </section>
     ${styleSections([o])}
     <div class="row"><button class="btn" type="button" data-act="reverse">Reverse direction</button><button class="btn" type="button" data-act="duplicate">Duplicate</button><button class="btn danger" type="button" data-act="delete">Delete message</button></div>`;
+}
+// A run of rows, picked with Shift+click.
+function seqRunPanel() {
+  const [i, j] = seqSpan(sel.id, sel.to), rows = S.rows.slice(i, j + 1), n = f => rows.filter(f).length;
+  return `<section>
+    <p class="eyebrow">Rows</p>
+    <p class="meta">${n(isMsg)} messages, ${n(isNote)} notes${n(r => r.kind === 'frame') ? `, ${n(r => r.kind === 'frame')} frames` : ''}</p>
+    <div class="field"><span>Put in a frame</span>${seg('wrap', FRAME_TYPES, null)}</div>
+    <p class="desc">Shift+click another row to change the run. A frame the run cuts into is taken in whole.</p>
+  </section>
+  <div class="row"><button class="btn danger" type="button" data-act="delete">Delete rows</button></div>
+  <p class="desc">Deleting rows keeps the frames that reach outside them.</p>`;
 }
 function diagramPanel() {
   const st = S.settings;
@@ -2829,13 +3100,21 @@ function onAct(b) {
     refresh(true, true); return;
   }
   if (act === 'selectInside') { setMulti(boxesIn(byId(sel.id))); render(); return; }
+  if (act === 'wrap') { addFrame(val); return; }
   pushUndo();
   if (sel?.type === 'seq') {
     const o = seqItem(sel.id);
     if (act === 'msgType') o.type = val;
     if (act === 'noteSide') { o.side = val; if (val !== 'over') o.on = o.on.slice(0, 1); }
     if (act === 'reverse') [o.from, o.to] = [o.to, o.from];
-    if (act === 'seqMove') { const list = o.kind === 'participant' ? S.parts : S.rows; seqMoveTo(o.id, list.indexOf(o) + +val); }
+    if (act === 'frameType') seqFrameType(o.id, val);
+    if (act === 'deleteAll') { seqRemove(o.id, true); sel = null; }
+    if (act === 'addElse') { const e = seqAddElse(o.id); if (e) { sel = { type: 'seq', id: e.id }; refresh(true, true); openSeqEditor(e.id, true); return; } }
+    if (act === 'seqMove') {
+      if (o.kind === 'frame') seqMoveBlock(o.id, +val);
+      else if (o.kind === 'else') seqStep(o.id, +val);
+      else { const list = o.kind === 'participant' ? S.parts : S.rows; seqMoveTo(o.id, list.indexOf(o) + +val); }
+    }
   } else if (sel?.type === 'node') {
     const n = byId(sel.id);
     if (act === 'layout') n.layout = val;
@@ -2854,6 +3133,7 @@ function deleteSel() {
   if (!sel) return;
   pushUndo();
   if (sel.type === 'annot') (sel.id === 'title' ? S.title : S.legend).show = false;
+  else if (sel.type === 'seq' && sel.to) { const [i, j] = seqSpan(sel.id, sel.to); seqRemoveRows(i, j); }
   else if (sel.type === 'seq') seqRemove(sel.id);
   else if (sel.type === 'node') {
     const ids = new Set(selectedIds().flatMap(subtree));
@@ -2897,12 +3177,22 @@ function addPart(atX) {
 function addSeqNote() {
   if (!S.parts.length) { toast('Add a participant first.', true); return; }
   const o = sel?.type === 'seq' && seqItem(sel.id);
-  const on = !o ? S.parts[0].id : o.kind === 'participant' ? o.id : isNote(o) ? o.on[0] : o.to;
+  const on = !o ? S.parts[0].id : o.kind === 'participant' ? o.id : isNote(o) ? o.on[0] : o.to || S.parts[0].id;
   const i = o && o.kind !== 'participant' ? S.rows.indexOf(o) + 1 : S.rows.length;
   pushUndo();
   const n = seqInsert({ id: nid('nt'), kind: 'note', side: 'right', on: [on], label: 'Note' }, i);
   sel = { type: 'seq', id: n.id }; seqNext = null;
   refresh(true, true); openSeqEditor(n.id, true);
+}
+// Put the selected rows (a message, a note, or a run picked with Shift+click) in a new frame, then type its condition.
+function addFrame(type) {
+  closeMenu();
+  if (!(sel?.type === 'seq' && S.rows.some(r => r.id === sel.id))) { toast('Select a message or note first. Shift+click another row to take in the rows between.', true); return; }
+  const before = snapshot(), f = seqWrap(sel.id, sel.to || sel.id, type);
+  if (!f) { toast(`Frames can sit at most ${MAX_DEPTH} deep.`, true); return; }
+  keepUndo(before);
+  sel = { type: 'seq', id: f.id }; seqNext = null;
+  refresh(true, true); openSeqEditor(f.id, true);
 }
 function fit() {
   if (!hasContent()) return;
@@ -2955,12 +3245,14 @@ function openSeqEditor(id, fresh) {
   if (o.kind === 'participant') { const q = L.P.find(x => x.id === id); b = { x: q.x - q.w / 2, y: 0, w: q.w, h: L.H }; }
   else {
     const g = L.R.find(x => x.r.id === id);
-    if (isNote(o)) b = { x: g.x, y: g.y, w: g.w, h: g.h };
+    if (g.mark === 'frame') b = { x: g.x1 + g.tw + 2, y: g.y - 4, w: Math.max(180, g.gw + 30), h: SEQ.tabH + 8 };
+    else if (g.mark === 'else') b = { x: g.x1 + 4, y: g.y, w: Math.max(180, g.gw + 30), h: SEQ.lh + 10 };
+    else if (isNote(o)) b = { x: g.x, y: g.y, w: g.w, h: g.h };
     else if (g.self) b = { x: g.x1 + SEQ.self + 4, y: g.y, w: Math.max(140, g.lw + 20), h: Math.max(30, g.h) };
     else { const w = Math.max(140, g.lw + 20); b = { x: (g.x1 + g.x2) / 2 - w / 2, y: g.y - 4, w, h: Math.max(30, g.lh + 10) }; }
   }
   Object.assign(editor.style, { left: b.x * view.k + view.x + 'px', top: b.y * view.k + view.y + 'px', width: Math.max(120, b.w * view.k) + 'px',
-    height: Math.max(32, b.h * view.k) + 'px', textAlign: isNote(o) ? 'left' : 'center' });
+    height: Math.max(32, b.h * view.k) + 'px', textAlign: isNote(o) || isMark(o) ? 'left' : 'center' });
   delete editor.dataset.id; delete editor.dataset.edge; editor.dataset.seq = id; editor.dataset.fresh = fresh ? '1' : '';
   editor.value = o.label; editor.hidden = false;
   editor.focus(); editor.select();
@@ -3021,7 +3313,7 @@ function onDown(ev) {
     drag = { kind: 'pan', sx: ev.clientX, sy: ev.clientY, vx: view.x, vy: view.y };
     svg.classList.add('panning'); render(); return;
   }
-  if (isSeq() && role !== 'annot') { seqDown(p, role, id); return; }
+  if (isSeq() && role !== 'annot') { seqDown(p, role, id, additive); return; }
   if (!role) {
     // Empty canvas: drag out a selection box (Shift/Ctrl adds to the current selection).
     const keep = additive ? selectedIds() : [];
@@ -3168,7 +3460,7 @@ function doubleAt(p) {
   if (eid) { select({ type: 'edge', id: eid }); render(); startEditing(); return; }
   if (isSeq()) {
     const r = svg.getBoundingClientRect(), el = document.elementFromPoint(r.left + view.x + p.x * view.k, r.top + view.y + p.y * view.k)?.closest('#cv [data-role]');
-    const id = el?.dataset.id;
+    const id = el?.dataset.id && (S.rows.find(r => r.id === el.dataset.id)?.kind === 'end' ? seqOwner(el.dataset.id) : el.dataset.id);
     if (id && seqItem(id)) { select({ type: 'seq', id }); render(); startEditing(); }
     else if (!el) { sel = null; addPart(p.x); }
     return;
@@ -3180,11 +3472,17 @@ function doubleAt(p) {
 // Sequence diagrams. Press a head to move the participant sideways, a lifeline to draw a message to another one
 // (or back to itself), a message or note to move its row. While going on from a labeled message, a press on a
 // lifeline adds the next message.
-function seqDown(p, role, id) {
+function seqDown(p, role, id, additive) {
   if (seqNext && (role === 'life' || role === 'part')) { drag = { kind: 'chain', to: id }; return; }
   seqNext = null;
   if (!role) { select(null); drag = null; render(); return; }
-  select({ type: 'seq', id });
+  // A frame's bottom edge selects the frame; dragging it moves the edge.
+  const pick = role === 'row' && S.rows.find(r => r.id === id)?.kind === 'end' ? seqOwner(id) : id;
+  // Shift+click a second row: the run from the first one to it.
+  if (additive && role === 'row' && sel?.type === 'seq' && S.rows.some(r => r.id === sel.id)) {
+    select(pick === sel.id ? { type: 'seq', id: pick } : { type: 'seq', id: sel.id, to: pick }); drag = null; render(); return;
+  }
+  select({ type: 'seq', id: pick });
   drag = { kind: role === 'part' ? 'partmove' : role === 'life' ? 'msgnew' : 'rowmove', id, from: id, start: p, cur: p, moved: false, over: null };
   render();
 }
@@ -3205,7 +3503,7 @@ function seqUp(d, p) {
     if (to) setTimeout(() => seqAddAfter(d.from, to.id, S.rows[i - 1]?.id ?? null), 0); else render();
     return;
   }
-  arrange(() => seqMoveTo(d.id, d.kind === 'rowmove' ? seqIndexAt(L, p.y, d.id) : seqColAt(L, p.x, d.id)));
+  arrange(() => seqMoveTo(d.id, d.kind === 'rowmove' ? seqDropAt(L, p.y, d.id) : seqColAt(L, p.x, d.id)));
   render();
 }
 // A new message from one participant to another, right below row `after` (at the top if null).
@@ -3218,9 +3516,12 @@ function seqAddAfter(from, to, after) {
 }
 // Arrow keys: a participant moves left or right, a message or note up or down.
 function seqNudge(k) {
-  const o = seqItem(sel.id); if (!o) return;
+  const o = seqItem(sel.id); if (!o || sel.to) return;
   const part = o.kind === 'participant', step = (part ? { ArrowLeft: -1, ArrowRight: 1 } : { ArrowUp: -1, ArrowDown: 1 })[k];
-  if (step) arrange(() => seqMoveTo(o.id, (part ? S.parts : S.rows).indexOf(o) + step));
+  if (!step) return;
+  if (o.kind === 'frame') arrange(() => seqMoveBlock(o.id, step));
+  else if (o.kind === 'else') arrange(() => seqStep(o.id, step));
+  else arrange(() => seqMoveTo(o.id, (part ? S.parts : S.rows).indexOf(o) + step));
 }
 function onCancel() {
   if (!drag) return;
@@ -3255,7 +3556,7 @@ function updateDocUi() {
 function syncTypeUi() {
   const seq = isSeq();
   for (const id of ['addBox', 'addGroup', 'modeSeg', 'modeLbl']) document.getElementById(id).hidden = seq;
-  for (const id of ['addPart', 'addNote']) document.getElementById(id).hidden = !seq;
+  for (const id of ['addPart', 'addNote', 'frameWrap']) document.getElementById(id).hidden = !seq;
   document.getElementById('emptyHint').textContent = seq ? 'Double-click to add a participant, then drag from one lifeline to another to add a message.'
     : 'Double-click anywhere to add a box, or drop a .snapblade file here to open it.';
 }
@@ -3446,7 +3747,10 @@ function guideHtml() {
       <li>The <b>Message</b> panel sets its <b>Label</b>, <b>From</b> and <b>To</b>, and its <b>Kind</b>: ${b(labels(MSG_TYPES))}. Sync is a call that waits (filled arrowhead), Async doesn't wait (open arrowhead), Reply is the answer (dashed). A message that answers the sync call right above it starts out as a Reply. <b>Move up</b>, <b>Move down</b> and <b>Reverse direction</b> are there too.</li>
       <li><b>+ Note</b> adds a <b>Note</b> below the selected row. Its <b>Position</b> is ${b(labels(NOTE_SIDES))} its <b>Participant</b>; an Over note <b>Spans to</b> a second one. A note takes its own row, so nothing overlaps.</li>
       <li>The <b>Participant</b> panel has <b>Move left</b> and <b>Move right</b>; <b>Delete participant</b> also deletes its messages and notes. Participants, messages and notes take colors and patterns like boxes and connectors, and get legend rows the same way.</li>
-      <li><b>Duplicate</b> (Ctrl+D) puts a copy of a message, note or participant right after it. <b>Delete message</b>, <b>Delete note</b>, <b>Delete participant</b> or the Delete key removes one.</li>
+      <li><b>+ Frame</b> puts the selected message or note in a frame: ${FRAME_TYPES.map(([v, l]) => `<b>${l}</b> (${FRAME_HINTS[v]})`).join(', ')}. To take in several rows, click the first and Shift+click the last; the <b>Rows</b> panel then offers <b>Put in a frame</b> and <b>Delete rows</b> too. A frame the rows cut into is taken in whole. Type the condition and press Enter; it shows in brackets beside the kind.</li>
+      <li>The <b>Frame</b> panel sets its <b>Kind</b> and <b>Condition</b>. In an Alt, <b>+ Else line</b> starts another section (in a Par, <b>+ And line</b>): it goes in at the bottom of the frame, and you drag it up to where its section starts. An <b>Else line</b> or <b>And line</b> has its own Condition, and <b>Delete line</b>. Switching to Opt or Loop removes the lines, not the rows.</li>
+      <li>Drag a frame's top or bottom edge to take in more or fewer rows; a message dragged past an edge moves in or out. <b>Move up</b> and <b>Move down</b> (or the arrow keys) move the whole frame with what's in it. <b>Remove frame</b> or the Delete key takes the frame away and keeps what was inside; <b>Delete with contents</b> takes everything. Frames nest, and each one is as wide as the lifelines its rows touch.</li>
+      <li><b>Duplicate</b> (Ctrl+D) puts a copy of a message, note, frame (with what's in it) or participant right after it. <b>Delete message</b>, <b>Delete note</b>, <b>Delete participant</b> or the Delete key removes one.</li>
       <li>The <b>Sequence diagram</b> settings: <b>Number messages</b>, and <b>Participants at the bottom too</b>.</li></ul>`],
     ['tabs', 'Tabs', `<p>One file can hold several diagrams, each on its own tab along the bottom of the canvas: an architecture view and the sequence diagrams that go with it, say.</p><ul>
       <li><b>Add a tab</b> (the + at the end of the tabs) offers a <b>Box diagram</b>, a <b>Sequence diagram</b>, or <b>Duplicate this tab</b>. A new tab goes right after the open one.</li>
@@ -3492,6 +3796,7 @@ function helpHtml() {
       <dt>Wheel</dt><dd>Zoom toward the cursor (Shift+wheel scrolls sideways)</dd>
       <dt>Right-drag</dt><dd>Pan (middle-drag or Space+drag also work)</dd>
       <dt>Enter</dt><dd>After labeling a new message: click the lifeline the next one goes to. Esc stops</dd>
+      <dt>Shift+click a row</dt><dd>In a sequence diagram: select the rows from the selected one to it, then + Frame</dd>
       <dt>F2 on a tab</dt><dd>Rename it. ←/→ move between tabs</dd>
       <dt>F1 / ?</dt><dd>Open this help (? only with nothing selected)</dd>
     </dl>`,
@@ -3514,6 +3819,8 @@ function helpHtml() {
     <ol class="try">
       <li>Drag from the <b>Customer</b> lifeline to <b>Web app</b> between two messages. Type a label, press Enter, then click the next lifeline.</li>
       <li>Drag <b>Validate cart</b> down a few rows, or select it and press the arrow keys.</li>
+      <li>Click <b>Authorize payment</b>, Shift+click <b>Result</b>, then <b>+ Frame</b> &gt; Loop and type <code>up to 3 tries</code>.</li>
+      <li>Drag the bottom edge of the alt frame up past <b>Show payment error</b> to leave it out.</li>
       <li>Select <b>Payments API</b> and click <b>+ Note</b>: a note goes right of its lifeline, ready to type.</li>
       <li>Select a message and switch its Kind between Sync, Async and Reply.</li>
       <li>Click the + at the end of the tabs and add a Box diagram tab: one file can hold the architecture and its sequence diagrams. Double-click a tab to rename it.</li>
@@ -3544,7 +3851,7 @@ function helpTabSwitch(b) {
 
 /* ---------- file menu ---------- */
 function closeMenu() {
-  for (const [menu, btn] of [['fileMenu', 'fileBtn'], ['tabMenu', 'tabAdd']]) {
+  for (const [menu, btn] of [['fileMenu', 'fileBtn'], ['tabMenu', 'tabAdd'], ['frameMenu', 'addFrame']]) {
     const m = document.getElementById(menu);
     if (m && !m.hidden) { m.hidden = true; document.getElementById(btn).setAttribute('aria-expanded', 'false'); }
   }
@@ -3818,7 +4125,7 @@ function buildExportSvg(o) {
 
   let out = '';
   if (seq) {
-    const ink = parseColor(T.ink).hex, col = q => exportColors(q, T), fo = c => c.fo < 1 ? ` fill-opacity="${c.fo}"` : '';
+    const ink = parseColor(T.ink).hex, frameInk = parseColor(T['ink-2']).hex, col = q => exportColors(q, T), fo = c => c.fo < 1 ? ` fill-opacity="${c.fo}"` : '';
     out += seqMarkup(seq, {
       part: () => '', lifeHit: () => '', hit: () => '', msg: () => '', note: () => '',
       body: q => { const c = col(q.p); return `fill="${c.fill}"${fo(c)} stroke="${c.line}" stroke-width="1.5"${dash(q.p.style)}`; },
@@ -3831,6 +4138,11 @@ function buildExportSvg(o) {
       noteBody: g => { const c = col(g.r); return `fill="${c.fill}"${fo(c)} stroke="${c.line}" stroke-width="1.25" stroke-linejoin="round"${dash(g.r.style)}`; },
       fold: g => `fill="none" stroke="${col(g.r).line}" stroke-width="1.25" stroke-linejoin="round"`,
       noteText: () => `${fontAttrs(12, 500)} fill="${ink}"`,
+      frame: () => '', sec: () => '', frameEnd: () => '',
+      frameBox: () => `fill="none" stroke="${frameInk}" stroke-width="1.25"`,
+      tab: () => `fill="${labelBg}" stroke="${frameInk}" stroke-width="1.25" stroke-linejoin="round"`,
+      kind: () => `${fontAttrs(11, 700)} fill="${ink}"`, guard: () => `${fontAttrs(12, 500)} fill="${ink}"`,
+      secLine: () => `fill="none" stroke="${frameInk}" stroke-width="1.25" stroke-dasharray="6 4"`,
     });
   }
   const order = (seq ? [] : nodes).map((n, i) => ({ n, i, d: depth(n), gk: n.kind === 'group' ? 0 : 1 })).sort((a, b) => a.d - b.d || a.gk - b.gk || a.i - b.i);
@@ -4133,6 +4445,15 @@ function init() {
   document.getElementById('addGroup').addEventListener('click', () => addNode('group'));
   document.getElementById('addPart').addEventListener('click', () => addPart());
   document.getElementById('addNote').addEventListener('click', addSeqNote);
+  const frameMenu = document.getElementById('frameMenu');
+  frameMenu.innerHTML = FRAME_TYPES.map(([v, l]) => `<button type="button" role="menuitem" data-frame="${v}">${l}<kbd>${FRAME_HINTS[v]}</kbd></button>`).join('');
+  document.getElementById('addFrame').addEventListener('click', ev => {
+    ev.stopPropagation();
+    const open = frameMenu.hidden;
+    closeMenu(); frameMenu.hidden = !open; ev.currentTarget.setAttribute('aria-expanded', String(open));
+    if (open) frameMenu.querySelector('button').focus();
+  });
+  frameMenu.addEventListener('click', ev => { const b = ev.target.closest('[data-frame]'); if (b) addFrame(b.dataset.frame); });
   document.getElementById('undoBtn').addEventListener('click', () => restore(undoStack, redoStack));
   document.getElementById('redoBtn').addEventListener('click', () => restore(redoStack, undoStack));
   document.getElementById('fitBtn').addEventListener('click', fit);

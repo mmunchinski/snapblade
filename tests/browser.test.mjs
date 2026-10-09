@@ -68,6 +68,10 @@ const CONTEXTS = [
   ['participant', "seqOn(); sel = { type: 'seq', id: 'orders' }; multi = []"],
   ['message', "seqOn(); sel = { type: 'seq', id: 'm4' }; multi = []"],
   ['note', "seqOn(); sel = { type: 'seq', id: 'n1' }; multi = []"],
+  // The else line goes before the frame: switching the frame to Opt or Loop removes it.
+  ['run of rows', "seqOn(); sel = { type: 'seq', id: 'm2', to: 'm4' }; multi = []"],
+  ['else line', "seqOn(); sel = { type: 'seq', id: 'f1e' }; multi = []"],
+  ['frame', "seqOn(); sel = { type: 'seq', id: 'f1' }; multi = []"],
   ['sequence title block', "seqOn(); S.title.show = true; sel = { type: 'annot', id: 'title' }; multi = []"],
 ];
 // Defines freeApp() and seqOn() in the page, for the contexts above.
@@ -263,7 +267,7 @@ test('the diagram panel holds settings only; Help opens from the bar, F1 and ?',
 // from what a reload reads (load()) and from a save and reopen (parseDiagram(serialize())).
 test('every control in every panel survives a reload and a file round trip', { timeout: 180000 }, async () => {
   const h = await open();
-  const SKIP = new Set(['delete', 'duplicate', 'help', 'annHide']);   // remove or add shapes, or open a dialog
+  const SKIP = new Set(['delete', 'deleteAll', 'duplicate', 'help', 'annHide']);   // remove or add shapes, or open a dialog
   await contextHelpers(h);
   const controls = () => h.ev(() => [...document.querySelectorAll('#panel [data-act], #panel [data-field], #modeSeg [data-mode]')]
     .filter(el => !el.disabled && el.offsetParent !== null)
@@ -843,7 +847,7 @@ const seqRow = (h, id) => h.ev(id => { const g = lastGeom.seq.R.find(g => g.r.id
   return { x: r.left + view.x + p.x * view.k, y: r.top + view.y + p.y * view.k }; }, id);
 const seqBottom = h => h.ev(() => lastGeom.seq.end - 12);
 const seqSampleOn = h => h.ev(() => { loadSample(true); undoStack.length = 0; });
-const rows = h => h.ev(() => S.rows.map(r => r.kind ? `note ${r.side} ${r.on.join(',')}: ${r.label}` : `${r.from}>${r.to} ${r.type}: ${r.label}`));
+const rows = h => h.ev(() => S.rows.map(r => r.kind === 'note' ? `note ${r.side} ${r.on.join(',')}: ${r.label}` : r.kind ? `${r.kind} ${r.type || ''}: ${r.label || ''}` : `${r.from}>${r.to} ${r.type}: ${r.label}`));
 
 test('sequence diagrams: New, + Participant, double-click adds a participant, drag between lifelines adds a message, Enter goes on to the next', async () => {
   const h = await open(), { page } = h;
@@ -931,7 +935,7 @@ test('sequence diagrams: drag rows and participants to reorder, arrow keys, pane
   const all = await rows(h);
   await page.mouse.click(...Object.values(await seqAt(h, 'gw', 20)));
   await page.keyboard.press('Delete');
-  assert.ok(await h.ev(() => !partOf('gw') && S.rows.every(r => r.kind ? !r.on.includes('gw') : r.from !== 'gw' && r.to !== 'gw')));
+  assert.ok(await h.ev(() => !partOf('gw') && S.rows.every(r => isNote(r) ? !r.on.includes('gw') : r.from !== 'gw' && r.to !== 'gw')));
   await page.keyboard.press('Control+z');
   assert.deepEqual(await rows(h), all);
   // A note added beside the selected message, typed in place.
@@ -939,6 +943,72 @@ test('sequence diagrams: drag rows and participants to reorder, arrow keys, pane
   await page.click('#addNote'); await page.keyboard.type('retries twice'); await page.keyboard.press('Enter');
   const i = await h.ev(() => S.rows.findIndex(r => r.id === 'm4'));
   assert.deepEqual(await h.ev(i => { const r = S.rows[i + 1]; return [r.kind, r.side, r.on, r.label]; }, i), ['note', 'right', ['pay'], 'retries twice']);
+  assert.deepEqual(h.errors, []);
+});
+
+// A frame's line (start, else or end) on screen: dx along it from the left edge, dy below it.
+const frameAt = (h, id, dx = 30, dy = 0) => h.ev(([id, dx, dy]) => { const g = lastGeom.seq.R.find(g => g.r.id === id), r = svg.getBoundingClientRect();
+  return { x: r.left + view.x + (g.x1 + dx) * view.k, y: r.top + view.y + (g.y + dy) * view.k }; }, [id, dx, dy]);
+const ids = h => h.ev(() => S.rows.map(r => r.id));
+
+test('sequence frames: Shift+click a run, + Frame, type the condition, drag an edge, move it whole, add an else line, remove it and keep the rows', async () => {
+  const h = await open(), { page } = h;
+  await seqSampleOn(h);
+  // Click Authorize payment, Shift+click Result: the run, with its own panel.
+  await page.mouse.click(...Object.values(await seqRow(h, 'm4')));
+  await page.keyboard.down('Shift'); await page.mouse.click(...Object.values(await seqRow(h, 'm6'))); await page.keyboard.up('Shift');
+  assert.deepEqual(await h.ev(() => sel), { type: 'seq', id: 'm4', to: 'm6' });
+  assert.match(await page.textContent('#panel'), /Put in a frame/);
+  assert.equal(await h.ev(() => document.querySelectorAll('#cv .sel').length), 4, 'the run is highlighted');
+  // + Frame > Loop, then type the condition.
+  await page.click('#addFrame'); await page.click('[data-frame="loop"]');
+  assert.equal((await h.editor()).open, true);
+  await page.keyboard.type('up to 3 tries'); await page.keyboard.press('Enter');
+  const loop = await h.ev(() => sel.id), all = await ids(h);
+  assert.deepEqual(await h.ev(id => S.rows.find(r => r.id === id), loop), { id: loop, kind: 'frame', type: 'loop', label: 'up to 3 tries' });
+  assert.deepEqual(all.slice(all.indexOf(loop), all.indexOf(loop) + 6).slice(1, 5), ['m4', 'm5', 'n1', 'm6']);
+  assert.equal(await h.ev(i => S.rows[i].kind, all.indexOf('m6') + 1), 'end');
+  assert.ok((await h.ev(() => svg.textContent)).includes('[up to 3 tries]'));
+  // One undo step takes the frame and its condition away.
+  await page.keyboard.press('Control+z');
+  assert.equal(await h.ev(id => S.rows.some(r => r.id === id), loop), false);
+  await page.keyboard.press('Control+y');
+  // Drag the alt frame's bottom edge up past Show payment error: it leaves the frame.
+  const m13 = await seqRow(h, 'm13');
+  await h.drag(await frameAt(h, 'f1x'), { x: (await frameAt(h, 'f1x')).x, y: m13.y - 20 });
+  assert.deepEqual((await ids(h)).slice(-3), ['m12', 'f1x', 'm13']);
+  assert.deepEqual(await h.ev(() => sel), { type: 'seq', id: 'f1' }, 'the bottom edge selects its frame');
+  // The end can't go above its else line: it stops right below it.
+  await h.drag(await frameAt(h, 'f1x'), { x: (await frameAt(h, 'f1x')).x, y: (await seqRow(h, 'm8')).y });
+  const now = await ids(h);
+  assert.deepEqual(now.slice(now.indexOf('f1e'), now.indexOf('f1e') + 2), ['f1e', 'f1x']);
+  await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z');
+  // Click the tab to select the frame; the arrow keys move it whole.
+  await page.mouse.click(...Object.values(await frameAt(h, 'f1', 8, 9)));
+  assert.deepEqual(await h.ev(() => sel), { type: 'seq', id: 'f1' });
+  const before = await ids(h);
+  await page.keyboard.press('ArrowUp');
+  assert.equal(await h.ev(() => S.rows.indexOf(S.rows.find(r => r.id === 'f1'))), before.indexOf('f1') - 1);
+  assert.equal(await h.ev(() => S.rows.at(-1).id), before[before.indexOf('f1') - 1], 'the row it passed is now below it');
+  await page.keyboard.press('Control+z');
+  // + Else line goes in at the bottom of the frame, ready to type.
+  await h.button('+ Else line'); await page.keyboard.type('timed out'); await page.keyboard.press('Enter');
+  const added = await h.ev(() => S.rows[S.rows.findIndex(r => r.id === 'f1x') - 1]);
+  assert.deepEqual([added.kind, added.label], ['else', 'timed out']);
+  assert.equal(await h.ev(() => document.querySelector('#panel .eyebrow').textContent), 'Else line');
+  // Opt removes the else lines, not the rows; Delete removes the frame and keeps what was inside.
+  await page.mouse.click(...Object.values(await frameAt(h, 'f1', 8, 9)));
+  await h.button('Opt');
+  assert.equal(await h.ev(() => S.rows.filter(r => r.kind === 'else').length), 0);
+  await page.keyboard.press('Delete');
+  assert.deepEqual(await h.ev(() => S.rows.filter(r => r.kind === 'frame').map(r => r.type)), ['loop']);
+  assert.equal(await h.ev(() => S.rows.filter(isMsg).length), 13);
+  // Exports draw the frame, and it survives a reload.
+  const svgText = await h.ev(() => buildExportSvg({ theme: 'light', background: 'white', scope: 'all' }).svg);
+  assert.ok(svgText.includes('>loop<') && svgText.includes('[up to 3 tries]'));
+  const kept = await h.ev(() => JSON.parse(JSON.stringify(S)));
+  await page.reload(); await page.waitForTimeout(300);
+  assert.deepStrictEqual(await h.ev(() => JSON.parse(JSON.stringify(S))), kept);
   assert.deepEqual(h.errors, []);
 });
 
@@ -969,13 +1039,15 @@ test('a hostile sequence file cannot run script; it opens with what is valid', a
   const diagram = { type: 'sequence',
     parts: [{ id: 'a', label: pwn, style: { line: pwn } }, { id: 'b' + pwn, label: 'B' }, { id: 'b', label: 'B', kind: pwn }],
     rows: [{ id: 'm', from: 'a', to: 'b', type: pwn, label: pwn }, { id: 'n', kind: 'note', side: pwn, on: ['b', pwn], label: pwn },
-      { id: 'x' + pwn, from: 'a', to: 'b' }, { id: 'y', from: 'a', to: pwn }] };
+      { id: 'x' + pwn, from: 'a', to: 'b' }, { id: 'y', from: 'a', to: pwn },
+      { id: 'f', kind: 'frame', type: pwn, label: pwn }, { id: 'e', kind: 'else', label: pwn }, { id: 'z', kind: pwn }] };
   const h = await open(), { page } = h;
   await dropFile(h, JSON.stringify({ format: 'snapblade', version: 1, diagram }), 'hostile.snapblade'); await page.waitForTimeout(300);
   const check = async () => {
     assert.equal(await h.ev(() => window.__pwn), undefined);
     assert.equal(await h.ev(() => document.querySelectorAll('img').length), 0);
-    assert.deepEqual(await h.ev(() => [S.parts.map(p => [p.id, p.kind, p.style]), S.rows.map(r => r.id)]), [[['a', 'participant', {}], ['b', 'participant', undefined]], ['m', 'n']]);
+    assert.deepEqual(await h.ev(() => [S.parts.map(p => [p.id, p.kind, p.style]), S.rows.map(r => r.id)]), [[['a', 'participant', {}], ['b', 'participant', undefined]], ['m', 'n', 'f', 'e', 'end1']]);
+    assert.equal(await h.ev(() => S.rows[2].type), 'alt', 'an unknown frame kind becomes alt');
     assert.deepEqual(await h.ev(() => [S.rows[0].type, S.rows[1].side, S.rows[1].on]), ['sync', 'right', ['b']]);
     assert.ok((await h.ev(() => svg.textContent)).includes(pwn), 'the text is shown as text');
     assert.doesNotMatch(await h.ev(() => buildExportSvg({ theme: 'light', background: 'white', scope: 'all' }).svg), /<img|onerror="/);

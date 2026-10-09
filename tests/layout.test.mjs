@@ -201,6 +201,10 @@ test('every option the panels offer survives a reload and a file round trip', ()
     S.title.show = S.legend.show = false; trip('blocks hidden');
     const settings = { mode: Object.keys(MODES), grid: valuesOf(GRIDS), routing: valuesOf(ROUTINGS), labelPos: LABEL_POS, radius: [0, 9, 16], showSlots: [false, true], walls: [false, true] };
     for (const k in settings) for (const v of settings[k]) { S.settings[k] = v; trip('settings.' + k + ' = ' + v); }
+    S = normalize(seqSample());
+    for (const [type] of FRAME_TYPES) { seqWrap('m1', 'm2', type, type + ' label'); if (BRANCHED.includes(type)) seqAddElse(S.rows[0].id); }
+    for (const [t] of MSG_TYPES) for (const [side] of NOTE_SIDES) S.rows.push({ id: 'r' + i++, from: 'web', to: 'orders', type: t, label: t }, { id: 'r' + i++, kind: 'note', side, on: ['web'], label: side });
+    trip('a sequence diagram with every kind of frame, message and note');
     return trips;
   })()`);
   assert.ok(trips.length > 20);
@@ -433,7 +437,8 @@ test('the agent instructions name every field a diagram can keep', () => {
     walk({ format: 1, version: 1, diagram: d });
     walk({ pages: [{ name: 'x', diagram: {} }], active: 0 });
     walk(normalize({ type: 'sequence', parts: [{ id: 'a', label: 'A', style: { line: 'blue' } }],
-      rows: [{ id: 'm', from: 'a', to: 'a', type: 'reply', label: 'x', style: { dash: 'dotted' } }, { id: 'n', kind: 'note', side: 'over', on: ['a'], label: 'n' }] }));
+      rows: [{ id: 'm', from: 'a', to: 'a', type: 'reply', label: 'x', style: { dash: 'dotted' } }, { id: 'n', kind: 'note', side: 'over', on: ['a'], label: 'n' },
+        { id: 'f', kind: 'frame', type: 'alt', label: 'ok' }, { id: 'e', kind: 'else', label: 'no' }, { id: 'x', kind: 'end' }] }));
     return [...keys];
   })()`);
   assert.ok(keys.length > 35, `found ${keys.length} fields`);
@@ -451,12 +456,13 @@ test('sequence: columns make room for every head, label and note, and rows never
     { id: 'nl', kind: 'note', side: 'left', on: ['orders'], label: 'a note to the left of Orders API' },
     { id: 'nr', kind: 'note', side: 'right', on: ['cust'], label: 'a note right of the customer' },
     { id: 'no', kind: 'note', side: 'over', on: ['pay'], label: 'a wide note over Payments API only' })`);
-  const L = json(`(() => { const L = seqLayout(); return { ...L, R: L.R.map(g => ({ ...g, r: g.r.id, tw: g.ls.length ? Math.max(...g.ls.map(t => textWidth(t))) : 0 })) }; })()`);
+  const L = json(`(() => { const L = seqLayout(); return { ...L, R: L.R.map(g => ({ ...g, r: g.r.id, tw: g.ls?.length ? Math.max(...g.ls.map(t => textWidth(t))) : 0 })) }; })()`);
   const x = Object.fromEntries(L.P.map(q => [q.id, q]));
   L.P.slice(1).forEach((q, i) => assert.ok(q.x - q.w / 2 >= L.P[i].x + L.P[i].w / 2 + 40, `heads ${L.P[i].id} and ${q.id} keep 40 px apart`));
   for (const g of L.R) {
     const next = L.R[L.R.indexOf(g) + 1];
     if (next) assert.ok(next.y >= g.y + g.h + 14, `row ${next.r} starts below ${g.r}`);
+    if (g.mark) continue;
     if (g.note) {
       // A note crosses no lifeline except the ones it is on (or spans).
       for (const [i, q] of L.P.entries()) if (i < g.a || i > g.b) assert.ok(q.x < g.x || q.x > g.x + g.w, `note ${g.r} clear of ${q.id}`);
@@ -489,8 +495,8 @@ test('sequence: a message answering the sync call above starts as a reply; rows 
   assert.equal(json(`seqMoveTo('bus', 0)`), true);
   assert.equal(json('S.parts[0].id'), 'bus');
   run(`seqRemove('gw')`);
-  assert.ok(json(`S.rows.every(r => r.kind ? !r.on.includes('gw') : r.from !== 'gw' && r.to !== 'gw')`));
-  assert.deepEqual(json('S.rows.map(r => r.id)'), ['m2', 'm3', 'm1', 'm4', 'm7', 'm8', 'm9', 'm10']);
+  assert.ok(json(`S.rows.every(r => isNote(r) ? !r.on.includes('gw') : r.from !== 'gw' && r.to !== 'gw')`));
+  assert.deepEqual(json('S.rows.map(r => r.id)'), ['m2', 'm3', 'm1', 'm4', 'f1', 'm7', 'm8', 'm9', 'm10', 'f1e', 'm11', 'm12', 'm13', 'f1x'], 'frames stay');
   // Insertion points follow the rows on screen.
   const L = json('(() => { const L = seqLayout(); return { y: L.R.map(g => [g.y, g.h]) }; })()');
   assert.equal(json(`seqIndexAt(seqLayout(), ${L.y[2][0] + L.y[2][1]})`), 3, 'below the middle of row 2');
@@ -511,6 +517,108 @@ test('sequence: normalize drops what a sequence diagram cannot hold', () => {
   run(`S = normalize({ type: 'sequence', parts: Array.from({ length: 300 }, (_, i) => ({ id: 'p' + i })), rows: Array.from({ length: 3000 }, (_, i) => ({ id: 'r' + i, from: 'p0', to: 'p1' })) })`);
   assert.deepEqual(json('[S.parts.length, S.rows.length]'), [100, 1000]);
   assert.ok(json('seqLayout().R.length') === 1000);
+});
+
+// Frames (alt, opt, loop, par) are rows: a start, else lines and an end, nested.
+const ids = () => json('S.rows.map(r => r.id)');
+test('sequence frames: each holds its rows, fits its tab and condition, and a frame inside another sits inset', () => {
+  run(`S = normalize(seqSample()); seqWrap('m8', 'm9', 'loop', 'for each line item in the order, until the stock check passes');
+    seqWrap('m3', 'm3', 'opt', 'cart has items that need validating first')`);
+  const L = json(`(() => { const L = seqLayout(); return { P: L.P.map(q => ({ id: q.id, x: q.x })), R: L.R.map(g => ({ ...g, r: g.r })), bounds: L.bounds }; })()`);
+  const frames = L.R.filter(g => g.mark === 'frame');
+  assert.equal(frames.length, 3);
+  for (const f of frames) {
+    const i = L.R.indexOf(f), j = L.R.findIndex((g, k) => k > i && g.mark === 'end' && g.frame === f.r.id);
+    assert.ok(j > i, `${f.r.id} has an end`);
+    assert.ok(f.x1 + f.tw + 6 + f.gw <= f.x2, `tab and condition of ${f.r.id} fit`);
+    assert.ok(f.x1 >= L.bounds.x1 && f.x2 <= L.bounds.x2, `bounds hold ${f.r.id}`);
+    assert.equal(f.y2, L.R[j].y);
+    for (const g of L.R.slice(i + 1, j)) {
+      if (g.mark === 'frame') assert.ok(g.x1 > f.x1 && g.x2 < f.x2 && g.y > f.y && g.y2 < f.y2, `${g.r.id} sits inside ${f.r.id}`);
+      else if (g.note) assert.ok(g.x > f.x1 && g.x + g.w < f.x2, `note ${g.r.id} inside ${f.r.id}`);
+      else if (!g.mark) assert.ok(Math.min(g.x1, g.x2) - f.x1 >= 12 && f.x2 - Math.max(g.x1, g.x2) >= 12, `message ${g.r.id} inside ${f.r.id}`);
+    }
+  }
+  // A frame around one lifeline with a long condition pushes the next lifeline clear of it.
+  const opt = frames.find(f => f.r.type === 'opt'), next = L.P[L.P.findIndex(q => q.id === 'orders') + 1];
+  assert.ok(next.x > opt.x2 + 8, 'the next lifeline is clear of the opt frame');
+  // Labels: the kind in the tab, the condition in brackets (added unless already there).
+  assert.deepEqual(json(`[guard('ok'), guard('[ok]'), guard(''), guard(' a\\nb ')]`), ['[ok]', '[ok]', '', '[a b]']);
+});
+
+test('sequence frames: normalize keeps them nested, drops stray lines and closes open frames', () => {
+  run(`S = normalize(${JSON.stringify({ type: 'sequence', parts: [{ id: 'a' }, { id: 'b' }], rows: [
+    { id: 'e0', kind: 'else' }, { id: 'x0', kind: 'end' }, { id: 'f1', kind: 'frame', type: 'weird', label: 5, style: { line: 'red' } },
+    { id: 'm1', from: 'a', to: 'b' }, { id: 'e1', kind: 'else', label: 'no', on: ['a'] }, { id: 'f2', kind: 'frame', type: 'opt', label: 'x' },
+    { id: 'e2', kind: 'else' }, { id: 'm2', from: 'b', to: 'a' }, { id: 'x2', kind: 'end' }] })})`);
+  assert.deepEqual(json('S.rows'), [{ id: 'f1', kind: 'frame', type: 'alt', label: '' }, { id: 'm1', from: 'a', to: 'b', type: 'sync', label: '' },
+    { id: 'e1', kind: 'else', label: 'no' }, { id: 'f2', kind: 'frame', type: 'opt', label: 'x' }, { id: 'm2', from: 'b', to: 'a', type: 'sync', label: '' },
+    { id: 'x2', kind: 'end' }, { id: 'end1', kind: 'end' }]);
+  assert.deepStrictEqual(json('normalize(JSON.parse(JSON.stringify(S)))'), json('S'), 'a repaired diagram is stable');
+  // Too deep: frames past MAX_DEPTH go, with their ends.
+  run(`S = normalize({ type: 'sequence', parts: [{ id: 'a' }], rows: [...Array.from({ length: 25 }, (_, i) => ({ id: 'f' + i, kind: 'frame', type: 'loop' })),
+    { id: 'm', from: 'a', to: 'a' }, ...Array.from({ length: 25 }, (_, i) => ({ id: 'x' + i, kind: 'end' }))] })`);
+  assert.deepEqual(json(`[S.rows.filter(r => r.kind === 'frame').length, S.rows.filter(r => r.kind === 'end').length, S.rows.length]`), [20, 20, 41]);
+  assert.ok(json('seqLayout().R.length') === 41);
+});
+
+test('sequence frames: edges move within their frame, a frame moves whole, wrap widens to whole frames, removing keeps or takes the rows', () => {
+  run('S = normalize(seqSample())');
+  const at = id => ids().indexOf(id);
+  // The end can't go above its else line, nor the else line above the start: each stops at the nearest spot that keeps it.
+  assert.equal(json(`seqMoveTo('f1x', ${at('m8')})`), true);
+  assert.deepEqual(ids().slice(at('f1e')), ['f1e', 'f1x', 'm11', 'm12', 'm13'], 'the end stops right below its else line');
+  run('S = normalize(seqSample())');
+  json(`seqMoveTo('f1e', 0)`);
+  assert.deepEqual(ids().slice(at('f1'), at('f1') + 2), ['f1', 'f1e']);
+  // Messages cross edges freely: dragging one past the end takes it out.
+  run('S = normalize(seqSample())');
+  json(`seqMoveTo('m13', ${at('f1x')})`);
+  assert.deepEqual(ids().slice(-2), ['f1x', 'm13']);
+  // Arrow keys on an else line skip over a frame inside the section.
+  run(`S = normalize(seqSample()); seqWrap('m11', 'm12', 'opt')`);
+  assert.equal(json(`seqStep('f1e', 1)`), true);
+  assert.deepEqual(ids().slice(at('f1e') - 1, at('f1e') + 1), [ids()[at('f1e') - 1], 'f1e']);
+  assert.equal(json(`S.rows[${at('f1e') - 1}].kind`), 'end', 'the else line moved past the whole opt frame');
+  // A whole frame moves one row at a time; the row it passes goes to its other side.
+  run('S = normalize(seqSample())');
+  assert.equal(json(`seqMoveBlock('f1', -1)`), true);
+  assert.deepEqual(ids().slice(at('f1') - 1, at('f1') + 1), ['n1', 'f1']);
+  assert.equal(ids()[at('f1x') + 1], 'm6');
+  assert.equal(json(`seqMoveBlock('f1', 1)`), true);
+  assert.equal(json(`seqMoveBlock('f1', 1)`), false, 'already at the bottom');
+  // Wrapping rows that cut into a frame takes in the whole frame.
+  run('S = normalize(seqSample())');
+  assert.deepEqual(json(`seqSpan('m6', 'm8')`), [at('m6'), at('f1x')]);
+  const f = json(`seqWrap('m6', 'm8', 'opt', 'paid').id`);
+  assert.deepEqual([ids()[at('m6') - 1], ids()[at('f1x') + 1]], [f, json(`S.rows[${at('f1x') + 1}].id`)]);
+  assert.equal(json(`S.rows[${at('f1x') + 1}].kind`), 'end');
+  assert.equal(json(`seqWrap('m8', 'm9', 'loop').type`), 'loop', 'a frame inside a frame inside a frame');
+  assert.deepStrictEqual(json('normalize(JSON.parse(JSON.stringify(S)))'), json('S'), 'what the model builds survives a reload');
+  // Opt and loop have no else lines; switching to them drops the lines and keeps the rows.
+  run(`S = normalize(seqSample()); seqFrameType('f1', 'loop')`);
+  assert.equal(at('f1e'), -1);
+  assert.equal(ids().length, 16);
+  assert.equal(json(`seqAddElse('f1')`), null, 'a loop takes no else line');
+  run(`seqFrameType('f1', 'par'); seqAddElse('f1')`);
+  assert.equal(json(`S.rows[${at('f1x') - 1}].kind`), 'else', 'a new else line goes at the bottom');
+  // Removing a frame keeps its rows; with its contents, everything inside goes.
+  run(`S = normalize(seqSample()); seqRemove('f1')`);
+  assert.deepEqual([at('f1'), at('f1e'), at('f1x'), ids().length], [-1, -1, -1, 14]);
+  run(`S = normalize(seqSample()); seqRemove('f1x', true)`);
+  assert.deepEqual(ids(), ['m1', 'm2', 'm3', 'm4', 'm5', 'n1', 'm6']);
+  run(`S = normalize(seqSample()); seqRemove('f1e')`);
+  assert.equal(ids().length, 16);
+  // Removing a run of rows takes the frames wholly inside it and leaves frame lines whose frame reaches outside.
+  run('S = normalize(seqSample())'); run(`seqRemoveRows(${at('m10')}, ${at('m13')})`);
+  assert.deepEqual(ids().slice(at('f1')), ['f1', 'm7', 'm8', 'm9', 'f1e', 'f1x']);
+  run('S = normalize(seqSample())'); run(`seqRemoveRows(${at('m6')}, ${at('f1x')})`);
+  assert.deepEqual(ids(), ['m1', 'm2', 'm3', 'm4', 'm5', 'n1']);
+  // A message right after a frame line still answers the call above it.
+  run('S = normalize(seqSample())');
+  assert.equal(json(`guessType('pay', 'orders', ${at('f1') + 1})`), 'sync', 'Result (a reply) is above, so no');
+  run(`S = normalize({ type: 'sequence', parts: [{ id: 'a' }, { id: 'b' }], rows: [{ id: 'm', from: 'a', to: 'b' }, { id: 'f', kind: 'frame', type: 'opt' }, { id: 'x', kind: 'end' }] })`);
+  assert.equal(json(`guessType('b', 'a', 2)`), 'reply');
 });
 
 // ---------- tabs ----------
