@@ -246,7 +246,9 @@ dl.keys dd { margin: 0; }
 .cur-n, .cur-s { cursor: ns-resize; } .cur-e, .cur-w { cursor: ew-resize; }
 /* Sequence diagrams: participant heads reuse .b-body; lifelines, messages and notes take --ln, --fl and --dash the same way. */
 .part { cursor: grab; }
-.part.sel .b-body { stroke: var(--accent); stroke-width: 2; }
+.part.sel .b-body, .part.sel .b-line { stroke: var(--accent); stroke-width: 2; }
+.b-line { fill: none; stroke: var(--ln, var(--node-stroke)); stroke-dasharray: var(--dash, none); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.s-headhit { fill: transparent; stroke: none; }
 .s-name { font: 500 13px var(--ui); fill: var(--ink); pointer-events: none; }
 .s-life { stroke: var(--ln, var(--group-stroke)); stroke-width: 1.25; stroke-dasharray: 5 4; }
 .s-life.sel { stroke: var(--accent); }
@@ -380,7 +382,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 36</span>
+      Snapblade <span class="tag">playground &middot; build 37</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -1411,9 +1413,10 @@ function straighten(ids) {
    a message from one lifeline to another (or to itself), or a note beside, over or across lifelines. Nothing has a
    position: seqLayout() sizes each column from the labels next to it and spaces the rows evenly, so it stays tidy. */
 const SEQ = { minW: 100, padX: 14, headH: 40, nameLh: 16, gap: 40, rowTop: 30, rowGap: 14, lh: 15, labelPad: 12, head: 10,
-  self: 36, selfH: 20, noteGap: 12, notePad: 8, fold: 8, span: 18, tail: 26, framePad: 12, tabH: 18, tabCut: 6, actHalf: 5, actStep: 5, actStub: 16 };
+  actorW: 60, fig: 34, cap: 5, qcap: 7, self: 36, selfH: 20, noteGap: 12, notePad: 8, fold: 8, span: 18, tail: 26, framePad: 12, tabH: 18, tabCut: 6, actHalf: 5, actStep: 5, actStub: 16 };
 const MAX_PARTS = 100, MAX_ROWS = 1000;   // the most a file (or a paste) can add
 const MAX_DEPTH = 20;                      // frames inside frames
+const HEADS = [['box', 'Box'], ['actor', 'Actor'], ['database', 'Database'], ['queue', 'Queue']];   // a participant's head shape
 const MSG_TYPES = [['sync', 'Sync'], ['async', 'Async'], ['reply', 'Reply']];
 const NOTE_SIDES = [['left', 'Left of'], ['right', 'Right of'], ['over', 'Over']];
 const FRAME_TYPES = [['alt', 'Alt'], ['opt', 'Opt'], ['loop', 'Loop'], ['par', 'Par']];
@@ -1440,8 +1443,8 @@ function seqSample() {
   const M = (id, from, to, label, type = 'sync') => ({ id, from, to, type, label });
   return {
     type: 'sequence', nodes: [], edges: [],
-    parts: [P('cust', 'Customer', { style: { line: 'blue' } }), P('web', 'Web app'), P('orders', 'Orders API'), P('pay', 'Payments API'),
-      P('gw', 'Payment gateway\n(external)', { style: { dash: 'dashed', fill: 'none' } }), P('bus', 'Event bus', { style: { line: 'amber' } })],
+    parts: [P('cust', 'Customer', { head: 'actor', style: { line: 'blue' } }), P('web', 'Web app'), P('orders', 'Orders API'), P('pay', 'Payments API'),
+      P('gw', 'Payment gateway\n(external)', { style: { dash: 'dashed', fill: 'none' } }), P('bus', 'Event bus', { head: 'queue', style: { line: 'amber' } })],
     rows: [
       M('m1', 'cust', 'web', 'Place order'), M('m2', 'web', 'orders', 'POST /orders'), M('m3', 'orders', 'orders', 'Validate cart'),
       M('m4', 'orders', 'pay', 'Authorize payment'), M('m5', 'pay', 'gw', 'Charge card'),
@@ -1518,9 +1521,16 @@ function seqLayout(fam = UI_STACK) {
   const nameFont = `500 13px ${fam}`, textFont = `500 12px ${fam}`;
   const linesOf = s => String(s).split('\n');
   const widest = (ls, f) => Math.ceil(Math.max(0, ...ls.map(t => textWidth(t, f))));
-  const P = S.parts.map(p => { const ls = linesOf(p.label); return { id: p.id, p, ls, w: Math.max(SEQ.minW, widest(ls, nameFont) + 2 * SEQ.padX), x: 0 }; });
+  const P = S.parts.map(p => {
+    const ls = linesOf(p.label), head = p.head || 'box', tw = widest(ls, nameFont) + 2 * SEQ.padX;
+    return { id: p.id, p, ls, head, w: head === 'actor' ? Math.max(SEQ.actorW, tw) : Math.max(SEQ.minW, tw + (head === 'queue' ? 2 * SEQ.qcap : 0)), x: 0 };
+  });
   const at = dict(); P.forEach((q, i) => { at[q.id] = i; });
-  const H = Math.max(SEQ.headH, ...P.map(q => q.ls.length * SEQ.nameLh + 22));
+  // Box, database and queue heads share one height; an actor is a figure with its name under it. All sit on the lifelines' start.
+  const boxH = Math.max(SEQ.headH, ...P.filter(q => q.head !== 'actor').map(q => q.ls.length * SEQ.nameLh + (q.head === 'database' ? 14 + 2 * SEQ.cap : 22)));
+  P.forEach(q => { q.hh = q.head === 'actor' ? SEQ.fig + 8 + q.ls.length * SEQ.nameLh : boxH; });
+  const H = Math.max(boxH, ...P.map(q => q.hh));
+  P.forEach(q => { q.top = H - q.hh; });
   // Each column goes as far left as the heads, labels and notes between it and the columns before it allow.
   const need = P.map(() => []);
   const apart = (i, j, d) => { if (i > j) [i, j] = [j, i]; if (i !== j && i >= 0 && j < P.length) need[j].push([i, d]); };
@@ -1654,9 +1664,28 @@ function seqMarkup(L, p) {
     `<text x="${r2(x)}" y="${r2(top + i * lh + lh / 2 + size * 0.35)}" text-anchor="${anchor}" ${attrs}>${esc(t)}</text>`).join('');
   let out = '';
   for (const q of P) out += `<line x1="${q.x}" y1="${H}" x2="${q.x}" y2="${end}" ${p.life(q)}/>` + p.lifeHit(q, H, end);
-  const head = (q, y, foot) => `<g ${p.part(q, foot)}><rect x="${q.x - q.w / 2}" y="${y}" width="${q.w}" height="${H}" rx="3" ${p.body(q)}/>`
-    + texts(q.ls, q.x, y + (H - q.ls.length * SEQ.nameLh) / 2, SEQ.nameLh, 13, p.name(q), 'middle') + '</g>';
-  for (const q of P) out += head(q, 0) + (S.settings.footbox ? head(q, end, true) : '');
+  // Heads: a box, a stick figure (name under it, or over it at the bottom), a cylinder, or a queue lying on its side.
+  const head = (q, foot) => {
+    const y = foot ? end : q.top, h = q.hh, w = q.w, x1 = q.x - w / 2, x2 = x1 + w, n = q.ls.length * SEQ.nameLh;
+    const name = (top, x = q.x) => texts(q.ls, x, top, SEQ.nameLh, 13, p.name(q), 'middle');
+    let shape;
+    if (q.head === 'actor') {
+      const fy = foot ? y + n + 6 : y + 2, x = q.x;
+      shape = `<circle cx="${x}" cy="${fy + 6}" r="6" ${p.body(q)}/>`
+        + `<path d="M${x},${fy + 12} V${fy + 24} M${x - 10},${fy + 16} H${x + 10} M${x - 8},${fy + SEQ.fig} L${x},${fy + 24} L${x + 8},${fy + SEQ.fig}" ${p.figure(q)}/>`
+        + name(foot ? y + 2 : fy + SEQ.fig + 4);
+    } else if (q.head === 'database') {
+      const c = SEQ.cap;
+      shape = `<path d="M${x1},${y + c} A${w / 2},${c} 0 0 1 ${x2},${y + c} V${y + h - c} A${w / 2},${c} 0 0 1 ${x1},${y + h - c} Z" ${p.body(q)}/>`
+        + `<path d="M${x1},${y + c} A${w / 2},${c} 0 0 0 ${x2},${y + c}" ${p.figure(q)}/>` + name(y + 2 * c + (h - 2 * c - n) / 2);
+    } else if (q.head === 'queue') {
+      const c = SEQ.qcap;
+      shape = `<path d="M${x1 + c},${y} H${x2 - c} A${c},${h / 2} 0 0 1 ${x2 - c},${y + h} H${x1 + c} A${c},${h / 2} 0 0 1 ${x1 + c},${y} Z" ${p.body(q)}/>`
+        + `<path d="M${x2 - c},${y} A${c},${h / 2} 0 0 0 ${x2 - c},${y + h}" ${p.figure(q)}/>` + name(y + (h - n) / 2, q.x - c / 2);
+    } else shape = `<rect x="${x1}" y="${y}" width="${w}" height="${h}" rx="3" ${p.body(q)}/>` + name(y + (h - n) / 2);
+    return `<g ${p.part(q, foot)}>${p.headHit(x1, y, w, h)}${shape}</g>`;
+  };
+  for (const q of P) out += head(q) + (S.settings.footbox ? head(q, true) : '');
   // Activation bars, then frames over them (their tabs and conditions stay readable), then the messages.
   for (const a of A) out += `<rect x="${a.x}" y="${r2(a.y1)}" width="${a.w}" height="${r2(a.y2 - a.y1)}" ${p.act(a)}/>`;
   // Frames go under the messages: a box, a tab naming the kind, the condition beside it, else lines across.
@@ -1951,7 +1980,8 @@ function cleanEdge(e) {
 function cleanSeq(s) {
   const list = v => Array.isArray(v) ? v.filter(o => isObj(o) && isId(o.id)) : [];
   const withStyle = (o, from) => { if (from.style) o.style = cleanStyle(from.style); return o; };
-  const parts = firstById(list(s.parts)).slice(0, MAX_PARTS).map(p => withStyle({ id: p.id, kind: 'participant', label: strOr(p.label) }, p));
+  const withHead = (o, from) => { const h = oneOf(from.head, valuesOf(HEADS), 'box'); if (h !== 'box') o.head = h; return o; };   // a box is the default, left out
+  const parts = firstById(list(s.parts)).slice(0, MAX_PARTS).map(p => withStyle(withHead({ id: p.id, kind: 'participant', label: strOr(p.label) }, p), p));
   const ids = new Set(parts.map(p => p.id)), has = v => isId(v) && ids.has(v);
   const rows = firstById(list(s.rows).filter(r => !ids.has(r.id))).flatMap(r => {
     if (r.kind === 'frame') return [{ id: r.id, kind: 'frame', type: oneOf(r.type, valuesOf(FRAME_TYPES), 'alt'), label: strOr(r.label) }];
@@ -2194,7 +2224,7 @@ A sequence diagram is a different kind of file: participants left to right, and 
     {"format": "snapblade", "version": 1, "diagram": {"type": "sequence", "parts": [...], "rows": [...], "settings": {...}, "title": {...}, "legend": {...}}}
 
 - \`type\` (required): \`"sequence"\`. Leave out \`nodes\` and \`edges\`; a sequence diagram doesn't use them.
-- \`parts\`: the participants, in order from left to right, at most ${MAX_PARTS}: \`{"id": "orders", "kind": "participant", "label": "Orders API"}\`. \`id\` follows the shape id rules, \`label\` is the text (\`\\n\` for a second line), \`kind\` may be left out, and \`style\` works as for boxes.
+- \`parts\`: the participants, in order from left to right, at most ${MAX_PARTS}: \`{"id": "orders", "kind": "participant", "label": "Orders API"}\`. \`id\` follows the shape id rules, \`label\` is the text (\`\\n\` for a second line), \`kind\` may be left out, and \`style\` works as for boxes. \`head\` is the head's shape, ${or(valuesOf(HEADS).map(q))}: an actor is a stick figure with the name under it, a database a cylinder, a queue a cylinder on its side. Leave it out for a box, the default.
 - \`rows\`: messages, notes and frame lines in the order things happen, at most ${MAX_ROWS}. Ids are unique across participants and rows.
 - A message: \`{"id": "m1", "from": "cust", "to": "web", "type": "sync", "label": "Place order"}\`. \`from\` and \`to\` are participant ids, the same one for a self-message; a message naming a participant that doesn't exist is dropped. \`type\` is ${or(valuesOf(MSG_TYPES).map(q))}: a call that waits for an answer (filled arrowhead), one that doesn't wait (open arrowhead), or the answer (dashed). Default \`"sync"\`. \`style\`: \`line\` and \`dash\` only; a reply is dashed unless \`dash\` says otherwise.
 - A note: \`{"id": "n1", "kind": "note", "side": "right", "on": ["gw"], "label": "Can take up to 5 s"}\`. \`side\` is ${or(valuesOf(NOTE_SIDES).map(q))}. \`on\` lists the participant it sits beside, or for \`"over"\` one or two participants (the note spans from one to the other). A note takes a row of its own. \`style\` works as for boxes.
@@ -2633,7 +2663,8 @@ function renderSeq() {
   const cls = (base, id) => `${base}${picked.has(id) ? ' sel' : ''}${id === ghost ? ' ghost' : ''}`;
   let h = canvasStart() + seqMarkup(L, {
     part: q => `class="${cls('part', q.id)}" data-role="part" data-id="${esc(q.id)}" style="${styleVars(q.p)}"`,
-    body: () => 'class="b-body"', name: () => 'class="s-name"',
+    body: () => 'class="b-body"', figure: () => 'class="b-line"', name: () => 'class="s-name"',
+    headHit: (x, y, w, h) => `<rect class="s-headhit" x="${x}" y="${y}" width="${w}" height="${h}"/>`,
     life: q => `class="s-life${q.id === hot ? ' hot' : seqNext ? ' pick' : q.id === selId ? ' sel' : ''}" style="${styleVars(q.p)}"`,
     lifeHit: (q, y1, y2) => `<rect class="s-lifehit" data-role="life" data-id="${esc(q.id)}" x="${q.x - 8}" y="${y1}" width="16" height="${y2 - y1}"/>`,
     msg: g => `class="${cls('msg', g.r.id)}" data-role="row" data-id="${esc(g.r.id)}" style="${styleVars(withDash(g.r))}"`,
@@ -2787,6 +2818,7 @@ function seqPanel(o) {
     return `<section>
       <p class="eyebrow">Participant</p>
       <label class="field"><span>Text</span><textarea id="f-label" data-field="label" rows="2">${esc(o.label)}</textarea></label>
+      <div class="field"><span>Head</span>${seg('partHead', HEADS, o.head || 'box')}</div>
       ${moveButtons('Move left', 'Move right')}
       <p class="meta">${n} message${n === 1 ? '' : 's'}</p>
     </section>
@@ -3215,6 +3247,7 @@ function onAct(b) {
   if (sel?.type === 'seq') {
     const o = seqItem(sel.id);
     if (act === 'msgType') o.type = val;
+    if (act === 'partHead') { if (val === 'box') delete o.head; else o.head = val; }
     if (act === 'noteSide') { o.side = val; if (val !== 'over') o.on = o.on.slice(0, 1); }
     if (act === 'reverse') [o.from, o.to] = [o.to, o.from];
     if (act === 'frameType') seqFrameType(o.id, val);
@@ -3359,7 +3392,10 @@ function openEdgeEditor(e) {
 function openSeqEditor(id, fresh) {
   const L = lastGeom.seq || seqLayout(), o = seqItem(id); if (!o) return;
   let b;
-  if (o.kind === 'participant') { const q = L.P.find(x => x.id === id); b = { x: q.x - q.w / 2, y: 0, w: q.w, h: L.H }; }
+  if (o.kind === 'participant') {
+    const q = L.P.find(x => x.id === id), x = q.x - q.w / 2;   // an actor's name is under its figure
+    b = q.head === 'actor' ? { x, y: q.top + SEQ.fig + 2, w: q.w, h: q.hh - SEQ.fig - 2 } : { x, y: q.top, w: q.w, h: q.hh };
+  }
   else {
     const g = L.R.find(x => x.r.id === id);
     if (g.mark === 'frame') b = { x: g.x1 + g.tw + 2, y: g.y - 4, w: Math.max(180, g.gw + 30), h: SEQ.tabH + 8 };
@@ -3864,7 +3900,7 @@ function guideHtml() {
       <li><b>Position</b>: ${b(labels(CORNERS))}, or drag the block toward a corner. Blocks sit just outside the diagram and never cover it. <b>Hide title block</b> and <b>Hide legend</b> turn them off.</li></ul>`],
     ['settings', 'Diagram settings', `<p>With nothing selected, a box diagram's <b>Diagram</b> panel holds: <b>Connector routing</b> (${b(labels(ROUTINGS))}), <b>Connector labels sit near</b> (${b(labels(LABEL_SPOTS))}), <b>Grid snap</b> (${b(labels(GRIDS))}, the step shapes move in), <b>Corner radius</b>, <b>Show anchor points</b> and <b>Shapes can't overlap</b>. A sequence diagram's settings are under Sequence diagrams. Settings belong to the tab they're set on.</p>`],
     ['seq', 'Sequence diagrams', `<p><b>New sequence diagram</b> in the File menu starts one. Participants run left to right and messages top to bottom. Nothing is placed by hand: columns are as wide as the labels between them need, and rows are evenly spaced.</p><ul>
-      <li><b>+ Participant</b> adds a participant after the selected one; double-clicking empty canvas adds one there. Drag a head sideways to reorder; the messages follow. A new sequence diagram stays centered on the canvas as it grows, until you pan or zoom.</li>
+      <li><b>+ Participant</b> adds a participant after the selected one; double-clicking empty canvas adds one there. Drag a head sideways to reorder; the messages follow. A participant's <b>Head</b> is ${b(labels(HEADS))}: an actor is a stick figure with its name under it, a database a cylinder and a queue a cylinder on its side, with the name inside. A new sequence diagram stays centered on the canvas as it grows, until you pan or zoom.</li>
       <li>Drag from one lifeline to another to add a message at that row (rows below shift down). Drag along a lifeline and let go on it for a self-message. Type the label and press Enter: then click the lifeline the next message goes to, and keep going. Esc stops.</li>
       <li>Drag a message or note up or down to move its row. The arrow keys do the same (left and right for a participant).</li>
       <li>The <b>Message</b> panel sets its <b>Label</b>, <b>From</b> and <b>To</b>, and its <b>Kind</b>: ${b(labels(MSG_TYPES))}. Sync is a call that waits (filled arrowhead), Async doesn't wait (open arrowhead), Reply is the answer (dashed). A message that answers a call still waiting for its answer starts out as a Reply. <b>Move up</b>, <b>Move down</b> and <b>Reverse direction</b> are there too.</li>
@@ -4251,8 +4287,9 @@ function buildExportSvg(o) {
   if (seq) {
     const ink = parseColor(T.ink).hex, frameInk = parseColor(T['ink-2']).hex, col = q => exportColors(q, T), fo = c => c.fo < 1 ? ` fill-opacity="${c.fo}"` : '';
     out += seqMarkup(seq, {
-      part: () => '', lifeHit: () => '', hit: () => '', msg: () => '', note: () => '',
+      part: () => '', lifeHit: () => '', headHit: () => '', hit: () => '', msg: () => '', note: () => '',
       body: q => { const c = col(q.p); return `fill="${c.fill}"${fo(c)} stroke="${c.line}" stroke-width="1.5"${dash(q.p.style)}`; },
+      figure: q => `fill="none" stroke="${col(q.p).line}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"${dash(q.p.style)}`,
       name: () => `${fontAttrs(13, 500)} fill="${ink}"`,
       life: q => `stroke="${q.p.style?.line ? col(q.p).line : parseColor(T['group-stroke']).hex}" stroke-width="1.25" stroke-dasharray="5 4"`,
       line: g => `fill="none" stroke="${col(g.r).line}" stroke-width="1.5" stroke-linejoin="round"${dash(withDash(g.r).style)}`,

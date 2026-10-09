@@ -1075,6 +1075,44 @@ test('sequence frames: drag a box over rows to select them, Shift+drag adds to t
   assert.deepEqual(h.errors, []);
 });
 
+test('sequence heads: pick actor, database or queue in the participant panel; undo, export and reload keep it', async () => {
+  const h = await open(), { page } = h;
+  await seqSampleOn(h);
+  const headAt = id => h.ev(id => { const q = lastGeom.seq.P.find(q => q.id === id), r = svg.getBoundingClientRect(); return { x: r.left + view.x + q.x * view.k, y: r.top + view.y + (q.top + q.hh / 2) * view.k }; }, id);
+  // The sample's Customer is an actor and its Event bus a queue; lifelines start below the actor's name.
+  assert.deepEqual(await h.ev(() => S.parts.map(p => p.head || 'box')), ['actor', 'box', 'box', 'box', 'box', 'queue']);
+  assert.equal(await h.ev(() => document.querySelectorAll('#cv .part circle').length), 2, 'the actor at the top and the bottom');
+  // Click Payment gateway and make it a database.
+  await page.mouse.click(...Object.values(await headAt('gw')));
+  assert.deepEqual(await h.ev(() => sel), { type: 'seq', id: 'gw' });
+  assert.equal(await page.getAttribute('#panel button[data-act="partHead"][data-val="box"]', 'aria-pressed'), 'true');
+  await h.button('Database');
+  assert.equal(await h.ev(() => S.parts.find(p => p.id === 'gw').head), 'database');
+  assert.equal(await page.getAttribute('#panel button[data-act="partHead"][data-val="database"]', 'aria-pressed'), 'true');
+  assert.equal(await h.ev(() => document.querySelectorAll('#cv .part[data-id="gw"] .b-line').length), 2, 'a cylinder, top and bottom');
+  // Still selectable by clicking it, and Box puts it back (no head key left behind). Undo brings the database back.
+  await page.keyboard.press('Escape');
+  await page.mouse.click(...Object.values(await headAt('gw')));
+  await h.button('Box');
+  assert.equal(await h.ev(() => 'head' in S.parts.find(p => p.id === 'gw')), false);
+  await page.keyboard.press('Control+z');
+  assert.equal(await h.ev(() => S.parts.find(p => p.id === 'gw').head), 'database');
+  // Renaming an actor opens the editor over its name, under the figure.
+  await page.keyboard.press('Escape');
+  await page.mouse.click(...Object.values(await headAt('cust'))); await page.keyboard.press('F2');
+  const ed = await h.ev(() => { const e = editor.getBoundingClientRect(), q = lastGeom.seq.P[0], r = svg.getBoundingClientRect(); return { top: e.top, figure: r.top + view.y + (q.top + SEQ.fig) * view.k }; });
+  assert.ok(ed.top >= ed.figure - 4, 'the editor sits under the figure');
+  await page.keyboard.press('Escape');
+  // Exports draw the heads in plain colors; a reload keeps them.
+  const svgText = await h.ev(() => buildExportSvg({ theme: 'light', background: 'white', scope: 'all' }).svg);
+  assert.ok(svgText.includes('<circle') && / A[\d.]+,5 0 0 1 /.test(svgText), 'actor figure and database cylinder in the export');
+  assert.ok(!svgText.includes('var(--'), 'no CSS variables in the export');
+  const kept = await h.ev(() => JSON.parse(JSON.stringify(S)));
+  await page.reload(); await page.waitForTimeout(300);
+  assert.deepStrictEqual(await h.ev(() => JSON.parse(JSON.stringify(S))), kept);
+  assert.deepEqual(h.errors, []);
+});
+
 test('sequence diagrams export to SVG and PNG, and come back from a saved file unchanged', async () => {
   const h = await open(), { page } = h;
   await seqSampleOn(h);

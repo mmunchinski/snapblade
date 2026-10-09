@@ -156,7 +156,7 @@ A sequence diagram is a different kind of file: participants left to right, and 
     {"format": "snapblade", "version": 1, "diagram": {"type": "sequence", "parts": [...], "rows": [...], "settings": {...}, "title": {...}, "legend": {...}}}
 
 - `type` (required): `"sequence"`. Leave out `nodes` and `edges`; a sequence diagram doesn't use them.
-- `parts`: the participants, in order from left to right, at most 100: `{"id": "orders", "kind": "participant", "label": "Orders API"}`. `id` follows the shape id rules, `label` is the text (`\n` for a second line), `kind` may be left out, and `style` works as for boxes.
+- `parts`: the participants, in order from left to right, at most 100: `{"id": "orders", "kind": "participant", "label": "Orders API"}`. `id` follows the shape id rules, `label` is the text (`\n` for a second line), `kind` may be left out, and `style` works as for boxes. `head` is the head's shape, "box", "actor", "database" or "queue": an actor is a stick figure with the name under it, a database a cylinder, a queue a cylinder on its side. Leave it out for a box, the default.
 - `rows`: messages, notes and frame lines in the order things happen, at most 1000. Ids are unique across participants and rows.
 - A message: `{"id": "m1", "from": "cust", "to": "web", "type": "sync", "label": "Place order"}`. `from` and `to` are participant ids, the same one for a self-message; a message naming a participant that doesn't exist is dropped. `type` is "sync", "async" or "reply": a call that waits for an answer (filled arrowhead), one that doesn't wait (open arrowhead), or the answer (dashed). Default `"sync"`. `style`: `line` and `dash` only; a reply is dashed unless `dash` says otherwise.
 - A note: `{"id": "n1", "kind": "note", "side": "right", "on": ["gw"], "label": "Can take up to 5 s"}`. `side` is "left", "right" or "over". `on` lists the participant it sits beside, or for `"over"` one or two participants (the note spans from one to the other). A note takes a row of its own. `style` works as for boxes.
@@ -173,12 +173,12 @@ The sequence sample that ships with Snapblade:
   "diagram": {
     "type": "sequence",
     "parts": [
-      {"id":"cust","kind":"participant","label":"Customer","style":{"line":"blue"}},
+      {"id":"cust","kind":"participant","label":"Customer","head":"actor","style":{"line":"blue"}},
       {"id":"web","kind":"participant","label":"Web app"},
       {"id":"orders","kind":"participant","label":"Orders API"},
       {"id":"pay","kind":"participant","label":"Payments API"},
       {"id":"gw","kind":"participant","label":"Payment gateway\n(external)","style":{"dash":"dashed","fill":"none"}},
-      {"id":"bus","kind":"participant","label":"Event bus","style":{"line":"amber"}}
+      {"id":"bus","kind":"participant","label":"Event bus","head":"queue","style":{"line":"amber"}}
     ],
     "rows": [
       {"id":"m1","from":"cust","to":"web","type":"sync","label":"Place order"},

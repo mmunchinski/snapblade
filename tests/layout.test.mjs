@@ -204,8 +204,9 @@ test('every option the panels offer survives a reload and a file round trip', ()
     for (const k in settings) for (const v of settings[k]) { S.settings[k] = v; trip('settings.' + k + ' = ' + v); }
     S = normalize(seqSample());
     for (const [type] of FRAME_TYPES) { seqWrap('m1', 'm2', type, type + ' label'); if (BRANCHED.includes(type)) seqAddElse(S.rows[0].id); }
+    for (const [head] of HEADS) S.parts.push({ id: 'h-' + head, kind: 'participant', label: head, ...(head === 'box' ? {} : { head }) });
     for (const [t] of MSG_TYPES) for (const [side] of NOTE_SIDES) S.rows.push({ id: 'r' + i++, from: 'web', to: 'orders', type: t, label: t }, { id: 'r' + i++, kind: 'note', side, on: ['web'], label: side });
-    trip('a sequence diagram with every kind of frame, message and note');
+    trip('a sequence diagram with every kind of head, frame, message and note');
     return trips;
   })()`);
   assert.ok(trips.length > 20);
@@ -474,6 +475,29 @@ test('sequence: columns make room for every head, label and note, and rows never
   assert.equal(L.bounds.y2, L.end + L.H, 'participants at the bottom too');
   run('S.settings.footbox = false');
   assert.equal(json('seqLayout().bounds.y2'), json('seqLayout().end'));
+});
+
+test('sequence heads: actor, database and queue heads sit on their lifelines; a box head stays out of the file', () => {
+  run(`S = normalize({ type: 'sequence', parts: [{ id: 'a', label: 'Customer', head: 'actor' }, { id: 'b', label: 'Orders', head: 'database' },
+    { id: 'c', label: 'Events', head: 'queue' }, { id: 'd', label: 'Events', head: 'box' }, { id: 'e', label: 'X', head: '<svg onload=1>' }],
+    rows: [{ id: 'm', from: 'a', to: 'b', label: 'hi' }] })`);
+  assert.deepEqual(json('S.parts.map(p => p.head || null)'), ['actor', 'database', 'queue', null, null], 'box and anything unknown are left out');
+  const L = json('(() => { const L = seqLayout(); return { H: L.H, P: L.P.map(q => ({ id: q.id, head: q.head, w: q.w, hh: q.hh, top: q.top })) }; })()');
+  const q = Object.fromEntries(L.P.map(o => [o.id, o]));
+  assert.deepEqual(['b', 'c', 'd', 'e'].map(id => q[id].hh), Array(4).fill(json('SEQ.headH')), 'box, database and queue heads share the box height');
+  assert.ok(q.a.hh > q.d.hh, 'the actor (figure and name) is taller');
+  assert.equal(L.H, q.a.hh, 'lifelines start below the tallest head');
+  for (const o of L.P) assert.equal(o.top + o.hh, L.H, `${o.id} sits on its lifeline`);
+  assert.ok(q.c.w > q.d.w || q.d.w === json('SEQ.minW') && q.c.w >= q.d.w, 'a queue makes room for its round end');
+  // Drawn: one figure per actor head (two with participants at the bottom too), cylinders as arcs.
+  const draw = json(`seqMarkup(seqLayout(), new Proxy({}, { get: () => () => '' }))`);
+  assert.equal((draw.match(/<circle/g) || []).length, 2);
+  assert.ok((draw.match(/ A[\d.]+,[\d.]+ 0 0 1 /g) || []).length >= 4, 'database and queue are drawn round');
+  run('S.settings.footbox = false');
+  assert.equal((json(`seqMarkup(seqLayout(), new Proxy({}, { get: () => () => '' }))`).match(/<circle/g) || []).length, 1);
+  // A diagram of boxes keeps the head row it had.
+  run(`S = normalize({ type: 'sequence', parts: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B', head: 'database' }], rows: [] })`);
+  assert.equal(json('seqLayout().H'), json('SEQ.headH'));
 });
 
 test('sequence: numbering prefixes messages only, and widens the columns it needs to', () => {
