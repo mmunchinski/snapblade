@@ -380,7 +380,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 35</span>
+      Snapblade <span class="tag">playground &middot; build 36</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -1712,6 +1712,17 @@ function seqMarkup(L, p) {
 // Where a row or column would go, for drops and their previews. skip: the one being moved.
 const rowsBut = (L, skip) => L.R.filter(g => g.r.id !== skip);
 const seqIndexAt = (L, y, skip) => rowsBut(L, skip).filter(g => g.y + g.h / 2 < y).length;
+// The rows a selection box picks: every row whose middle is between its top and bottom (left and right don't matter),
+// added to the run kept with Shift. A frame's bottom edge stands for its frame, as clicking it does.
+function seqBoxRun(L, d) {
+  const y1 = Math.min(d.start.y, d.cur.y), y2 = Math.max(d.start.y, d.cur.y);
+  const at = L.R.filter(g => g.y + g.h / 2 >= y1 && g.y + g.h / 2 <= y2).map(g => S.rows.findIndex(r => r.id === g.r.id));
+  if (d.keep) at.push(...seqSpan(d.keep.id, d.keep.to || d.keep.id));
+  if (!at.length) return d.keep;
+  const pick = i => S.rows[i].kind === 'end' ? seqOwner(S.rows[i].id) : S.rows[i].id;
+  const a = pick(Math.min(...at)), b = pick(Math.max(...at));
+  return a === b ? { type: 'seq', id: a } : { type: 'seq', id: a, to: b };
+}
 // Where a row dragged to y lands. A frame's edge or else line stops at the nearest spot that keeps it in its frame.
 function seqDropAt(L, y, id) {
   let k = seqIndexAt(L, y, id);
@@ -2613,10 +2624,11 @@ function render() {
 }
 // A sequence diagram: drawn from seqLayout(), with previews for the drag in progress.
 function renderSeq() {
-  const L = seqLayout(), selId = sel?.type === 'seq' ? sel.id : null, d = drag?.moved ? drag : null;
+  const L = seqLayout(), d = drag?.moved ? drag : null;
   if (view.follow) followView(L);
+  const cur = d?.kind === 'rowbox' ? seqBoxRun(L, d) : sel, selId = cur?.type === 'seq' ? cur.id : null;   // a box shows what it would pick
   const ghost = d && (d.kind === 'rowmove' || d.kind === 'partmove') && !seqOwner(d.id) ? d.id : null, hot = d?.kind === 'msgnew' ? d.over : seqNext?.from;
-  const span = sel?.to && seqSpan(sel.id, sel.to), picked = new Set(span ? S.rows.slice(span[0], span[1] + 1).map(r => r.id) : [selId]);
+  const span = cur?.to && seqSpan(cur.id, cur.to), picked = new Set(span ? S.rows.slice(span[0], span[1] + 1).map(r => r.id) : [selId]);
   lastGeom = { R: {}, labels: dict(), seq: L };
   const cls = (base, id) => `${base}${picked.has(id) ? ' sel' : ''}${id === ghost ? ' ghost' : ''}`;
   let h = canvasStart() + seqMarkup(L, {
@@ -2643,6 +2655,7 @@ function renderSeq() {
   }
   if (d?.kind === 'rowmove') { const y = seqGapY(L, seqDropAt(L, d.cur.y, d.id), d.id); h += `<line class="s-gap" x1="${L.bounds.x1 - 12}" y1="${y}" x2="${L.bounds.x2 + 12}" y2="${y}"/>`; }
   if (d?.kind === 'partmove') { const x = seqGapX(L, seqColAt(L, d.cur.x, d.id), d.id); h += `<line class="s-gap" x1="${x}" y1="-12" x2="${x}" y2="${L.bounds.y2 + 12}"/>`; }
+  if (d?.kind === 'rowbox') { const r = rectOf(d.start, d.cur); h += `<rect class="marquee" x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}"/>`; }
   canvasDone(canvasEnd(h, L.bounds));
 }
 function seqStatus() {
@@ -2650,12 +2663,16 @@ function seqStatus() {
   if (drag?.kind === 'msgnew') return drag.over ? `${name(drag.from)} → ${name(drag.over)}${drag.over === drag.from ? '  ·  self-message' : ''}` : `Message from ${name(drag.from)}: drop on a lifeline (its own for a self-message)`;
   if (drag?.kind === 'rowmove' && drag.moved) return seqOwner(drag.id) ? 'Drop where this edge of the frame should go. It takes in the rows it passes.' : 'Drop where the row should go';
   if (drag?.kind === 'partmove' && drag.moved) return 'Drop where the participant should go';
+  if (drag?.kind === 'rowbox' && drag.moved) {
+    const run = seqBoxRun(lastGeom.seq || seqLayout(), drag), span = run && seqSpan(run.id, run.to || run.id), k = span ? span[1] - span[0] + 1 : 0;
+    return k ? `${k} row${k === 1 ? '' : 's'}  ·  release to select, then + Frame` : 'Drag over the rows to select. Only how far up and down the box reaches counts.';
+  }
   if (seqNext) return `Next message from ${name(seqNext.from)}: click the lifeline it goes to (its own for a self-message). Esc to stop.`;
   if (!o) {
     const count = (k, word) => `${k} ${word}${k === 1 ? '' : 's'}`, n = f => S.rows.filter(f).length, frames = n(r => r.kind === 'frame');
     return [count(S.parts.length, 'participant'), count(n(isMsg), 'message'), count(n(isNote), 'note'), ...(frames ? [count(frames, 'frame')] : [])].join('  ·  ');
   }
-  if (sel.to) { const [i, j] = seqSpan(sel.id, sel.to); return `${j - i + 1} rows  ·  + Frame puts them in a frame  ·  Shift+click another row to change the run`; }
+  if (sel.to) { const [i, j] = seqSpan(sel.id, sel.to); return `${j - i + 1} rows  ·  + Frame puts them in a frame  ·  Shift+click a row or Shift+drag a box to change the run`; }
   if (o.kind === 'frame') return `${o.type} frame  ·  drag its top or bottom edge to take in more or fewer rows  ·  ↑/↓ moves it`;
   if (o.kind === 'else') return `${secWord(seqFrames()[seqOwner(o.id)]?.r.type)} line  ·  drag it or press ↑/↓ to move it`;
   if (o.kind === 'participant') return `Participant  ·  ${S.rows.filter(r => isMsg(r) && (r.from === o.id || r.to === o.id)).length} messages  ·  ←/→ moves it`;
@@ -2825,14 +2842,14 @@ function seqPanel(o) {
     ${styleSections([o])}
     <div class="row"><button class="btn" type="button" data-act="reverse">Reverse direction</button><button class="btn" type="button" data-act="duplicate">Duplicate</button><button class="btn danger" type="button" data-act="delete">Delete message</button></div>`;
 }
-// A run of rows, picked with Shift+click.
+// A run of rows, picked with Shift+click or a selection box.
 function seqRunPanel() {
   const [i, j] = seqSpan(sel.id, sel.to), rows = S.rows.slice(i, j + 1), n = f => rows.filter(f).length;
   return `<section>
     <p class="eyebrow">Rows</p>
     <p class="meta">${n(isMsg)} messages, ${n(isNote)} notes${n(r => r.kind === 'frame') ? `, ${n(r => r.kind === 'frame')} frames` : ''}</p>
     <div class="field"><span>Put in a frame</span>${seg('wrap', FRAME_TYPES, null)}</div>
-    <p class="desc">Shift+click another row to change the run. A frame the run cuts into is taken in whole.</p>
+    <p class="desc">Shift+click another row, or Shift+drag a box over more rows, to change the run. A frame the run cuts into is taken in whole.</p>
   </section>
   <div class="row"><button class="btn danger" type="button" data-act="delete">Delete rows</button></div>
   <p class="desc">Deleting rows keeps the frames that reach outside them.</p>`;
@@ -3277,10 +3294,10 @@ function addSeqNote() {
   sel = { type: 'seq', id: n.id }; seqNext = null;
   refresh(true, true); openSeqEditor(n.id, true);
 }
-// Put the selected rows (a message, a note, or a run picked with Shift+click) in a new frame, then type its condition.
+// Put the selected rows (a message, a note, or a run picked with Shift+click or a box) in a new frame, then type its condition.
 function addFrame(type) {
   closeMenu();
-  if (!(sel?.type === 'seq' && S.rows.some(r => r.id === sel.id))) { toast('Select a message or note first. Shift+click another row to take in the rows between.', true); return; }
+  if (!(sel?.type === 'seq' && S.rows.some(r => r.id === sel.id))) { toast('Select a message or note first, or drag a box over the rows to frame.', true); return; }
   const before = snapshot(), f = seqWrap(sel.id, sel.to || sel.id, type);
   if (!f) { toast(`Frames can sit at most ${MAX_DEPTH} deep.`, true); return; }
   keepUndo(before);
@@ -3404,9 +3421,9 @@ function onDown(ev) {
   // The browser never pairs our clicks into a dblclick (the canvas redraws on press, replacing the
   // element under the pointer), so detect a second press close in time and place ourselves.
   const now = performance.now();
-  const isDouble = ev.button === 0 && !(ev.shiftKey || ev.ctrlKey || ev.metaKey) &&
-    now - lastPress.t < 450 && Math.hypot(ev.clientX - lastPress.x, ev.clientY - lastPress.y) < 6;
-  lastPress = isDouble ? { t: 0, x: 0, y: 0 } : { t: now, x: ev.clientX, y: ev.clientY };
+  const plain = ev.button === 0 && !(ev.shiftKey || ev.ctrlKey || ev.metaKey);   // Shift/Ctrl presses never start or finish one
+  const isDouble = plain && now - lastPress.t < 450 && Math.hypot(ev.clientX - lastPress.x, ev.clientY - lastPress.y) < 6;
+  lastPress = isDouble || !plain ? { t: 0, x: 0, y: 0 } : { t: now, x: ev.clientX, y: ev.clientY };
   if (isDouble && !spaceDown) { drag = { kind: 'double', p }; return; }
   const additive = ev.shiftKey || ev.ctrlKey || ev.metaKey;
   if (ev.button === 1 || ev.button === 2 || spaceDown) {   // middle- or right-drag pans
@@ -3575,7 +3592,12 @@ function doubleAt(p) {
 function seqDown(p, role, id, additive) {
   if (seqNext && (role === 'life' || role === 'part')) { drag = { kind: 'chain', to: id }; return; }
   seqNext = null;
-  if (!role) { select(null); drag = null; render(); return; }
+  // Empty canvas: drag a box over rows to select them as a run (Shift adds to the run already selected).
+  if (!role) {
+    const keep = additive && sel?.type === 'seq' && S.rows.some(r => r.id === sel.id) ? sel : null;
+    if (!additive) select(null);
+    drag = { kind: 'rowbox', start: p, cur: p, keep, moved: false }; render(); return;
+  }
   // A frame's bottom edge selects the frame; dragging it moves the edge.
   const pick = role === 'row' && S.rows.find(r => r.id === id)?.kind === 'end' ? seqOwner(id) : id;
   // Shift+click a second row: the run from the first one to it.
@@ -3598,6 +3620,7 @@ function seqUp(d, p) {
   // New messages open their label editor once the press has finished moving focus around.
   if (d.kind === 'chain') { const { from, after } = seqNext || {}; seqNext = null; setTimeout(() => seqAddAfter(from, d.to, after), 0); return; }
   if (!d.moved) { render(); return; }
+  if (d.kind === 'rowbox') { select(seqBoxRun(L, d)); render(); return; }
   if (d.kind === 'msgnew') {
     const to = seqLifeAt(L, p.x, 20 / view.k), i = seqIndexAt(L, d.start.y);
     if (to) setTimeout(() => seqAddAfter(d.from, to.id, S.rows[i - 1]?.id ?? null), 0); else render();
@@ -3847,7 +3870,7 @@ function guideHtml() {
       <li>The <b>Message</b> panel sets its <b>Label</b>, <b>From</b> and <b>To</b>, and its <b>Kind</b>: ${b(labels(MSG_TYPES))}. Sync is a call that waits (filled arrowhead), Async doesn't wait (open arrowhead), Reply is the answer (dashed). A message that answers a call still waiting for its answer starts out as a Reply. <b>Move up</b>, <b>Move down</b> and <b>Reverse direction</b> are there too.</li>
       <li><b>+ Note</b> adds a <b>Note</b> below the selected row. Its <b>Position</b> is ${b(labels(NOTE_SIDES))} its <b>Participant</b>; an Over note <b>Spans to</b> a second one. A note takes its own row, so nothing overlaps.</li>
       <li>The <b>Participant</b> panel has <b>Move left</b> and <b>Move right</b>; <b>Delete participant</b> also deletes its messages and notes. Participants, messages and notes take colors and patterns like boxes and connectors, and get legend rows the same way.</li>
-      <li><b>+ Frame</b> puts the selected message or note in a frame: ${FRAME_TYPES.map(([v, l]) => `<b>${l}</b> (${FRAME_HINTS[v]})`).join(', ')}. To take in several rows, click the first and Shift+click the last; the <b>Rows</b> panel then offers <b>Put in a frame</b> and <b>Delete rows</b> too. A frame the rows cut into is taken in whole. Type the condition and press Enter; it shows in brackets beside the kind.</li>
+      <li><b>+ Frame</b> puts the selected message or note in a frame: ${FRAME_TYPES.map(([v, l]) => `<b>${l}</b> (${FRAME_HINTS[v]})`).join(', ')}. To take in several rows, drag a box over them from empty canvas (only how far up and down it reaches counts; Shift+drag adds to the rows already selected), or click the first and Shift+click the last; the <b>Rows</b> panel then offers <b>Put in a frame</b> and <b>Delete rows</b> too. A frame the rows cut into is taken in whole. Type the condition and press Enter; it shows in brackets beside the kind.</li>
       <li>The <b>Frame</b> panel sets its <b>Kind</b> and <b>Condition</b>. In an Alt, <b>+ Else line</b> starts another section (in a Par, <b>+ And line</b>): it goes in at the bottom of the frame, and you drag it up to where its section starts. An <b>Else line</b> or <b>And line</b> has its own Condition, and <b>Delete line</b>. Switching to Opt or Loop removes the lines, not the rows.</li>
       <li>Drag a frame's top or bottom edge to take in more or fewer rows; a message dragged past an edge moves in or out. <b>Move up</b> and <b>Move down</b> (or the arrow keys) move the whole frame with what's in it. <b>Remove frame</b> or the Delete key takes the frame away and keeps what was inside; <b>Delete with contents</b> takes everything. Frames nest, and each one is as wide as the lifelines its rows touch.</li>
       <li><b>Duplicate</b> (Ctrl+D) puts a copy of a message, note, frame (with what's in it) or participant right after it. <b>Delete message</b>, <b>Delete note</b>, <b>Delete participant</b> or the Delete key removes one.</li>
@@ -3889,7 +3912,7 @@ function helpHtml() {
       <dt>Alt+drag</dt><dd>Move or resize a shape so it overlaps others (shapes otherwise stay ${WALL} px apart)</dd>
       <dt>Delete</dt><dd>Remove selection</dd>
       <dt>Ctrl+Z / Ctrl+Y</dt><dd>Undo / redo</dd>
-      <dt>Drag canvas</dt><dd>Select the shapes inside the box</dd>
+      <dt>Drag canvas</dt><dd>Select the shapes inside the box. In a sequence diagram, the rows it reaches from top to bottom (Shift adds to the run)</dd>
       <dt>Shift/Ctrl+click</dt><dd>Add or remove a shape from the selection</dd>
       <dt>Ctrl+C / X / V</dt><dd>Copy, cut, paste. Ctrl+D duplicates, Ctrl+A selects all</dd>
       <dt>Ctrl+S / Ctrl+O</dt><dd>Save to a file / open one (or drop a file on the canvas)</dd>
@@ -3920,7 +3943,7 @@ function helpHtml() {
     <ol class="try">
       <li>Drag from the <b>Customer</b> lifeline to <b>Web app</b> between two messages. Type a label, press Enter, then click the next lifeline.</li>
       <li>Drag <b>Validate cart</b> down a few rows, or select it and press the arrow keys.</li>
-      <li>Click <b>Authorize payment</b>, Shift+click <b>Result</b>, then <b>+ Frame</b> &gt; Loop and type <code>up to 3 tries</code>.</li>
+      <li>Drag a box from beside <b>Authorize payment</b> down past <b>Result</b>, then <b>+ Frame</b> &gt; Loop and type <code>up to 3 tries</code>.</li>
       <li>Drag the bottom edge of the alt frame up past <b>Show payment error</b> to leave it out.</li>
       <li>Select <b>Payments API</b> and click <b>+ Note</b>: a note goes right of its lifeline, ready to type.</li>
       <li>Select a message and switch its Kind between Sync, Async and Reply.</li>

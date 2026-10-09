@@ -1021,6 +1021,60 @@ test('sequence frames: Shift+click a run, + Frame, type the condition, drag an e
   assert.deepEqual(h.errors, []);
 });
 
+test('sequence frames: drag a box over rows to select them, Shift+drag adds to the run, then + Frame', async () => {
+  const h = await open(), { page } = h;
+  await seqSampleOn(h);
+  // Screen y of a row's middle, and an x left of the whole diagram (empty canvas).
+  const midY = id => h.ev(id => { const g = lastGeom.seq.R.find(g => g.r.id === id), r = svg.getBoundingClientRect(); return r.top + view.y + (g.y + g.h / 2) * view.k; }, id);
+  const left = await h.ev(() => svg.getBoundingClientRect().left + view.x + (lastGeom.seq.bounds.x1 - 30) * view.k);
+  const box = async (a, b, w = 400) => { await page.mouse.move(left, a); await page.mouse.down(); await page.mouse.move(left + w, b, { steps: 6 }); };
+  // Box from just above Authorize payment to just below Result: those four rows, highlighted while dragging.
+  await box((await midY('m4')) - 8, (await midY('m6')) + 8);
+  assert.ok(await page.locator('#cv .marquee').count(), 'the box shows while dragging');
+  assert.equal(await h.ev(() => document.querySelectorAll('#cv .sel').length), 4, 'the rows it catches light up as you drag');
+  assert.match(await page.textContent('#status'), /4 rows/);
+  await page.mouse.up();
+  assert.deepEqual(await h.ev(() => sel), { type: 'seq', id: 'm4', to: 'm6' });
+  assert.match(await page.textContent('#panel'), /Put in a frame/);
+  // + Frame > Opt puts exactly those rows in a frame.
+  await page.click('#addFrame'); await page.click('[data-frame="opt"]');
+  await page.keyboard.type('card on file'); await page.keyboard.press('Enter');
+  const all = await ids(h), opt = await h.ev(() => sel.id);
+  assert.deepEqual(all.slice(all.indexOf(opt), all.indexOf(opt) + 6), [opt, 'm4', 'm5', 'n1', 'm6', all[all.indexOf('m6') + 1]]);
+  assert.equal(await h.ev(i => S.rows[i].kind, all.indexOf('m6') + 1), 'end');
+  await page.keyboard.press('Control+z');
+  // Only how far up and down the box reaches counts, not how far across: a narrow box beside the diagram still picks.
+  // A box that cuts into the alt frame takes it in whole, as + Frame does.
+  await box((await midY('m6')) - 8, (await midY('m7')) + 8, 20); await page.mouse.up();
+  assert.deepEqual(await h.ev(() => sel), { type: 'seq', id: 'm6', to: 'm7' });
+  assert.deepEqual(await h.ev(() => seqSpan(sel.id, sel.to).map(i => S.rows[i].id)), ['m6', 'f1x']);
+  // Shift+drag adds to the run: click Place order, then Shift+box Validate cart.
+  await page.mouse.click(...Object.values(await seqRow(h, 'm1')));
+  await page.keyboard.down('Shift');
+  await box((await midY('m3')) - 8, (await midY('m3')) + 8); await page.mouse.up();
+  await page.keyboard.up('Shift');
+  assert.deepEqual(await h.ev(() => sel), { type: 'seq', id: 'm1', to: 'm3' });
+  // A box over the alt frame's bottom edge alone selects its frame, as clicking that edge does.
+  await box((await midY('f1x')) - 4, (await midY('f1x')) + 4); await page.mouse.up();
+  assert.deepEqual(await h.ev(() => sel), { type: 'seq', id: 'f1' });
+  // A box that catches no rows, or a click on empty canvas, clears the selection; Shift keeps it.
+  await page.mouse.click(...Object.values(await seqRow(h, 'm2')));
+  await page.keyboard.down('Shift');
+  await box(await h.ev(() => svg.getBoundingClientRect().top + 4), await h.ev(() => svg.getBoundingClientRect().top + 20)); await page.mouse.up();
+  await page.keyboard.up('Shift');
+  assert.deepEqual(await h.ev(() => sel), { type: 'seq', id: 'm2' });
+  await box(await h.ev(() => svg.getBoundingClientRect().top + 4), await h.ev(() => svg.getBoundingClientRect().top + 20)); await page.mouse.up();
+  assert.equal(await h.ev(() => sel), null);
+  // Delete works on a boxed run, as one undo step.
+  const before = await ids(h);
+  await box((await midY('m2')) - 8, (await midY('m3')) + 8); await page.mouse.up();
+  await page.keyboard.press('Delete');
+  assert.deepEqual(await ids(h), before.filter(id => id !== 'm2' && id !== 'm3'));
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await ids(h), before);
+  assert.deepEqual(h.errors, []);
+});
+
 test('sequence diagrams export to SVG and PNG, and come back from a saved file unchanged', async () => {
   const h = await open(), { page } = h;
   await seqSampleOn(h);
