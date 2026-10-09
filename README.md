@@ -25,7 +25,7 @@ Manual tools (Visio, draw.io, Lucidchart) give you full control, and then you sp
 - **Shapes that can't overlap.** Shapes side by side stay at least 20 px apart, so connectors always have room between them. A dragged shape stops at the wall and slides along it, a resized edge stops at it, and a container that grows pushes its neighbors out of the way. Hold Alt to overlap anyway, or turn it off for the diagram.
 - **Connector labels.** Placed near the start, center or end, and kept clear of boxes, other labels and other connectors.
 - **Arrange.** Line a selection up as a row or a column (tops, middles, bottoms, lefts, centers or rights) with kept, even or fixed spacing, without ever stacking shapes on top of each other. Straighten moves shapes just enough that their connectors run straight.
-- **Sequence diagrams.** Participants and messages laid out automatically: columns as wide as their labels need, rows evenly spaced. Drag from one lifeline to another to add a message at that row, drag rows and participants to reorder, and press Enter after a label to go straight on to the next message. Sync, async and reply messages, self-messages, notes beside or across lifelines, message numbering. Activation bars draw themselves from each call to its reply. Alt, opt, loop and par frames around a run of rows, with else (or and) sections and conditions; frames nest and size themselves to the lifelines they cover, and you drag a frame's edge to take in more rows.
+- **Sequence diagrams.** Participants and messages laid out automatically: columns as wide as their labels need, rows evenly spaced. Drag from one lifeline to another to add a message at that row, drag rows and participants to reorder, and press Enter after a label to go straight on to the next message. Sync, async and reply messages, self-messages, notes beside or across lifelines, message numbering. Activation bars draw themselves: a participant that's called is busy until it replies, and the caller waits with it. A new message that answers a waiting call starts out as a reply. Alt, opt, loop and par frames around a run of rows, with else (or and) sections and conditions; frames nest and size themselves to the lifelines they cover, and you drag a frame's edge to take in more rows.
 - **Tabs.** One file holds several diagrams, box or sequence, on tabs along the bottom. Add, duplicate, rename and drag tabs to reorder; each keeps its own undo history, view, title block and legend. Copy and paste work between tabs.
 - **Styling.** Line and fill colors from presets, a picker, hex or RGB, with fills that pair automatically as a tint of the line color. Solid, dashed and dotted lines. Light and dark themes.
 - **Fast editing.** Multi-select, same size, match colors, copy and paste style, copy, paste, duplicate, undo and redo.
@@ -62,7 +62,7 @@ npx playwright install chromium   # first time only
 npm test                          # layout tests (Node) + interaction tests (headless Chromium)
 ```
 
-- `tests/layout.test.mjs` exercises the core without a browser: anchors, routing, bundling, labels, arrange, hard walls, sequence layout, the file format and the checks every opened file goes through.
+- `tests/layout.test.mjs` exercises the core without a browser: anchors, routing, bundling, labels, arrange, hard walls, sequence layout, frames and activation bars, the file format and the checks every opened file goes through.
 - `tests/browser.test.mjs` drives the real app with mouse and keyboard input, including files, exports, tabs and hostile files.
 
 ## Privacy
