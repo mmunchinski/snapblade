@@ -1247,52 +1247,81 @@ test('sequence groups: pick heads (Shift+click or a box), Group, drag the label 
   assert.deepEqual(h.errors, []);
 });
 
-test('sequence drags preview the drop live; group edges resize the group; Esc cancels; things glide into place', async () => {
+test('sequence drags: what you grab follows the pointer, a line and group highlights show where it lands, the diagram adjusts on drop and glides once', async () => {
   const h = await open({ motion: true }), { page } = h;
   await seqSampleOn(h);
   const order = () => h.ev(() => S.parts.map(p => p.id));
   const members = () => h.ev(() => S.groups.map(g => g.parts.join()));
   const head = async id => seqAt(h, id, await seqHeadY(h));
-  const drawnX = id => h.ev(id => { const b = document.querySelector(`#cv .part[data-id="${id}"] .s-headhit`); return +b.getAttribute('x') + +b.getAttribute('width') / 2; }, id);
-  const boxRight = id => h.ev(id => { const g = document.querySelector(`#cv .sgroup[data-k="g:${id}"] .g-body`); return +g.getAttribute('x') + +g.getAttribute('width'); }, id);
-  // Drag Payments API past the gateway, without letting go: the diagram shows it there and out of the group; nothing changes yet.
+  const drawnX = id => h.ev(id => { const b = document.querySelector(`#cv > g > .part[data-id="${id}"] .s-headhit`); return +b.getAttribute('x') + +b.getAttribute('width') / 2; }, id);
+  const floatDx = () => h.ev(() => { const f = document.querySelector('#cv .float'); return f ? +/translate\(([-\d.e]+)/.exec(f.getAttribute('transform'))[1] : null; });
+  await h.ev(() => { window.glides = 0; const a = Element.prototype.animate; Element.prototype.animate = function (...x) { glides++; return a.apply(this, x); }; });
+  // Grab Payments API and move it past the gateway, without letting go.
   const pay = await head('pay'), gw = await head('gw');
-  await page.mouse.move(pay.x, pay.y); await page.mouse.down(); await page.mouse.move(gw.x + 60, gw.y, { steps: 6 });
+  await page.mouse.move(pay.x, pay.y); await page.mouse.down(); await page.mouse.move(gw.x + 60, gw.y, { steps: 12 });
   assert.deepEqual(await order(), ['cust', 'web', 'orders', 'pay', 'gw', 'bus'], 'the model waits for the drop');
-  assert.ok(await drawnX('pay') > await drawnX('gw'), 'drawn where it will land');
-  assert.ok(await boxRight('platform') < await drawnX('gw'), 'the group already shows it leaving');
-  // Esc cancels the drag: back as it was, and releasing does nothing.
+  assert.ok(await drawnX('pay') < await drawnX('gw'), 'the diagram stays still while dragging');
+  assert.ok(Math.abs(await floatDx() - (gw.x + 60 - pay.x) / await h.ev(() => view.k)) < 1, 'a copy rides under the pointer');
+  assert.equal(await h.ev(() => document.querySelectorAll('#cv .s-gap').length), 1, 'a line marks the landing spot');
+  assert.equal(await h.ev(() => document.querySelector('#cv .sgroup[data-k="g:platform"]').classList.contains('drop-out')), true, 'its group shows it leaving');
+  assert.match(await page.textContent('#status'), /leaves Our platform/);
+  // Moving within the same landing spot only moves the copy: no rebuild, no glide.
+  await h.ev(() => { window.gapEl = document.querySelector('#cv .s-gap'); });
+  await page.mouse.move(gw.x + 64, gw.y); await page.mouse.move(gw.x + 68, gw.y);
+  assert.equal(await h.ev(() => glides), 0, 'nothing glides while dragging');
+  assert.equal(await h.ev(() => document.querySelector('#cv .s-gap') === gapEl), true, 'same landing spot, same drawing');
+  // Esc cancels: the copy glides back, nothing changes.
   await page.keyboard.press('Escape'); await page.mouse.up();
   assert.deepEqual(await order(), ['cust', 'web', 'orders', 'pay', 'gw', 'bus']);
-  assert.ok(await drawnX('pay') < await drawnX('gw'));
-  // A real drop does what the preview showed.
+  assert.equal(await h.ev(() => document.querySelectorAll('#cv .float').length), 0);
+  // A real drop: the diagram adjusts, and things glide into place once.
   await page.waitForTimeout(500);
+  await h.ev(() => { glides = 0; });
   await h.drag(pay, { x: gw.x + 60, y: gw.y });
   assert.deepEqual(await order(), ['cust', 'web', 'orders', 'gw', 'pay', 'bus']);
   assert.deepEqual(await members(), ['web,orders']);
+  assert.ok(await h.ev(() => glides) > 0, 'glides on drop');
   await page.keyboard.press('Control+z');
-  // Drag the group's right edge over the gateway: it joins, nobody moves. One undo step.
+  // Dragging into a group lights the group up before the drop.
+  await page.waitForTimeout(500);
+  const bus = await head('bus'), orders = await head('orders');
+  await page.mouse.move(bus.x, bus.y); await page.mouse.down(); await page.mouse.move((orders.x + (await head('pay')).x) / 2, bus.y, { steps: 10 });
+  assert.equal(await h.ev(() => document.querySelector('#cv .sgroup[data-k="g:platform"]').classList.contains('drop-in')), true);
+  assert.match(await page.textContent('#status'), /joins Our platform/);
+  await page.keyboard.press('Escape'); await page.mouse.up();
+  // A group's right edge: the outline stretches with the pointer and the heads it would take in light up; on drop they join.
   const edge = () => h.ev(() => { const o = lastGeom.seq.groups[0], r = svg.getBoundingClientRect(); return { x: r.left + view.x + o.x2 * view.k, y: r.top + view.y + (o.y2 - 60) * view.k }; });
   await page.waitForTimeout(500);
   const e = await edge();
   await page.mouse.move(e.x, e.y); await page.mouse.down(); await page.mouse.move((await head('gw')).x + 20, e.y, { steps: 6 });
-  assert.ok(await boxRight('platform') > await drawnX('gw'), 'the box grows over the gateway while dragging');
+  assert.equal(await h.ev(() => document.querySelectorAll('#cv .g-stretch').length), 1);
+  assert.equal(await h.ev(() => document.querySelector('#cv > g > .part[data-id="gw"]').classList.contains('join')), true, 'the gateway lights up');
+  assert.deepEqual(await members(), ['web,orders,pay'], 'not yet');
   await page.mouse.up();
   assert.deepEqual(await members(), ['web,orders,pay,gw']);
   assert.deepEqual(await order(), ['cust', 'web', 'orders', 'pay', 'gw', 'bus']);
-  assert.match(await page.textContent('#status'), /Group/);
-  // Drag the left edge in past Web app: it leaves.
+  // The left edge in past Web app: it leaves.
   const left = await h.ev(() => { const o = lastGeom.seq.groups[0], r = svg.getBoundingClientRect(); return { x: r.left + view.x + o.x1 * view.k, y: r.top + view.y + (o.y2 - 60) * view.k }; });
   await page.waitForTimeout(500);
   await h.drag(left, { x: (await head('web')).x + 20, y: left.y });
   assert.deepEqual(await members(), ['orders,pay,gw']);
   await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z');
-  assert.deepEqual(await members(), ['web,orders,pay']);
+  // A row: the message follows the pointer up and down; the drop moves it.
+  await page.waitForTimeout(500);
+  const m1 = await seqRow(h, 'm1'), m3 = await seqRow(h, 'm3');
+  await page.mouse.move(m1.x, m1.y); await page.mouse.down(); await page.mouse.move(m1.x, m3.y + 12, { steps: 8 });
+  assert.ok(await h.ev(() => /translate\(0 [1-9]/.test(document.querySelector('#cv .float')?.getAttribute('transform'))), 'the message rides along');
+  await page.mouse.up();
+  assert.deepEqual(await h.ev(() => S.rows.slice(0, 3).map(r => r.id)), ['m2', 'm3', 'm1']);
   // The glide: after an arrow-key move, the participants slide to their new spots.
   await page.mouse.click(...Object.values(await head('bus')));
   await page.keyboard.press('ArrowLeft');
   assert.ok(await h.ev(() => document.querySelector('#cv .part[data-id="bus"]').getAnimations().length > 0), 'Event bus slides');
-  assert.ok(await h.ev(() => document.querySelector('#cv .part[data-id="gw"]').getAnimations().length > 0), 'and the gateway makes way');
+  // A redraw in the middle of a glide carries on with it instead of starting over.
+  const t0 = await h.ev(() => document.querySelector('#cv .part[data-id="bus"]').getAnimations()[0].effect.getTiming().duration);
+  await h.ev(() => render());
+  const t1 = await h.ev(() => document.querySelector('#cv .part[data-id="bus"]').getAnimations()[0]?.effect.getTiming().duration ?? 0);
+  assert.ok(t1 < t0, `the glide carries on (${t1} < ${t0})`);
   assert.deepEqual(h.errors, []);
 });
 

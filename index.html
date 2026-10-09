@@ -252,6 +252,12 @@ dl.keys dd { margin: 0; }
 .g-rule { stroke: var(--ln, var(--group-stroke)); stroke-opacity: .55; }
 .s-grouphit { fill: transparent; stroke: none; cursor: grab; }
 .s-gedge { fill: transparent; stroke: none; cursor: ew-resize; }
+.float { pointer-events: none; opacity: .9; }
+.g-stretch { fill: var(--accent-soft); fill-opacity: .5; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; pointer-events: none; }
+.sgroup.drop-in .g-body { stroke: var(--accent); stroke-width: 2.5; fill: var(--accent-soft); }
+.sgroup.drop-out .g-body { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; }
+.part.join .b-body, .part.join .b-line { stroke: var(--accent); stroke-width: 2.5; }
+.part.leave { opacity: .45; }
 .sgroup.sel .g-body { stroke: var(--accent); stroke-width: 2; }
 .sgroup.sel .g-label { fill: var(--accent); }
 .s-name { font: 500 13px var(--ui); fill: var(--ink); pointer-events: none; }
@@ -396,7 +402,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 40</span>
+      Snapblade <span class="tag">playground &middot; build 41</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -2848,14 +2854,71 @@ function render() {
   canvasDone(h, P);
 }
 // A sequence diagram: drawn from seqLayout(), with previews for the drag in progress.
-// Drags that change the diagram, as the change itself: the live preview runs it on a trial copy, the drop for real.
-const PREVIEWED = ['rowmove', 'partmove', 'groupmove', 'gresize'];
+/* Holding something in a sequence diagram (owner's design, build 41): what you grab follows the pointer, the
+   diagram stays still, a line marks where it will land and groups light up if it would join or leave them;
+   the diagram adjusts on drop and glides into place once. */
+const HELD = ['rowmove', 'partmove', 'groupmove', 'gresize'];
+// Where a held item would land: a row or column position, or for a group edge its new first or last member.
+function seqDropSlot(d) {
+  const L = d.L0;
+  if (d.kind === 'rowmove') return seqDropAt(L, d.cur.y, d.id);
+  if (d.kind === 'partmove') return seqColAt(L, d.cur.x, d.id);
+  if (d.kind === 'groupmove') return seqGroupColAt(L, d.cur.x, d.id);
+  return L.P.filter(q => q.x < d.cur.x).length - (d.side === 'r' ? 1 : 0);
+}
+// The drop itself, for real (or on a trial copy, to see what it would do).
 function seqDropOp(d) {
-  const L = d.L0;   // positions from before the drag, so the preview doesn't chase itself
-  if (d.kind === 'rowmove') return () => seqMoveTo(d.id, seqDropAt(L, d.cur.y, d.id));
-  if (d.kind === 'partmove') return () => seqMoveTo(d.id, seqColAt(L, d.cur.x, d.id));
-  if (d.kind === 'groupmove') return () => seqMoveGroup(d.id, seqGroupColAt(L, d.cur.x, d.id));
-  return () => seqResizeGroup(d.id, d.side, L.P.filter(q => q.x < d.cur.x).length - (d.side === 'r' ? 1 : 0));
+  const k = seqDropSlot(d);
+  if (d.kind === 'rowmove' || d.kind === 'partmove') return () => seqMoveTo(d.id, k);
+  if (d.kind === 'groupmove') return () => seqMoveGroup(d.id, k);
+  return () => seqResizeGroup(d.id, d.side, k);
+}
+// What a drop would do, without doing it: where the landing line goes, which group a participant would join or
+// leave, and which participants a group edge would take in or leave out.
+function seqDropInfo(d) {
+  const L = d.L0, k = seqDropSlot(d), info = { k, join: new Set(), leave: new Set() };
+  const after = seqTrial(() => { seqDropOp(d)(); return S.groups.map(g => ({ id: g.id, parts: [...g.parts] })); });
+  if (d.kind === 'rowmove') info.y = seqGapY(L, k, d.id);
+  if (d.kind === 'partmove' || d.kind === 'groupmove') {
+    const skip = d.kind === 'partmove' ? [d.id] : groupById(d.id).parts, P = L.P.filter(q => !skip.includes(q.id)), a = P[k - 1], b = P[k];
+    info.x = !a && !b ? 0 : !a ? b.x - b.w / 2 - SEQ.gap / 2 : !b ? a.x + a.w / 2 + SEQ.gap / 2 : (a.x + a.w / 2 + b.x - b.w / 2) / 2;
+  }
+  if (d.kind === 'partmove') {
+    const was = groupOf(d.id)?.id, now = after.find(g => g.parts.includes(d.id))?.id;
+    if (now !== was) { info.into = now; info.outOf = was; }
+  }
+  if (d.kind === 'gresize') {
+    const was = groupById(d.id).parts, now = after.find(g => g.id === d.id)?.parts || was;
+    now.filter(id => !was.includes(id)).forEach(id => info.join.add(id));
+    was.filter(id => !now.includes(id)).forEach(id => info.leave.add(id));
+    const o = L.groups.find(o => o.g.id === d.id);
+    info.from = d.side === 'r' ? o.x1 : o.x2; info.y1 = o.y1; info.y2 = o.y2;
+  }
+  return info;
+}
+// A copy of what's held, on top of the diagram, moved by the pointer alone (no redraw).
+function seqFloat(d) {
+  const root = svg.firstElementChild?.nextElementSibling; if (!root) return;
+  const ids = d.kind === 'partmove' ? [d.id] : d.kind === 'groupmove' ? groupById(d.id)?.parts || [] : [];
+  const sel = [...(d.kind === 'groupmove' ? [`[data-k="g:${d.id}"]`] : []), ...(d.kind === 'rowmove' && !isMark(seqItem(d.id)) ? [`[data-k="r:${d.id}"]`] : []),
+    ...ids.flatMap(id => [`[data-k^="h:${id}:"]`, `[data-k^="l:${id}:"]`, `[data-k^="a:${id}:"]`])];
+  if (!sel.length) return;
+  const f = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  f.setAttribute('class', 'float');
+  for (const el of root.querySelectorAll(sel.join(','))) {
+    const c = el.cloneNode(true);
+    c.classList.remove('ghost', 'sel');
+    for (const x of [c, ...c.querySelectorAll('[data-role]')]) x.removeAttribute('data-role');
+    f.append(c);
+  }
+  root.append(f);
+  seqFloatMove(d);
+}
+function seqFloatMove(d) {
+  const f = svg.querySelector('.float');
+  if (f) f.setAttribute('transform', d.kind === 'rowmove' ? `translate(0 ${d.cur.y - d.start.y})` : `translate(${d.cur.x - d.start.x} 0)`);
+  const r = svg.querySelector('.g-stretch');
+  if (r) { const a = +r.dataset.from, x = Math.min(a, d.cur.x); r.setAttribute('x', x); r.setAttribute('width', Math.abs(d.cur.x - a)); }
 }
 // Run fn on a copy of the participants, rows and groups, then put them back: what a drop would draw, without making it.
 function seqTrial(fn) {
@@ -2867,26 +2930,35 @@ function seqTrial(fn) {
 // coordinates, so panning and zooming never glide. Off for reduced motion and when the tab shows another diagram.
 const GLIDE_MS = 150;
 let glideOf = null, glideView = null;   // the diagram and view the canvas was last drawn with
+let glideRun = new Map();               // glides in progress: key -> { t0, x, y } (when it started, where it's heading)
 function glideFrom() {
   if (glideOf !== S || !glideView || matchMedia('(prefers-reduced-motion: reduce)').matches) return null;
   const r = svg.getBoundingClientRect(), v = glideView, at = new Map();
   for (const el of svg.querySelectorAll('[data-k]')) { const b = el.getBoundingClientRect(); at.set(el.dataset.k, [(b.left - r.left - v.x) / v.k, (b.top - r.top - v.y) / v.k]); }
   return at;
 }
+// A redraw in the middle of a glide carries on with it (same destination, the time it has left) instead of starting over.
 function glideTo(at) {
   glideOf = S; glideView = { x: view.x, y: view.y, k: view.k };
-  if (!at?.size) return;
-  const r = svg.getBoundingClientRect();
-  for (const el of svg.querySelectorAll('[data-k]')) {
-    const was = at.get(el.dataset.k); if (!was) continue;
-    const b = el.getBoundingClientRect(), dx = was[0] - (b.left - r.left - view.x) / view.k, dy = was[1] - (b.top - r.top - view.y) / view.k;
-    if (Math.abs(dx) + Math.abs(dy) >= 0.5) el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: GLIDE_MS, easing: 'ease-out' });
+  const run = new Map(), now = performance.now();
+  if (at?.size) {
+    const r = svg.getBoundingClientRect();
+    for (const el of svg.querySelectorAll('[data-k]')) {
+      const k = el.dataset.k, was = at.get(k); if (!was) continue;
+      const b = el.getBoundingClientRect(), x = (b.left - r.left - view.x) / view.k, y = (b.top - r.top - view.y) / view.k, dx = was[0] - x, dy = was[1] - y;
+      if (Math.abs(dx) + Math.abs(dy) < 0.5) continue;
+      const prev = glideRun.get(k), t0 = prev && Math.abs(prev.x - x) + Math.abs(prev.y - y) < 0.5 && now - prev.t0 < GLIDE_MS ? prev.t0 : now;
+      el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: GLIDE_MS - (now - t0), easing: 'ease-out' });
+      run.set(k, { t0, x, y });
+    }
   }
+  glideRun = run;
 }
 function renderSeq() {
-  const d = drag?.moved ? drag : null, was = glideFrom();
-  const h = d && PREVIEWED.includes(d.kind) ? seqTrial(() => { seqDropOp(d)(); return seqDraw(d); }) : seqDraw(d);
-  canvasDone(h);
+  const d = drag?.moved ? drag : null, held = d && HELD.includes(d.kind);
+  const was = held ? null : glideFrom();   // nothing glides while something is held
+  canvasDone(seqDraw(d));
+  if (held) seqFloat(d);
   glideTo(was);
 }
 // The canvas markup for the diagram as it stands (or as a drop being previewed would leave it).
@@ -2894,10 +2966,11 @@ function seqDraw(d) {
   const L = seqLayout();
   if (view.follow) followView(L);
   const cur = d?.kind === 'rowbox' ? seqBoxRun(L, d) : sel, selId = cur?.type === 'seq' ? cur.id : null;   // a box shows what it would pick
-  const ghost = d && (d.kind === 'rowmove' || d.kind === 'partmove' || d.kind === 'groupmove') && !seqOwner(d.id) ? d.id : null, hot = d?.kind === 'msgnew' ? d.over : seqNext?.from;
+  const info = d && HELD.includes(d.kind) ? (d.info = seqDropInfo(d)) : null;
+  const ghost = new Set(d && (d.kind === 'rowmove' || d.kind === 'partmove') && !seqOwner(d.id) ? [d.id] : d?.kind === 'groupmove' ? [d.id, ...groupById(d.id).parts] : []), hot = d?.kind === 'msgnew' ? d.over : seqNext?.from;
   const pspan = partSpan(cur), span = !pspan && cur?.to && seqSpan(cur.id, cur.to), picked = new Set(pspan ? S.parts.slice(pspan[0], pspan[1] + 1).map(p => p.id) : span ? S.rows.slice(span[0], span[1] + 1).map(r => r.id) : [selId]);
   lastGeom = { R: {}, labels: dict(), seq: L };
-  const cls = (base, id) => `${base}${picked.has(id) ? ' sel' : ''}${id === ghost ? ' ghost' : ''}`, row = g => `data-role="row" data-id="${esc(g.r.id)}" data-k="r:${esc(g.r.id)}"`;
+  const cls = (base, id) => `${base}${picked.has(id) ? ' sel' : ''}${ghost.has(id) ? ' ghost' : ''}${info?.join.has(id) ? ' join' : ''}${info?.leave.has(id) ? ' leave' : ''}${info?.into === id ? ' drop-in' : ''}${info?.outOf === id ? ' drop-out' : ''}`, row = g => `data-role="row" data-id="${esc(g.r.id)}" data-k="r:${esc(g.r.id)}"`;
   let h = canvasStart() + seqMarkup(L, {
     part: (q, foot) => `class="${cls('part', q.id)}" data-role="part" data-id="${esc(q.id)}" data-k="h:${esc(q.id)}:${foot ? 'f' : 't'}" style="${styleVars(q.p)}"`,
     body: () => 'class="b-body"', figure: () => 'class="b-line"', name: () => 'class="s-name"',
@@ -2926,15 +2999,23 @@ function seqDraw(d) {
       : `<path class="temp" d="M${q.x},${y} H${to ? to.x : d.cur.x}"/>`;
   }
   if (d?.kind === 'rowbox') { const r = rectOf(d.start, d.cur); h += `<rect class="marquee" x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}"/>`; }
+  // Where a held item will land.
+  if (info?.y !== undefined) h += `<line class="s-gap" x1="${L.bounds.x1 - 12}" y1="${info.y}" x2="${L.bounds.x2 + 12}" y2="${info.y}"/>`;
+  if (info?.x !== undefined) h += `<line class="s-gap" x1="${info.x}" y1="-12" x2="${info.x}" y2="${L.bounds.y2 + 12}"/>`;
+  if (d?.kind === 'gresize') h += `<rect class="g-stretch" data-from="${info.from}" x="${Math.min(info.from, d.cur.x)}" y="${info.y1}" width="${Math.abs(d.cur.x - info.from)}" height="${info.y2 - info.y1}" rx="6"/>`;
   return canvasEnd(h, L.bounds);
 }
 function seqStatus() {
   const name = id => oneLine(partOf(id)?.label || ''), o = sel?.type === 'seq' && seqItem(sel.id);
   if (drag?.kind === 'msgnew') return drag.over ? `${name(drag.from)} → ${name(drag.over)}${drag.over === drag.from ? '  ·  self-message' : ''}` : `Message from ${name(drag.from)}: drop on a lifeline (its own for a self-message)`;
   if (drag?.kind === 'rowmove' && drag.moved) return seqOwner(drag.id) ? 'Drop where this edge of the frame should go. It takes in the rows it passes.' : 'Drop where the row should go';
-  if (drag?.kind === 'partmove' && drag.moved) return 'Drop where the participant should go. Between two members of a group, it joins the group.';
-  if (drag?.kind === 'groupmove' && drag.moved) return 'Drop where the group should go. Esc cancels.';
-  if (drag?.kind === 'gresize' && drag.moved) return 'Drag over participants to take them in or leave them out. Esc cancels.';
+  const gname = id => groupName(groupById(id) || { label: '', parts: [] });
+  if (drag?.kind === 'partmove' && drag.moved) { const i = drag.info || {}; return `Drop where the participant should go${i.into ? `  ·  joins ${gname(i.into)}` : i.outOf ? `  ·  leaves ${gname(i.outOf)}` : ''}  ·  Esc cancels`; }
+  if (drag?.kind === 'groupmove' && drag.moved) return 'Drop where the group should go  ·  Esc cancels';
+  if (drag?.kind === 'gresize' && drag.moved) {
+    const i = drag.info || { join: new Set(), leave: new Set() }, names = set => [...set].map(name).join(', ');
+    return i.join.size ? `Takes in ${names(i.join)}  ·  Esc cancels` : i.leave.size ? `Leaves out ${names(i.leave)}  ·  Esc cancels` : 'Drag over participants to take them in or leave them out  ·  Esc cancels';
+  }
   if (drag?.kind === 'rowbox' && drag.moved) {
     const run = seqBoxRun(lastGeom.seq || seqLayout(), drag);
     if (run && partOf(run.id)) { const ps = partSpan(run), k = ps ? ps[1] - ps[0] + 1 : 1; return `${k} participant${k === 1 ? '' : 's'}  ·  release to select, then Group`; }
@@ -3961,6 +4042,11 @@ function seqDrag(p) {
   if (!drag.moved && Math.hypot(p.x - drag.start.x, p.y - drag.start.y) < 4 / view.k) return;
   drag.moved = true; drag.cur = p;
   if (drag.kind === 'msgnew') drag.over = seqLifeAt(lastGeom.seq || seqLayout(), p.x, 20 / view.k)?.id ?? null;
+  if (HELD.includes(drag.kind)) {
+    const slot = seqDropSlot(drag);
+    if (slot === drag.slot) { seqFloatMove(drag); return; }   // same landing spot: just move what's held
+    drag.slot = slot;
+  }
   render();
 }
 function seqUp(d, p) {
@@ -3975,7 +4061,7 @@ function seqUp(d, p) {
     if (to) setTimeout(() => seqAddAfter(d.from, to.id, S.rows[i - 1]?.id ?? null), 0); else render();
     return;
   }
-  d.cur = p; arrange(seqDropOp(d));
+  d.cur = p; arrange(seqDropOp(d));   // the copy that was held glides from where it was let go
   render();
 }
 // A new message from one participant to another, right below row `after` (at the top if null).
@@ -4219,7 +4305,7 @@ function guideHtml() {
       <li>Drag a message or note up or down to move its row. The arrow keys do the same (left and right for a participant).</li>
       <li>The <b>Message</b> panel sets its <b>Label</b>, <b>From</b> and <b>To</b>, and its <b>Kind</b>: ${b(labels(MSG_TYPES))}. Sync is a call that waits (filled arrowhead), Async doesn't wait (open arrowhead), Reply is the answer (dashed). A message that answers a call still waiting for its answer starts out as a Reply. <b>Move up</b>, <b>Move down</b> and <b>Reverse direction</b> are there too.</li>
       <li><b>+ Note</b> adds a <b>Note</b> below the selected row. Its <b>Position</b> is ${b(labels(NOTE_SIDES))} its <b>Participant</b>; an Over note <b>Spans to</b> a second one. A note takes its own row, so nothing overlaps.</li>
-      <li>Every drag shows its result as you go: move a participant, a row, a group or a frame's edge and the diagram is drawn as if you'd let go, with what you're dragging faded where it will land. Esc cancels. After a change, things glide to their new places (not when your system asks for reduced motion).</li>
+      <li>What you drag follows the pointer (a participant, a row or a group) while the diagram stays put. A line marks where it will land, and a group lights up when a participant would join it (dashed when it would leave); dragging a group's edge stretches its outline and lights up the participants it would take in. Let go and the diagram adjusts, gliding into place (not when your system asks for reduced motion). Esc cancels.</li>
       <li>A <b>Group</b> is a labeled box behind neighbouring participants (PlantUML's <code>box</code>), say the services you own. Click a head and Shift+click another, or drag a box over the heads from empty canvas, to pick a run of <b>Participants</b>; their panel offers <b>Group</b> (off when one of them is already in a group: groups don't nest) and <b>Delete participants</b>. Type the label and press Enter. Drag the label to move the group, or use the arrow keys. Drag its left or right edge over participants to take them in or leave them out (nobody moves; it keeps one member and stops at another group). A participant dropped between two members joins the group, one dragged out leaves, and a participant's own panel has a <b>Group</b> select. The group's panel styles it like a container; <b>Ungroup</b> removes the box and keeps the participants.</li>
       <li><b>+ Divider</b> adds a row below the selected one, ready to label: a <b>Divider</b> (${BREAK_HINTS.divider}: a double line across the whole diagram, its label boxed in the middle, like PlantUML's <code>== Setup ==</code>) or a <b>Delay</b> (${BREAK_HINTS.delay}: the lifelines go dotted for a stretch, with an optional label such as <code>5 minutes later</code>). Its panel's <b>Kind</b> switches between the two; drag it or use the arrow keys to move it, like any row, and <b>Delete divider</b> (or <b>Delete delay</b>) removes it.</li>
       <li>The <b>Participant</b> panel has <b>Move left</b> and <b>Move right</b>; <b>Delete participant</b> also deletes its messages and notes. Participants, messages and notes take colors and patterns like boxes and connectors, and get legend rows the same way.</li>
