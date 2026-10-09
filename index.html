@@ -380,7 +380,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 34</span>
+      Snapblade <span class="tag">playground &middot; build 35</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -1460,14 +1460,13 @@ function seqSample() {
   };
 }
 
-// Activation bars, from row indexes. A sync call starts one on the participant it calls, and a reply back closes the
-// latest open call between the two, as calls nest. An alt's sections are alternatives: each starts from the calls
-// open at the top of the frame, and a call's bar runs to its last reply in any of them. A call with no reply lasts to
-// the callee's last message before the caller sends again (a stub if there's none); an unanswered self-call is a stub.
-// Async messages start no bar. A bar that starts while another is open on the same participant sits one level in.
-function seqActivations(rows) {
-  const bars = [], frames = [];
-  let open = dict();   // "from>to": the calls still waiting for a reply, latest last
+// Calls and their replies. A sync call waits for a reply; a reply back closes the latest open call between the two,
+// as calls nest. An alt's sections are alternatives: each starts from the calls open at the top of the frame, and
+// after it a call is still open if some section left it open. Returns each call (end: its last reply, or -1) and
+// the calls still open after the last row, by "from>to".
+function seqCalls(rows) {
+  const calls = [], frames = [];
+  let open = dict();
   const copy = o => { const c = dict(); for (const k in o) c[k] = [...o[k]]; return c; };
   rows.forEach((r, i) => {
     if (r.kind === 'frame') frames.push(r.type === 'alt' ? { alt: true, top: copy(open), ends: [] } : {});
@@ -1475,7 +1474,6 @@ function seqActivations(rows) {
     else if (r.kind === 'end') {
       const f = frames.pop();
       if (f?.alt) {
-        // After the alt, a call is still open if some section left it open (whichever section opened it).
         const ends = [...f.ends, open], next = dict();
         for (const k of new Set([...Object.keys(f.top), ...ends.flatMap(e => Object.keys(e))])) {
           const top = f.top[k] || [], kept = top.filter(b => ends.some(e => (e[k] || []).includes(b)));
@@ -1484,14 +1482,22 @@ function seqActivations(rows) {
         open = next;
       }
     } else if (isMsg(r) && r.type === 'sync') {
-      const b = { p: r.to, from: r.from, i, end: -1, key: r.from + '>' + r.to };
-      bars.push(b); (open[b.key] ||= []).push(b);
+      const c = { p: r.to, from: r.from, i, end: -1 };
+      calls.push(c); (open[r.from + '>' + r.to] ||= []).push(c);
     } else if (isMsg(r) && r.type === 'reply') {
-      const list = open[r.to + '>' + r.from], b = list?.pop();
-      if (b) b.end = Math.max(b.end, i);
+      const c = open[r.to + '>' + r.from]?.pop();
+      if (c) c.end = Math.max(c.end, i);
     }
   });
-  const msgAt = j => isMsg(rows[j]) ? rows[j] : null;
+  return { calls, open };
+}
+// Activation bars, from row indexes. A sync call starts one on the participant it calls, lasting to its reply (see
+// seqCalls). With no reply, it lasts to the callee's last message before the caller sends again (a stub if there's
+// none); an unanswered self-call is a stub. A caller with no bar of its own gets one too, as long as the callee's:
+// it's waiting for the answer. Async messages start no bar. A bar that starts while another is open on the same
+// participant sits one level in.
+function seqActivations(rows) {
+  const bars = seqCalls(rows).calls, msgAt = j => isMsg(rows[j]) ? rows[j] : null;
   for (const b of bars) {
     if (b.end >= 0) continue;
     b.end = b.i;
@@ -1500,8 +1506,13 @@ function seqActivations(rows) {
     for (; j < rows.length; j++) { const m = msgAt(j); if (m && m.from === b.from) break; }
     for (let k = b.i + 1; k < j; k++) { const m = msgAt(k); if (m && (m.from === b.p || m.to === b.p)) b.end = k; }
   }
-  for (const b of bars) b.level = bars.filter(o => o.p === b.p && o.i < b.i && o.end >= b.i).length;
-  return bars.map(({ p, i, end, level }) => ({ p, i, end, level }));
+  const all = [];
+  for (const b of bars) {
+    if (!all.some(o => o.p === b.from && o.i < b.i && o.end >= b.i)) all.push({ p: b.from, i: b.i, end: b.end, lead: true });
+    all.push(b);
+  }
+  for (const b of all) b.level = all.filter(o => o !== b && o.p === b.p && o.end >= b.i && (o.i < b.i || o.i === b.i && o.lead && !b.lead)).length;
+  return all.map(({ p, i, end, level, lead }) => ({ p, i, end, level, lead: !!lead }));
 }
 function seqLayout(fam = UI_STACK) {
   const nameFont = `500 13px ${fam}`, textFont = `500 12px ${fam}`;
@@ -1517,7 +1528,7 @@ function seqLayout(fam = UI_STACK) {
   // Activation: the deepest bar open on a participant at a row (-1 for none); `starting` counts one that starts there.
   // An arrow ends at that bar's edge, so columns and notes make room for it.
   const acts = S.settings.activation ? seqActivations(S.rows) : [];
-  const level = (p, r, starting) => acts.reduce((L, b) => b.p === p && (b.i < r && b.end >= r || starting && b.i === r) ? Math.max(L, b.level) : L, -1);
+  const level = (p, r, starts) => acts.reduce((L, b) => b.p === p && (b.i < r && b.end >= r || b.i === r && starts(b)) ? Math.max(L, b.level) : L, -1);
   const reach = L => L < 0 ? 0 : L * SEQ.actStep + SEQ.actHalf;
   let num = 0;
   const R = S.rows.map((r, idx) => {
@@ -1537,7 +1548,7 @@ function seqLayout(fam = UI_STACK) {
     }
     const text = (S.settings.autonumber ? `${++num}. ` : '') + r.label;
     const ls = text ? linesOf(text) : [], lw = widest(ls, textFont), lh = ls.length * SEQ.lh, a = at[r.from], b = at[r.to];
-    const la = level(r.from, idx, false), lb = level(r.to, idx, r.type === 'sync');
+    const la = level(r.from, idx, b => b.lead), lb = level(r.to, idx, b => !b.lead && r.type === 'sync');
     if (a === b) {
       const loop = Math.max(SEQ.selfH, lh + 4), out = Math.max(reach(la), reach(lb));
       apart(a, a + 1, SEQ.self + out + (lw ? lw + 8 : 0) + SEQ.labelPad);
@@ -1573,7 +1584,8 @@ function seqLayout(fam = UI_STACK) {
     }
   }
   const A = acts.map(b => {
-    const s = R[b.i], e = R[b.end], y1 = s.self ? s.by - 4 : s.ay, y2 = b.end === b.i ? y1 + SEQ.actStub : (e.self ? e.by : e.ay) + 4;
+    const s = R[b.i], e = R[b.end], y1 = s.self && !b.lead ? s.by - 4 : s.ay;
+    const y2 = b.end === b.i ? (s.self && b.lead ? s.by + 8 : y1 + SEQ.actStub) : (e.self ? e.by : e.ay) + 4;
     const q = P[at[b.p]], x = q.x + b.level * SEQ.actStep - SEQ.actHalf;
     grow(x, x + 2 * SEQ.actHalf);
     return { ...b, q, x, y1, y2, w: 2 * SEQ.actHalf };
@@ -1645,6 +1657,8 @@ function seqMarkup(L, p) {
   const head = (q, y, foot) => `<g ${p.part(q, foot)}><rect x="${q.x - q.w / 2}" y="${y}" width="${q.w}" height="${H}" rx="3" ${p.body(q)}/>`
     + texts(q.ls, q.x, y + (H - q.ls.length * SEQ.nameLh) / 2, SEQ.nameLh, 13, p.name(q), 'middle') + '</g>';
   for (const q of P) out += head(q, 0) + (S.settings.footbox ? head(q, end, true) : '');
+  // Activation bars, then frames over them (their tabs and conditions stay readable), then the messages.
+  for (const a of A) out += `<rect x="${a.x}" y="${r2(a.y1)}" width="${a.w}" height="${r2(a.y2 - a.y1)}" ${p.act(a)}/>`;
   // Frames go under the messages: a box, a tab naming the kind, the condition beside it, else lines across.
   for (const g of R) {
     if (!g.mark) continue;
@@ -1662,7 +1676,6 @@ function seqMarkup(L, p) {
         + '</g>';
     } else out += `<g ${p.frameEnd(g)}>${p.hit(across)}</g>`;
   }
-  for (const a of A) out += `<rect x="${a.x}" y="${r2(a.y1)}" width="${a.w}" height="${r2(a.y2 - a.y1)}" ${p.act(a)}/>`;
   for (const g of R) {
     if (g.mark) continue;
     if (g.note) {
@@ -1723,10 +1736,9 @@ function seqLifeAt(L, x, tol = 0) {
   for (const q of L.P) { const d = Math.abs(q.x - x); if (d < bd && d <= Math.max(q.w / 2, tol)) { bd = d; best = q; } }
   return best;
 }
-// A message that answers the sync call just above it starts out as a reply.
+// A message that answers a call still waiting at that row starts out as a reply.
 function guessType(from, to, i) {
-  const prev = S.rows.slice(0, i).reverse().find(isMsg);
-  return from !== to && prev?.type === 'sync' && prev.from === to && prev.to === from ? 'reply' : 'sync';
+  return from !== to && seqCalls(S.rows.slice(0, i)).open[to + '>' + from]?.length ? 'reply' : 'sync';
 }
 function seqInsert(row, i = S.rows.length) { S.rows.splice(Math.max(0, Math.min(i, S.rows.length)), 0, row); return row; }
 const seqMessage = (from, to, i, label = '') => seqInsert({ id: nid('m'), from, to, type: guessType(from, to, i), label }, i);
@@ -2176,7 +2188,7 @@ A sequence diagram is a different kind of file: participants left to right, and 
 - A message: \`{"id": "m1", "from": "cust", "to": "web", "type": "sync", "label": "Place order"}\`. \`from\` and \`to\` are participant ids, the same one for a self-message; a message naming a participant that doesn't exist is dropped. \`type\` is ${or(valuesOf(MSG_TYPES).map(q))}: a call that waits for an answer (filled arrowhead), one that doesn't wait (open arrowhead), or the answer (dashed). Default \`"sync"\`. \`style\`: \`line\` and \`dash\` only; a reply is dashed unless \`dash\` says otherwise.
 - A note: \`{"id": "n1", "kind": "note", "side": "right", "on": ["gw"], "label": "Can take up to 5 s"}\`. \`side\` is ${or(valuesOf(NOTE_SIDES).map(q))}. \`on\` lists the participant it sits beside, or for \`"over"\` one or two participants (the note spans from one to the other). A note takes a row of its own. \`style\` works as for boxes.
 - A frame (alt, opt, loop, par) is rows around the rows it holds: a start \`{"id": "f1", "kind": "frame", "type": "alt", "label": "approved"}\`, then the rows, then an end \`{"id": "f1x", "kind": "end"}\`. For an alt or par, an else line \`{"id": "f1e", "kind": "else", "label": "declined"}\` between them starts the next section. \`type\` is ${or(valuesOf(FRAME_TYPES).map(q))}: ${FRAME_TYPES.map(([v]) => FRAME_HINTS[v]).join(', ')}. Default ${q('alt')}. \`label\` is the condition, shown in brackets (leave the brackets out). Frames nest, at most ${MAX_DEPTH} deep. An end with no start, or an else line outside an alt or par, is dropped; a start with no end is closed after the last row. A frame is drawn as wide as the lifelines its rows touch.
-- \`settings.autonumber\` numbers the messages, \`settings.footbox\` repeats the participants at the bottom, and \`settings.activation\` (default \`true\`) draws activation bars. Bars are automatic: a sync call starts one on the participant it calls, and a reply back closes the latest open call between the two (in an alt, each section's reply counts and the bar runs to the last). A call with no reply lasts to that participant's last message before the caller sends again. Async messages start none. So send a reply for every call you want to read as finished. The other settings don't apply. The title block and legend work as above.
+- \`settings.autonumber\` numbers the messages, \`settings.footbox\` repeats the participants at the bottom, and \`settings.activation\` (default \`true\`) draws activation bars. Bars are automatic: a sync call starts one on the participant it calls, and a reply back closes the latest open call between the two (in an alt, each section's reply counts and the bar runs to the last). A call with no reply lasts to that participant's last message before the caller sends again. A caller with no bar of its own gets one for as long as it waits. Async messages start none. So send a reply for every call you want to read as finished. The other settings don't apply. The title block and legend work as above.
 - Put each reply right after the call it answers. Keep labels short: an operation, an endpoint or an event name.
 
 The sequence sample that ships with Snapblade:
@@ -3832,7 +3844,7 @@ function guideHtml() {
       <li><b>+ Participant</b> adds a participant after the selected one; double-clicking empty canvas adds one there. Drag a head sideways to reorder; the messages follow. A new sequence diagram stays centered on the canvas as it grows, until you pan or zoom.</li>
       <li>Drag from one lifeline to another to add a message at that row (rows below shift down). Drag along a lifeline and let go on it for a self-message. Type the label and press Enter: then click the lifeline the next message goes to, and keep going. Esc stops.</li>
       <li>Drag a message or note up or down to move its row. The arrow keys do the same (left and right for a participant).</li>
-      <li>The <b>Message</b> panel sets its <b>Label</b>, <b>From</b> and <b>To</b>, and its <b>Kind</b>: ${b(labels(MSG_TYPES))}. Sync is a call that waits (filled arrowhead), Async doesn't wait (open arrowhead), Reply is the answer (dashed). A message that answers the sync call right above it starts out as a Reply. <b>Move up</b>, <b>Move down</b> and <b>Reverse direction</b> are there too.</li>
+      <li>The <b>Message</b> panel sets its <b>Label</b>, <b>From</b> and <b>To</b>, and its <b>Kind</b>: ${b(labels(MSG_TYPES))}. Sync is a call that waits (filled arrowhead), Async doesn't wait (open arrowhead), Reply is the answer (dashed). A message that answers a call still waiting for its answer starts out as a Reply. <b>Move up</b>, <b>Move down</b> and <b>Reverse direction</b> are there too.</li>
       <li><b>+ Note</b> adds a <b>Note</b> below the selected row. Its <b>Position</b> is ${b(labels(NOTE_SIDES))} its <b>Participant</b>; an Over note <b>Spans to</b> a second one. A note takes its own row, so nothing overlaps.</li>
       <li>The <b>Participant</b> panel has <b>Move left</b> and <b>Move right</b>; <b>Delete participant</b> also deletes its messages and notes. Participants, messages and notes take colors and patterns like boxes and connectors, and get legend rows the same way.</li>
       <li><b>+ Frame</b> puts the selected message or note in a frame: ${FRAME_TYPES.map(([v, l]) => `<b>${l}</b> (${FRAME_HINTS[v]})`).join(', ')}. To take in several rows, click the first and Shift+click the last; the <b>Rows</b> panel then offers <b>Put in a frame</b> and <b>Delete rows</b> too. A frame the rows cut into is taken in whole. Type the condition and press Enter; it shows in brackets beside the kind.</li>
@@ -3840,7 +3852,7 @@ function guideHtml() {
       <li>Drag a frame's top or bottom edge to take in more or fewer rows; a message dragged past an edge moves in or out. <b>Move up</b> and <b>Move down</b> (or the arrow keys) move the whole frame with what's in it. <b>Remove frame</b> or the Delete key takes the frame away and keeps what was inside; <b>Delete with contents</b> takes everything. Frames nest, and each one is as wide as the lifelines its rows touch.</li>
       <li><b>Duplicate</b> (Ctrl+D) puts a copy of a message, note, frame (with what's in it) or participant right after it. <b>Delete message</b>, <b>Delete note</b>, <b>Delete participant</b> or the Delete key removes one.</li>
       <li>The <b>Sequence diagram</b> settings: <b>Number messages</b>, <b>Participants at the bottom too</b> and <b>Activation bars</b>.</li>
-      <li>Activation bars draw themselves. A Sync call starts a bar on the participant it calls, which lasts until the last Reply back (so a reply in each section of an alt keeps it going through all of them). With no reply, it lasts until that participant's last message before the caller sends anything else. Async messages start no bar. A call into a participant that's already busy, or a self-message, adds a bar beside the first. Arrows end at the bars, and notes keep clear of them.</li></ul>`],
+      <li>Activation bars draw themselves. A Sync call starts a bar on the participant it calls, which lasts until the last Reply back (so a reply in each section of an alt keeps it going through all of them). With no reply, it lasts until that participant's last message before the caller sends anything else. Async messages start no bar. The participant that makes the call gets a bar too, while it waits for the answer, unless it's already busy. A call into a participant that's already busy, or a self-message, adds a bar beside the first. Arrows end at the bars, and notes keep clear of them.</li></ul>`],
     ['tabs', 'Tabs', `<p>One file can hold several diagrams, each on its own tab along the bottom of the canvas: an architecture view and the sequence diagrams that go with it, say.</p><ul>
       <li><b>Add a tab</b> (the + at the end of the tabs) offers a <b>Box diagram</b>, a <b>Sequence diagram</b>, or <b>Duplicate this tab</b>. A new tab goes right after the open one.</li>
       <li>Click a tab to open it. Double-click the open tab (or press F2 on it) to rename it; drag a tab sideways to move it. The arrow keys move between tabs when one has the focus.</li>
