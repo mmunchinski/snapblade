@@ -478,28 +478,6 @@ test('sequence: numbering prefixes messages only, and widens the columns it need
   assert.ok(json('seqLayout().P[1].x') > off);
 });
 
-test('sequence: quick entry reads PlantUML lines, matches participants by name and inserts after a row', () => {
-  run(`S = normalize({ type: 'sequence', parts: [{ id: 'web', label: 'Web app' }], rows: [] })`);
-  const r = json(`seqEnter(${JSON.stringify(['@startuml', 'autonumber', 'title Checkout', 'participant "Orders API" as orders', 'actor Customer',
-    'customer -> web app : Place order', 'Web app ->> Orders : event\\nsecond line', 'Orders API --> "Web app": 201', 'Orders <- Web app: get',
-    'Web app <<-- Orders API', 'web -> web : self', 'note left of Customer : hi', 'note over Web app, Orders API: across', 'note right of web',
-    'two', 'lines', 'end note', "' a comment", 'activate web', 'alt ok', 'end', 'this is not a line', 'X -> : nobody', '@enduml'].join('\n'))})`);
-  assert.deepEqual([r.parts, r.rows.length, r.skipped], [2, 9, 3]);
-  assert.deepEqual(r.errors.map(e => e.line), [22, 23]);
-  assert.deepEqual(json('S.parts.map(p => [p.id, p.label])').slice(0, 2), [['web', 'Web app'], ['orders', 'Orders API']]);
-  const cust = json('S.parts[2].id');
-  assert.deepEqual(json('S.rows.map(r => r.kind ? [r.side, r.on, r.label] : [r.from, r.to, r.type, r.label])'), [
-    [cust, 'web', 'sync', 'Place order'], ['web', 'orders', 'async', 'event\nsecond line'], ['orders', 'web', 'reply', '201'],
-    ['web', 'orders', 'sync', 'get'], ['orders', 'web', 'reply', ''], ['web', 'web', 'sync', 'self'],
-    ['left', [cust], 'hi'], ['over', ['web', 'orders'], 'across'], ['right', ['web'], 'two\nlines']].map(x => x));
-  assert.deepEqual(json('[S.settings.autonumber, S.title.title, S.title.show]'), [true, 'Checkout', true]);
-  // After a row: the new lines go right below it, in order.
-  json(`seqEnter('Web app -> Orders API : one\\nWeb app -> Orders API : two', S.rows[0].id)`);
-  assert.deepEqual(json('S.rows.slice(0, 3).map(r => r.label)'), ['Place order', 'one', 'two']);
-  // Whatever it adds survives a reload.
-  assert.deepStrictEqual(json('normalize(JSON.parse(JSON.stringify(S)))'), json('S'));
-});
-
 test('sequence: a message answering the sync call above starts as a reply; rows and columns move; removing a participant takes its rows', () => {
   run(`S = normalize(seqSample())`);
   assert.equal(json(`seqMessage('pay', 'orders', 4).type`), 'reply', 'right below Orders -> Payments');

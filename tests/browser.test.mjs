@@ -845,23 +845,22 @@ const seqBottom = h => h.ev(() => lastGeom.seq.end - 12);
 const seqSampleOn = h => h.ev(() => { loadSample(true); undoStack.length = 0; });
 const rows = h => h.ev(() => S.rows.map(r => r.kind ? `note ${r.side} ${r.on.join(',')}: ${r.label}` : `${r.from}>${r.to} ${r.type}: ${r.label}`));
 
-test('sequence diagrams: New, quick entry, double-click adds a participant, drag between lifelines adds a message, Enter goes on to the next', async () => {
+test('sequence diagrams: New, + Participant, double-click adds a participant, drag between lifelines adds a message, Enter goes on to the next', async () => {
   const h = await open(), { page } = h;
   await page.click('#fileBtn'); await page.click('[data-file="newseq"]'); await page.waitForTimeout(100);
   assert.equal(await h.ev(() => S.type), 'sequence');
-  assert.deepEqual(await h.ev(() => ['addBox', 'addGroup', 'modeSeg', 'addPart', 'addNote', 'quick'].map(id => document.getElementById(id).hidden)), [true, true, true, false, false, false]);
-  assert.ok(await h.ev(() => document.activeElement.id === 'quickIn'), 'the quick-entry box has the focus');
-  await page.keyboard.type('Customer -> Web app : checkout'); await page.keyboard.press('Enter');
-  await page.keyboard.type('Web app -> "Orders API" : POST /orders'); await page.keyboard.press('Enter');
+  assert.deepEqual(await h.ev(() => ['addBox', 'addGroup', 'modeSeg', 'addPart', 'addNote'].map(id => document.getElementById(id).hidden)), [true, true, true, false, false]);
+  // + Participant adds one after the selected one, named as you type.
+  for (const name of ['Customer', 'Web app', 'Orders API']) { await page.click('#addPart'); await page.keyboard.type(name); await page.keyboard.press('Enter'); }
   assert.deepEqual(await h.ev(() => S.parts.map(p => p.label)), ['Customer', 'Web app', 'Orders API']);
   const [c, w, o] = await h.ev(() => S.parts.map(p => p.id));
+  await page.keyboard.press('Escape');
+  for (const [a, b, label] of [[c, w, 'checkout'], [w, o, 'POST /orders']]) {
+    const y = await seqBottom(h);
+    await h.drag(await seqAt(h, a, y), await seqAt(h, b, y)); await page.waitForTimeout(80);
+    await page.keyboard.type(label); await page.keyboard.press('Enter'); await page.keyboard.press('Escape');
+  }
   assert.deepEqual(await rows(h), [`${c}>${w} sync: checkout`, `${w}>${o} sync: POST /orders`]);
-  assert.equal(await h.ev(() => document.getElementById('quickIn').value), '');
-  // A line it can't read stays in the box.
-  await page.keyboard.type('nonsense here'); await page.keyboard.press('Enter');
-  assert.equal(await h.ev(() => document.getElementById('quickIn').value), 'nonsense here');
-  assert.match(await page.textContent('#toast'), /Couldn't read/);
-  await page.fill('#quickIn', ''); await page.keyboard.press('Escape');
 
   // Double-click right of the last head: a participant there, named as you type.
   const lastHead = await seqAt(h, o, 20);
@@ -895,7 +894,7 @@ test('sequence diagrams: New, quick entry, double-click adds a participant, drag
   const before = await h.ev(() => JSON.parse(JSON.stringify(S)));
   await page.reload(); await page.waitForTimeout(300);
   assert.deepStrictEqual(await h.ev(() => JSON.parse(JSON.stringify(S))), before);
-  assert.equal(await h.ev(() => document.getElementById('quick').hidden), false);
+  assert.equal(await h.ev(() => document.getElementById('addPart').hidden), false);
   assert.deepEqual(h.errors, []);
 });
 
@@ -940,10 +939,6 @@ test('sequence diagrams: drag rows and participants to reorder, arrow keys, pane
   await page.click('#addNote'); await page.keyboard.type('retries twice'); await page.keyboard.press('Enter');
   const i = await h.ev(() => S.rows.findIndex(r => r.id === 'm4'));
   assert.deepEqual(await h.ev(i => { const r = S.rows[i + 1]; return [r.kind, r.side, r.on, r.label]; }, i), ['note', 'right', ['pay'], 'retries twice']);
-  // Typing with nothing selected goes to the quick-entry box.
-  await page.keyboard.press('Escape'); await h.clear();
-  await page.keyboard.type('Customer ->> Event bus : ping'); await page.keyboard.press('Enter');
-  assert.deepEqual((await rows(h)).at(-1), 'cust>bus async: ping');
   assert.deepEqual(h.errors, []);
 });
 
@@ -999,11 +994,11 @@ test('tabs: add, rename, reorder, switch with their own undo and view, delete, a
   const h = await open(), { page } = h;
   assert.deepEqual(await tabNames(h), ['Page 1']);
   assert.equal(await page.locator('#tablist [data-tabdel]').count(), 0, 'the last tab cannot be deleted');
-  // A sequence tab right after the open one, typed into straight away.
+  // A sequence tab right after the open one.
   await page.click('#tabAdd'); await page.click('[data-tabadd="sequence"]');
   assert.deepEqual(await tabNames(h), ['Page 1', 'Sequence 1']);
-  assert.equal(await h.ev(() => [isSeq(), BOOK.active, document.activeElement.id].join()), 'true,1,quickIn');
-  await page.keyboard.type('Client -> Server : hello'); await page.keyboard.press('Enter');
+  assert.equal(await h.ev(() => [isSeq(), BOOK.active].join()), 'true,1');
+  await page.click('#addPart'); await page.keyboard.type('Client'); await page.keyboard.press('Enter');
   // Undo is per tab: switching back to the first tab and undoing leaves the sequence alone.
   await tabAt(h, 0).click();
   assert.equal(await h.ev(() => isSeq()), false);
@@ -1011,7 +1006,7 @@ test('tabs: add, rename, reorder, switch with their own undo and view, delete, a
   await tabAt(h, 1).click();
   assert.equal(await h.ev(() => undoStack.length), 1);
   await page.keyboard.press('Control+z');
-  assert.equal(await h.ev(() => S.rows.length), 0, 'undo on this tab undid this tab');
+  assert.equal(await h.ev(() => S.parts.length), 0, 'undo on this tab undid this tab');
   await page.keyboard.press('Control+y');
   await tabAt(h, 0).click();
   assert.equal(await h.ev(() => !!byId('inv')), false, 'the other tab kept its change');

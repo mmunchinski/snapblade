@@ -6,7 +6,7 @@
 
 You place the boxes. Snapblade keeps the connectors clean: anchor points evenly spaced along each side, lines straight wherever the boxes allow, bends centered in the gap between boxes, and parallel connectors bundled without crossing. When you resize or move something, everything re-tidies, instead of leaving you to re-glue a dozen arrows by hand.
 
-Sequence diagrams go further: you never place anything. List the participants and the messages, by dragging between lifelines or typing PlantUML-style lines, and Snapblade sizes the columns and spaces the rows. Keep the architecture and its sequence diagrams together as tabs in one file.
+Sequence diagrams go further: you never place anything. Add the participants, drag between lifelines for the messages, and Snapblade sizes the columns and spaces the rows. Keep the architecture and its sequence diagrams together as tabs in one file.
 
 ![Snapblade showing an application architecture diagram](docs/screenshot.png)
 
@@ -25,7 +25,7 @@ Manual tools (Visio, draw.io, Lucidchart) give you full control, and then you sp
 - **Shapes that can't overlap.** Shapes side by side stay at least 20 px apart, so connectors always have room between them. A dragged shape stops at the wall and slides along it, a resized edge stops at it, and a container that grows pushes its neighbors out of the way. Hold Alt to overlap anyway, or turn it off for the diagram.
 - **Connector labels.** Placed near the start, center or end, and kept clear of boxes, other labels and other connectors.
 - **Arrange.** Line a selection up as a row or a column (tops, middles, bottoms, lefts, centers or rights) with kept, even or fixed spacing, without ever stacking shapes on top of each other. Straighten moves shapes just enough that their connectors run straight.
-- **Sequence diagrams.** Participants and messages laid out automatically: columns as wide as their labels need, rows evenly spaced. Drag from one lifeline to another to add a message at that row, drag rows and participants to reorder, and press Enter after a label to go straight on to the next message. Sync, async and reply messages, self-messages, notes beside or across lifelines, message numbering. A quick-entry box reads PlantUML (`A -> B : label`, `participant`, `note`, `autonumber`), so you can type a flow or paste an existing `@startuml` diagram.
+- **Sequence diagrams.** Participants and messages laid out automatically: columns as wide as their labels need, rows evenly spaced. Drag from one lifeline to another to add a message at that row, drag rows and participants to reorder, and press Enter after a label to go straight on to the next message. Sync, async and reply messages, self-messages, notes beside or across lifelines, message numbering.
 - **Tabs.** One file holds several diagrams, box or sequence, on tabs along the bottom. Add, duplicate, rename and drag tabs to reorder; each keeps its own undo history, view, title block and legend. Copy and paste work between tabs.
 - **Styling.** Line and fill colors from presets, a picker, hex or RGB, with fills that pair automatically as a tint of the line color. Solid, dashed and dotted lines. Light and dark themes.
 - **Fast editing.** Multi-select, same size, match colors, copy and paste style, copy, paste, duplicate, undo and redo.
@@ -43,7 +43,7 @@ Use it at **https://mmunchinski.github.io/snapblade/**, or open `index.html` fro
 | Add a box | Double-click empty canvas, or **+ Box** |
 | Connect two boxes | Hover a box, drag one of its **+** handles onto another box |
 | Start a sequence diagram | File > New sequence diagram, or **+** on the tab strip |
-| Add a message | Drag from one lifeline to another, or type `A -> B : label` in the box at the top and press Enter |
+| Add a message | Drag from one lifeline to another, type the label and press Enter; then click the lifeline the next one goes to |
 | Rename | Double-click, press F2, or select and start typing |
 | Select several | Drag a box on empty canvas, or Shift/Ctrl-click |
 | Pan / zoom | Right-drag (or middle-drag, or Space+drag) / mouse wheel |
@@ -61,7 +61,7 @@ npx playwright install chromium   # first time only
 npm test                          # layout tests (Node) + interaction tests (headless Chromium)
 ```
 
-- `tests/layout.test.mjs` exercises the core without a browser: anchors, routing, bundling, labels, arrange, hard walls, sequence layout and quick entry, the file format and the checks every opened file goes through.
+- `tests/layout.test.mjs` exercises the core without a browser: anchors, routing, bundling, labels, arrange, hard walls, sequence layout, the file format and the checks every opened file goes through.
 - `tests/browser.test.mjs` drives the real app with mouse and keyboard input, including files, exports, tabs and hostile files.
 
 ## Privacy

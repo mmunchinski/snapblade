@@ -271,13 +271,6 @@ dl.keys dd { margin: 0; }
 .n-text { font: 500 12px var(--ui); fill: var(--ink); pointer-events: none; }
 .s-gap { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; pointer-events: none; }
 .ghost { opacity: .35; }
-.quick { position: absolute; left: 12px; top: 12px; width: min(560px, calc(100% - 24px)); z-index: 4; }
-.quick textarea {
-  width: 100%; resize: none; overflow: hidden; display: block; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
-  color: var(--ink); font: 13px/1.45 var(--mono); font-variant-ligatures: none; padding: 7px 10px; box-shadow: 0 2px 8px rgba(0, 0, 0, .06);
-}
-.quick textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.quick textarea::placeholder { color: var(--ink-3); }
 
 /* ---------- title block and legend ---------- */
 .ann { cursor: move; }
@@ -376,7 +369,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 30</span>
+      Snapblade <span class="tag">playground &middot; build 31</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -419,8 +412,6 @@ dl.keys dd { margin: 0; }
     <div class="stage" id="stage">
       <svg id="cv" aria-label="Diagram canvas"></svg>
       <textarea id="editor" hidden aria-label="Edit label"></textarea>
-      <div class="quick" id="quick" hidden><textarea id="quickIn" rows="1" spellcheck="false" autocomplete="off" aria-label="Quick entry"
-        placeholder="Type  Customer -> Web app : checkout  and press Enter"></textarea></div>
       <div class="empty-hint" id="emptyHint" hidden>Double-click anywhere to add a box, or drop a .snapblade file here to open it.</div>
       <div class="toast" id="toast" role="status" hidden></div>
       <div class="status" id="status"></div>
@@ -1579,67 +1570,6 @@ function seqRemove(id) {
   } else S.rows = S.rows.filter(r => r.id !== id);
 }
 
-/* Quick entry: PlantUML-style lines. "A -> B : label" (sync), "->>" (async), "-->" (reply), arrows pointing left,
-   "participant", "note left of / right of / over A[, B] : text" (or a block ending in "end note"), "autonumber",
-   "hide footbox" and "title". Participants are matched by name (or alias) and added when new. Lines for things
-   Snapblade doesn't draw yet (activate, alt, loop...) are skipped; anything else is reported back. */
-const ARROW_TYPES = { '->': 'sync', '->>': 'async', '-->': 'reply', '-->>': 'reply' };
-const SEQ_LINE = /^(.+?)\s*(<<--|<--|<<-|<-|-->>|-->|->>|->)\s*([^:]+?)\s*(?::\s?(.*))?$/;
-const SEQ_SKIP = /^(activate|deactivate|destroy|create|return|alt|else|opt|loop|par|and|break|critical|group|end|ref|box|autoactivate|skinparam|show|hide|newpage|delay|rect|over)\b|^(==|\.\.\.|\|\|\|)/i;
-function seqEnter(text, after = null) {
-  const out = { rows: [], parts: 0, skipped: 0, errors: [] };
-  const unq = s => s.trim().replace(/^"(.*)"$/, '$1').trim(), unesc = s => String(s || '').replace(/\\n/g, '\n');
-  const find = s => { const low = unq(s).toLowerCase(); return S.parts.find(p => oneLine(p.label).toLowerCase() === low) || S.parts.find(p => p.id.toLowerCase() === low); };
-  const make = (label, alias) => {
-    if (S.parts.length >= MAX_PARTS) throw new Error(`a diagram holds at most ${MAX_PARTS} participants`);
-    const p = { id: isId(alias) && !seqItem(alias) && !S.nodes.some(n => n.id === alias) ? alias : nid('p'), kind: 'participant', label };
-    S.parts.push(p); out.parts++;
-    return p;
-  };
-  const part = s => { const n = unq(s); if (!n) throw new Error('a participant has no name'); return find(n) || make(n); };
-  let at = after != null && S.rows.some(r => r.id === after) ? S.rows.findIndex(r => r.id === after) + 1 : S.rows.length;
-  const add = row => {
-    if (S.rows.length >= MAX_ROWS) throw new Error(`a diagram holds at most ${MAX_ROWS} messages and notes`);
-    seqInsert(row, at++); out.rows.push(row.id);
-  };
-  const lines = String(text).split(/\r?\n/).slice(0, 5000);
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim(), low = line.toLowerCase();
-    let m;
-    try {
-      if (!line || line.startsWith("'") || line.startsWith('@') || low === 'sequencediagram') continue;
-      if (/^autonumber\b/.test(low)) S.settings.autonumber = true;
-      else if (low === 'hide footbox') S.settings.footbox = false;
-      else if ((m = line.match(/^title\s+(.+)$/i))) { S.title.title = unesc(m[1]).trim(); S.title.show = true; }
-      else if ((m = line.match(/^(participant|actor|boundary|control|entity|database|collections|queue)\s+(.+)$/i))) {
-        const body = m[2].replace(/\s+(#\S+|<<.*>>)\s*$/, '');
-        let label = unq(body), alias = null, d;
-        if ((d = body.match(/^"([^"]*)"\s+as\s+(\S+)$/i)) || (d = body.match(/^(\S+)\s+as\s+(\S+)$/i))) [label, alias] = [unq(d[1]), d[2]];
-        else if ((d = body.match(/^(\S+)\s+as\s+"([^"]*)"$/i))) [alias, label] = [d[1], d[2]];
-        if (!label) throw new Error('a participant has no name');
-        if (!find(label) && !(alias && find(alias))) make(unesc(label), alias);
-      } else if ((m = line.match(/^note\s+(left|right|over)(?:\s+of)?\s+(.+?)\s*(?::\s?(.*))?$/i))) {
-        let body = m[3];
-        if (body == null) {   // a block: the text runs to "end note"
-          const end = lines.findIndex((l, j) => j > i && /^\s*end\s*note\s*$/i.test(l));
-          if (end < 0) throw new Error('the note has no "end note" line');
-          body = lines.slice(i + 1, end).map(l => l.trim()).join('\n'); i = end;
-        }
-        const side = m[1].toLowerCase(), on = [...new Set(m[2].split(',').map(part).map(p => p.id))].slice(0, side === 'over' ? 2 : 1);
-        add({ id: nid('nt'), kind: 'note', side, on, label: unesc(body) });
-      } else if ((m = line.match(SEQ_LINE))) {
-        let [, a, arrow, b, label] = m;
-        if (arrow.startsWith('<')) { [a, b] = [b, a]; arrow = [...arrow].reverse().join('').replace(/</g, '>'); }
-        if (!unq(a) || !unq(b)) throw new Error('a message needs a participant at each end');
-        const from = part(a), to = part(b);
-        add({ id: nid('m'), from: from.id, to: to.id, type: ARROW_TYPES[arrow], label: unesc(label) });
-      } else if (SEQ_SKIP.test(line)) out.skipped++;
-      else out.errors.push({ line: i + 1, text: lines[i], why: "it isn't a message, note or participant" });
-    } catch (e) { out.errors.push({ line: i + 1, text: lines[i], why: e.message }); }
-  }
-  return out;
-}
-
 /* =====================================================================
    UI
    ===================================================================== */
@@ -2501,7 +2431,7 @@ function seqDiagramPanel() {
     <p class="eyebrow">Sequence diagram</p>
     <label class="check"><input id="f-autonumber" type="checkbox" data-field="autonumber"${st.autonumber ? ' checked' : ''}> Number messages</label>
     <label class="check"><input id="f-footbox" type="checkbox" data-field="footbox"${st.footbox ? ' checked' : ''}> Participants at the bottom too</label>
-    <p class="desc">Columns size themselves to their labels and rows are evenly spaced. Drag from one lifeline to another to add a message, or type in the box at the top of the canvas.</p>
+    <p class="desc">Columns size themselves to their labels and rows are evenly spaced. Drag from one lifeline to another to add a message.</p>
   </section>
   ${annSection()}`;
 }
@@ -2980,7 +2910,7 @@ function fit() {
   let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
   const B = isSeq() && seqLayout().bounds, shapes = B ? [{ x: B.x1, y: B.y1, w: B.x2 - B.x1, h: B.y2 - B.y1 }] : S.nodes;
   for (const n of [...shapes, ...(lastGeom.annots || [])]) { x1 = Math.min(x1, n.x); y1 = Math.min(y1, n.y); x2 = Math.max(x2, n.x + n.w); y2 = Math.max(y2, n.y + n.h); }
-  // A sequence diagram starts at the top, below the quick-entry box.
+  // A sequence diagram starts at the top.
   const pad = 48, top = B ? 70 : pad, k = Math.max(0.2, Math.min((r.width - 2 * pad) / (x2 - x1), (r.height - top - pad - 30) / (y2 - y1), 1.25));
   view = { k, x: (r.width - (x2 - x1) * k) / 2 - x1 * k, y: B ? top - y1 * k : (r.height - 30 - (y2 - y1) * k) / 2 - y1 * k };
   render();
@@ -3325,8 +3255,8 @@ function updateDocUi() {
 function syncTypeUi() {
   const seq = isSeq();
   for (const id of ['addBox', 'addGroup', 'modeSeg', 'modeLbl']) document.getElementById(id).hidden = seq;
-  for (const id of ['addPart', 'addNote', 'quick']) document.getElementById(id).hidden = !seq;
-  document.getElementById('emptyHint').textContent = seq ? 'Double-click to add a participant, or type a line such as  Customer -> Web app : checkout  in the box above.'
+  for (const id of ['addPart', 'addNote']) document.getElementById(id).hidden = !seq;
+  document.getElementById('emptyHint').textContent = seq ? 'Double-click to add a participant, then drag from one lifeline to another to add a message.'
     : 'Double-click anywhere to add a box, or drop a .snapblade file here to open it.';
 }
 // Version 2 files hold tabs; version 1 files (one diagram) still open.
@@ -3409,7 +3339,6 @@ async function newDiagram(type) {
   fileHandle = null; doc = { name: isSeq() ? 'Untitled sequence diagram' : 'Untitled diagram', dirty: false };
   sel = null; multi = []; seqNext = null; view = startView();
   syncTypeUi(); renderTabs(); refresh(true, false); save(false); updateDocUi();
-  if (isSeq()) document.getElementById('quickIn').focus();
 }
 // Put a sample back (undoable). The "Things to try" steps in Help refer to them.
 function loadSample(seq) {
@@ -3518,8 +3447,7 @@ function guideHtml() {
       <li><b>+ Note</b> adds a <b>Note</b> below the selected row. Its <b>Position</b> is ${b(labels(NOTE_SIDES))} its <b>Participant</b>; an Over note <b>Spans to</b> a second one. A note takes its own row, so nothing overlaps.</li>
       <li>The <b>Participant</b> panel has <b>Move left</b> and <b>Move right</b>; <b>Delete participant</b> also deletes its messages and notes. Participants, messages and notes take colors and patterns like boxes and connectors, and get legend rows the same way.</li>
       <li><b>Duplicate</b> (Ctrl+D) puts a copy of a message, note or participant right after it. <b>Delete message</b>, <b>Delete note</b>, <b>Delete participant</b> or the Delete key removes one.</li>
-      <li>The <b>Sequence diagram</b> settings: <b>Number messages</b>, and <b>Participants at the bottom too</b>.</li>
-      <li>Type in the box at the top of the canvas (or just start typing with nothing selected) and press Enter. It reads PlantUML: <code>A -&gt; B : label</code> (sync), <code>-&gt;&gt;</code> (async), <code>--&gt;</code> (reply), arrows pointing left, <code>participant "Long name" as X</code>, <code>note left of A : text</code> (or <code>right of</code>, <code>over A, B</code>, or a note block ending in <code>end note</code>), <code>autonumber</code>, <code>hide footbox</code> and <code>title</code>. New names become participants. Lines go in below the selected row. Paste a whole PlantUML diagram to bring it in; lines for things Snapblade doesn't draw yet (activate, alt, loop) are skipped, and lines it can't read stay in the box.</li></ul>`],
+      <li>The <b>Sequence diagram</b> settings: <b>Number messages</b>, and <b>Participants at the bottom too</b>.</li></ul>`],
     ['tabs', 'Tabs', `<p>One file can hold several diagrams, each on its own tab along the bottom of the canvas: an architecture view and the sequence diagrams that go with it, say.</p><ul>
       <li><b>Add a tab</b> (the + at the end of the tabs) offers a <b>Box diagram</b>, a <b>Sequence diagram</b>, or <b>Duplicate this tab</b>. A new tab goes right after the open one.</li>
       <li>Click a tab to open it. Double-click the open tab (or press F2 on it) to rename it; drag a tab sideways to move it. The arrow keys move between tabs when one has the focus.</li>
@@ -3563,7 +3491,6 @@ function helpHtml() {
       <dt>Ctrl+Shift+C / V</dt><dd>Copy a shape's or connector's colors, paste them onto the selection</dd>
       <dt>Wheel</dt><dd>Zoom toward the cursor (Shift+wheel scrolls sideways)</dd>
       <dt>Right-drag</dt><dd>Pan (middle-drag or Space+drag also work)</dd>
-      <dt>Typing</dt><dd>In a sequence diagram with nothing selected, goes to the quick-entry box (A -&gt; B : label, then Enter)</dd>
       <dt>Enter</dt><dd>After labeling a new message: click the lifeline the next one goes to. Esc stops</dd>
       <dt>F2 on a tab</dt><dd>Rename it. ←/→ move between tabs</dd>
       <dt>F1 / ?</dt><dd>Open this help (? only with nothing selected)</dd>
@@ -3587,7 +3514,7 @@ function helpHtml() {
     <ol class="try">
       <li>Drag from the <b>Customer</b> lifeline to <b>Web app</b> between two messages. Type a label, press Enter, then click the next lifeline.</li>
       <li>Drag <b>Validate cart</b> down a few rows, or select it and press the arrow keys.</li>
-      <li>Click in the box at the top of the canvas and type <code>Orders API --&gt; Customer : email</code>, then Enter.</li>
+      <li>Select <b>Payments API</b> and click <b>+ Note</b>: a note goes right of its lifeline, ready to type.</li>
       <li>Select a message and switch its Kind between Sync, Async and Reply.</li>
       <li>Click the + at the end of the tabs and add a Box diagram tab: one file can hold the architecture and its sequence diagrams. Double-click a tab to rename it.</li>
     </ol>
@@ -3679,7 +3606,6 @@ function addTab(kind) {
   BOOK.pages.splice(BOOK.active + 1, 0, { name, S: d, undo: [], redo: [], view: copy ? { ...view } : (d.type ? { x: 60, y: 90, k: 1 } : { x: 40, y: 40, k: 1 }) });
   switchTab(BOOK.active + 1);
   save();
-  if (isSeq() && !copy) document.getElementById('quickIn').focus();
 }
 // Deleting a tab can't be undone (undo is per tab), so a tab with something on it asks first.
 async function deleteTab(i) {
@@ -4099,30 +4025,6 @@ async function copyExport(o) {
   }
 }
 
-/* ---------- quick entry (sequence diagrams) ---------- */
-function fitQuick() {
-  const q = document.getElementById('quickIn');
-  q.style.height = 'auto'; q.style.height = Math.min(q.scrollHeight + 2, 180) + 'px'; q.style.overflowY = q.scrollHeight > 178 ? 'auto' : 'hidden';
-}
-function focusQuick(text = '') {
-  const q = document.getElementById('quickIn');
-  q.focus(); q.value += text; q.setSelectionRange(q.value.length, q.value.length); fitQuick();
-}
-// Add what the box says, below the selected row (or at the end), as one undo step. Lines it couldn't read stay in the box.
-function quickEnter() {
-  const q = document.getElementById('quickIn'), text = q.value;
-  if (!text.trim() || !isSeq()) return;
-  const before = snapshot(), after = sel?.type === 'seq' && S.rows.some(r => r.id === sel.id) ? sel.id : null;
-  const r = seqEnter(text, after), lines = text.split(/\r?\n/);
-  keepUndo(before);
-  if (r.rows.length) sel = { type: 'seq', id: r.rows[r.rows.length - 1] };
-  seqNext = null;
-  q.value = r.errors.map(e => lines[e.line - 1]).join('\n'); fitQuick();
-  refresh(true, true);
-  if (r.errors.length) toast(`Couldn't read ${r.errors.length > 1 ? r.errors.length + ' lines' : 'that line'}: ${r.errors[0].why}. A message looks like  A -> B : label`, true);
-  else if (r.skipped) toast(`Skipped ${r.skipped} line${r.skipped > 1 ? 's' : ''} Snapblade doesn't draw yet (activate, alt, loop and the like).`);
-}
-
 function init() {
   svg = document.getElementById('cv'); stage = document.getElementById('stage'); panel = document.getElementById('panel');
   statusEl = document.getElementById('status'); editor = document.getElementById('editor');
@@ -4231,12 +4133,6 @@ function init() {
   document.getElementById('addGroup').addEventListener('click', () => addNode('group'));
   document.getElementById('addPart').addEventListener('click', () => addPart());
   document.getElementById('addNote').addEventListener('click', addSeqNote);
-  const quickIn = document.getElementById('quickIn');
-  quickIn.addEventListener('input', fitQuick);
-  quickIn.addEventListener('keydown', ev => {
-    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); quickEnter(); }
-    if (ev.key === 'Escape') { ev.preventDefault(); quickIn.blur(); }
-  });
   document.getElementById('undoBtn').addEventListener('click', () => restore(undoStack, redoStack));
   document.getElementById('redoBtn').addEventListener('click', () => restore(redoStack, undoStack));
   document.getElementById('fitBtn').addEventListener('click', fit);
@@ -4268,7 +4164,6 @@ function init() {
     else if (k === 'Escape') { seqNext = null; select(null); render(); }
     else if ((k === 'F2' || k === 'Enter') && sel) { ev.preventDefault(); startEditing(); }
     else if (sel && sel.type !== 'annot' && k.length === 1 && k !== ' ' && !mod && !ev.altKey) { ev.preventDefault(); startEditing(k); }
-    else if (isSeq() && !sel && k.length === 1 && k !== ' ' && !mod && !ev.altKey) { ev.preventDefault(); focusQuick(k); }
     else if (k === ' ') { spaceDown = true; }
     else if (sel?.type === 'seq' && k.startsWith('Arrow')) { ev.preventDefault(); seqNudge(k); }
     else if (sel?.type === 'node' && k.startsWith('Arrow')) {
