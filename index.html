@@ -31,6 +31,7 @@
   --group-stroke: #a3b2b6;
   --grid-dot: #c2ccc9;
   --p-slate: #5b6b73; --p-blue: #3a63c4; --p-teal: #1d8585; --p-green: #2f8a55; --p-amber: #b47a17; --p-orange: #c8602a; --p-red: #c2463b; --p-violet: #7a4fc4;
+  --note-bg: #fbf4d2; --note-stroke: #b59d42;
   --danger: #b8392e;
   --ui: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
@@ -42,6 +43,7 @@
     --edge: #c4cfd2; --node-bg: #1f272a; --node-stroke: #b9c5c8; --group-bg: rgba(255, 255, 255, .03);
     --group-stroke: #4b5a5f; --grid-dot: #2a3337;
     --p-slate: #9aabb2; --p-blue: #7f9ef0; --p-teal: #5cc6c6; --p-green: #5cc08a; --p-amber: #e0aa4d; --p-orange: #f0905c; --p-red: #ee7b70; --p-violet: #b195f0; --danger: #ff7d70;
+    --note-bg: #353120; --note-stroke: #a08e4c;
     color-scheme: dark;
   }
 }
@@ -51,6 +53,7 @@
   --edge: #c4cfd2; --node-bg: #1f272a; --node-stroke: #b9c5c8; --group-bg: rgba(255, 255, 255, .03);
   --group-stroke: #4b5a5f; --grid-dot: #2a3337;
   --p-slate: #9aabb2; --p-blue: #7f9ef0; --p-teal: #5cc6c6; --p-green: #5cc08a; --p-amber: #e0aa4d; --p-orange: #f0905c; --p-red: #ee7b70; --p-violet: #b195f0; --danger: #ff7d70;
+  --note-bg: #353120; --note-stroke: #a08e4c;
   color-scheme: dark;
 }
 
@@ -217,6 +220,40 @@ dl.keys dd { margin: 0; }
 .temp { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
 .cur-nw, .cur-se { cursor: nwse-resize; } .cur-ne, .cur-sw { cursor: nesw-resize; }
 .cur-n, .cur-s { cursor: ns-resize; } .cur-e, .cur-w { cursor: ew-resize; }
+/* Sequence diagrams: participant heads reuse .b-body; lifelines, messages and notes take --ln, --fl and --dash the same way. */
+.part { cursor: grab; }
+.part.sel .b-body { stroke: var(--accent); stroke-width: 2; }
+.s-name { font: 500 13px var(--ui); fill: var(--ink); pointer-events: none; }
+.s-life { stroke: var(--ln, var(--group-stroke)); stroke-width: 1.25; stroke-dasharray: 5 4; }
+.s-life.sel { stroke: var(--accent); }
+.s-life.pick { stroke: var(--accent); stroke-width: 2; }
+.s-life.hot { stroke: var(--accent); stroke-width: 3; stroke-dasharray: none; }
+.s-lifehit { fill: transparent; cursor: crosshair; }
+.msg { cursor: pointer; }
+.msg .hit { fill: none; stroke: transparent; stroke-width: 12; }
+.msg .s-line { fill: none; stroke: var(--ln, var(--edge)); stroke-width: 1.5; stroke-dasharray: var(--dash, none); stroke-linejoin: round; }
+.msg .s-fill { fill: var(--ln, var(--edge)); }
+.msg .s-open { fill: none; stroke: var(--ln, var(--edge)); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.msg:hover .s-line, .msg.sel .s-line, .msg:hover .s-open, .msg.sel .s-open { stroke: var(--accent); }
+.msg:hover .s-fill, .msg.sel .s-fill { fill: var(--accent); }
+.msg.sel .s-line { stroke-width: 2; }
+.s-label { font: 500 12px var(--ui); fill: var(--ink); }
+.s-label-bg { fill: var(--paper); }
+.msg:hover .s-label, .msg.sel .s-label { fill: var(--accent); }
+.note { cursor: pointer; }
+.n-body { fill: var(--fl, var(--note-bg)); stroke: var(--ln, var(--note-stroke)); stroke-width: 1.25; stroke-dasharray: var(--dash, none); stroke-linejoin: round; }
+.n-fold { fill: none; stroke: var(--ln, var(--note-stroke)); stroke-width: 1.25; stroke-linejoin: round; }
+.note.sel .n-body, .note.sel .n-fold { stroke: var(--accent); stroke-width: 2; }
+.n-text { font: 500 12px var(--ui); fill: var(--ink); pointer-events: none; }
+.s-gap { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; pointer-events: none; }
+.ghost { opacity: .35; }
+.quick { position: absolute; left: 12px; top: 12px; width: min(560px, calc(100% - 24px)); z-index: 4; }
+.quick textarea {
+  width: 100%; resize: none; overflow: hidden; display: block; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+  color: var(--ink); font: 13px/1.45 var(--mono); font-variant-ligatures: none; padding: 7px 10px; box-shadow: 0 2px 8px rgba(0, 0, 0, .06);
+}
+.quick textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.quick textarea::placeholder { color: var(--ink-3); }
 
 /* ---------- title block and legend ---------- */
 .ann { cursor: move; }
@@ -314,7 +351,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 27</span>
+      Snapblade <span class="tag">playground &middot; build 28</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -325,6 +362,7 @@ dl.keys dd { margin: 0; }
         <button class="btn" id="fileBtn" type="button" aria-haspopup="menu" aria-expanded="false">File &#9662;</button>
         <div class="menu" id="fileMenu" role="menu" hidden>
           <button type="button" role="menuitem" data-file="new">New diagram</button>
+          <button type="button" role="menuitem" data-file="newseq">New sequence diagram</button>
           <button type="button" role="menuitem" data-file="open">Open&hellip;<kbd>Ctrl+O</kbd></button>
           <button type="button" role="menuitem" data-file="save">Save<kbd>Ctrl+S</kbd></button>
           <button type="button" role="menuitem" data-file="saveas">Save as&hellip;<kbd>Ctrl+Shift+S</kbd></button>
@@ -334,13 +372,15 @@ dl.keys dd { margin: 0; }
       <span class="sep"></span>
       <button class="btn" id="addBox" type="button">+ Box</button>
       <button class="btn" id="addGroup" type="button">+ Container</button>
+      <button class="btn" id="addPart" type="button" hidden>+ Participant</button>
+      <button class="btn" id="addNote" type="button" hidden>+ Note</button>
       <span class="sep"></span>
       <button class="btn" id="undoBtn" type="button" title="Ctrl+Z">Undo</button>
       <button class="btn" id="redoBtn" type="button" title="Ctrl+Y">Redo</button>
       <button class="btn" id="fitBtn" type="button">Fit</button>
     </div>
     <div class="modes">
-      <span>Anchors</span>
+      <span id="modeLbl">Anchors</span>
       <div class="seg" role="group" aria-label="Anchor behavior" id="modeSeg">
         <button type="button" data-mode="fixed">Visio-style</button>
         <button type="button" data-mode="even">Even</button>
@@ -353,6 +393,8 @@ dl.keys dd { margin: 0; }
     <div class="stage" id="stage">
       <svg id="cv" aria-label="Diagram canvas"></svg>
       <textarea id="editor" hidden aria-label="Edit label"></textarea>
+      <div class="quick" id="quick" hidden><textarea id="quickIn" rows="1" spellcheck="false" autocomplete="off" aria-label="Quick entry"
+        placeholder="Type  Customer -> Web app : checkout  and press Enter"></textarea></div>
       <div class="empty-hint" id="emptyHint" hidden>Double-click anywhere to add a box, or drop a .snapblade file here to open it.</div>
       <div class="toast" id="toast" role="status" hidden></div>
       <div class="status" id="status"></div>
@@ -380,13 +422,14 @@ const NORMAL = { top: { x: 0, y: -1 }, right: { x: 1, y: 0 }, bottom: { x: 0, y:
 const KEY = 'snapblade-playground-v1', OLD_KEY = 'diogramo-playground-v1', META_KEY = 'snapblade-doc-meta', AUTHOR_KEY = 'snapblade-author', ASIDE_KEY = 'snapblade-set-aside-v1';
 let doc = { name: 'Untitled diagram', dirty: false };   // the diagram's name, and whether it has unsaved file changes
 
-let S = null;          // { nodes, edges, settings, title, legend }: the diagram
+let S = null;          // { nodes, edges, settings, title, legend }: the diagram (a sequence diagram adds type, parts and rows)
 let lifted = null;     // node being dragged: excluded from its container's layout
 let uid = Date.now() % 1e6;
 // A new id that nothing in the diagram uses yet (ids from an opened file can sit in the same range).
 function nid(p) {
   let id;
-  do id = p + (++uid).toString(36); while (S.nodes.some(n => n.id === id) || S.edges.some(e => e.id === id));
+  const taken = o => o.id === id;
+  do id = p + (++uid).toString(36); while (S.nodes.some(taken) || S.edges.some(taken) || S.parts?.some(taken) || S.rows?.some(taken));
   return id;
 }
 // A lookup keyed by ids. Ids come from files, so it has no inherited names ("constructor", "__proto__") to collide with.
@@ -441,7 +484,7 @@ function sample() {
       E('e8', 'inv', 'cache'), { ...E('e9', 'inv', 'idb'), label: 'SQL' },
       { ...E('e10', 'pay', 'gw'), label: 'REST\nmTLS', style: { dash: 'dashed' } },
     ],
-    settings: { mode: 'straighten', grid: 10, showSlots: true, routing: 'ortho', radius: 6, labelPos: 'start', walls: true },
+    settings: { mode: 'straighten', grid: 10, showSlots: true, routing: 'ortho', radius: 6, labelPos: 'start', walls: true, autonumber: false, footbox: true },
     title: { ...titleDefaults(), show: true, title: 'Order platform', version: '0.3', date: todayIso() },
     legend: { ...legendDefaults(), show: true, labels: {
       'box:blue||pair': 'People and client apps', 'box:green||pair': 'Database', 'box:amber||pair': 'Cache',
@@ -457,7 +500,7 @@ const PRESETS = ['slate', 'blue', 'teal', 'green', 'amber', 'orange', 'red', 'vi
 const DASH = { solid: 'none', dashed: '6 4', dotted: '1.5 3.5' };
 const isHex = v => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
 const lineCss = (v, fallback) => !v ? fallback : isHex(v) ? v : `var(--p-${v})`;
-const defLineCss = o => !o.kind ? 'var(--edge)' : o.kind === 'group' ? 'var(--group-stroke)' : 'var(--node-stroke)';
+const defLineCss = o => !o.kind ? 'var(--edge)' : o.kind === 'group' ? 'var(--group-stroke)' : o.kind === 'note' ? 'var(--note-stroke)' : 'var(--node-stroke)';
 const tintOf = o => o.style?.tint ?? (o.kind === 'group' ? 7 : 16);
 function styleVars(o) {
   const st = o.style || {}, out = [];
@@ -488,7 +531,7 @@ const CORNERS = [['top-left', 'Top left'], ['top-right', 'Top right'], ['bottom-
 const ANN = { margin: 28, gap: 16, pad: 12 };
 const titleDefaults = () => ({ show: false, title: '', version: '', date: '', author: '', pos: 'bottom-right' });
 const legendDefaults = () => ({ show: false, heading: 'Legend', pos: 'bottom-left', labels: {}, hidden: [] });
-const kindWord = o => !o.kind ? 'connector' : o.kind === 'group' ? 'container' : 'box';
+const kindWord = o => !o.kind ? (o.type ? 'message' : 'connector') : ({ group: 'container', participant: 'participant', note: 'note' })[o.kind] || 'box';
 // Identifies a visual style: same key, same legend row.
 function styleKey(o) {
   const st = o.style || {}, parts = [st.line || '', st.dash && st.dash !== 'solid' ? st.dash : ''];
@@ -506,10 +549,13 @@ function autoName(o) {
   if (o.kind) { const f = st.fill || 'pair'; if (f === 'none') name += ', no fill'; else if (isHex(f)) name += `, ${f.toUpperCase()} fill`; }
   return name;
 }
-// One entry per distinct style in use (boxes, then containers, then connectors), in order of first use.
+// One entry per distinct style in use (boxes, then containers, then connectors; in a sequence diagram participants,
+// notes, then messages), in order of first use.
 function legendEntries() {
   const map = new Map();
-  for (const o of [...S.nodes.filter(n => n.kind === 'box'), ...S.nodes.filter(n => n.kind === 'group'), ...S.edges]) {
+  const items = isSeq() ? [...S.parts, ...S.rows.filter(isNote), ...S.rows.filter(r => !isNote(r))]
+    : [...S.nodes.filter(n => n.kind === 'box'), ...S.nodes.filter(n => n.kind === 'group'), ...S.edges];
+  for (const o of items) {
     if (!isStyled(o)) continue;
     const key = styleKey(o);
     if (!map.has(key)) map.set(key, { key, sample: o, auto: autoName(o), count: 0 });
@@ -595,7 +641,7 @@ function swatchShape(o, x, y, w, h, c) {
 }
 // Canvas/panel painting through the app's CSS.
 const canvasSwatch = (o, x, y, w, h) => swatchShape(o, x, y, w, h, {
-  body: `class="${o.kind === 'group' ? 'g-body' : 'b-body'}" style="${styleVars(o)}"`,
+  body: `class="${o.kind === 'group' ? 'g-body' : o.kind === 'note' ? 'n-body' : 'b-body'}" style="${styleVars(o)}"`,
   group: `style="${styleVars(o)}"`, line: 'class="sw-line"', head: 'class="sw-head"' });
 
 /* ---------- containers ---------- */
@@ -1315,6 +1361,246 @@ function straighten(ids) {
   return { moved, text: moved ? `Straightened from ${name(ns[0])} outward: ${moved} shape${moved > 1 ? 's' : ''} moved` : 'Nothing to straighten without overlapping another shape.' };
 }
 
+/* ---------- sequence diagrams ----------
+   A diagram with type 'sequence' has participants (S.parts, left to right) and rows (S.rows, top to bottom). A row is
+   a message from one lifeline to another (or to itself), or a note beside, over or across lifelines. Nothing has a
+   position: seqLayout() sizes each column from the labels next to it and spaces the rows evenly, so it stays tidy. */
+const SEQ = { minW: 100, padX: 14, headH: 40, nameLh: 16, gap: 40, rowTop: 30, rowGap: 14, lh: 15, labelPad: 12, head: 10,
+  self: 36, selfH: 20, noteGap: 12, notePad: 8, fold: 8, span: 18, tail: 26 };
+const MAX_PARTS = 100, MAX_ROWS = 1000;   // the most a file (or a paste) can add
+const MSG_TYPES = [['sync', 'Sync'], ['async', 'Async'], ['reply', 'Reply']];
+const NOTE_SIDES = [['left', 'Left of'], ['right', 'Right of'], ['over', 'Over']];
+const isSeq = () => S?.type === 'sequence';
+const isNote = r => r.kind === 'note';
+const partOf = id => S.parts.find(p => p.id === id);
+const seqItem = id => partOf(id) || S.rows.find(r => r.id === id);
+const hasContent = () => isSeq() ? S.parts.length > 0 : S.nodes.length > 0;
+// A reply is dashed unless its style says otherwise.
+const msgDash = r => r.style?.dash || (r.type === 'reply' ? 'dashed' : 'solid');
+const withDash = r => ({ ...r, style: { ...(r.style || {}), dash: msgDash(r) } });
+
+function seqSample() {
+  const P = (id, label, o = {}) => ({ id, kind: 'participant', label, ...o });
+  const M = (id, from, to, label, type = 'sync') => ({ id, from, to, type, label });
+  return {
+    type: 'sequence', nodes: [], edges: [],
+    parts: [P('cust', 'Customer', { style: { line: 'blue' } }), P('web', 'Web app'), P('orders', 'Orders API'), P('pay', 'Payments API'),
+      P('gw', 'Payment gateway\n(external)', { style: { dash: 'dashed', fill: 'none' } }), P('bus', 'Event bus', { style: { line: 'amber' } })],
+    rows: [
+      M('m1', 'cust', 'web', 'Place order'), M('m2', 'web', 'orders', 'POST /orders'), M('m3', 'orders', 'orders', 'Validate cart'),
+      M('m4', 'orders', 'pay', 'Authorize payment'), M('m5', 'pay', 'gw', 'Charge card'),
+      { id: 'n1', kind: 'note', side: 'over', on: ['pay', 'gw'], label: 'mTLS. Can take up to 5 s.' },
+      M('m6', 'gw', 'pay', 'Approved', 'reply'), M('m7', 'pay', 'orders', 'Authorized', 'reply'),
+      M('m8', 'orders', 'bus', 'OrderPlaced', 'async'), M('m9', 'orders', 'web', '201 Created', 'reply'), M('m10', 'web', 'cust', 'Order confirmed', 'reply'),
+    ],
+    settings: { ...sample().settings },
+    title: { ...titleDefaults(), show: true, title: 'Checkout', version: '0.3', date: todayIso() },
+    legend: { ...legendDefaults(), show: true, labels: { 'participant:blue||pair': 'People', 'participant:|dashed|none': 'Third-party service', 'participant:amber||pair': 'Messaging' } },
+  };
+}
+
+function seqLayout(fam = UI_STACK) {
+  const nameFont = `500 13px ${fam}`, textFont = `500 12px ${fam}`;
+  const linesOf = s => String(s).split('\n');
+  const widest = (ls, f) => Math.ceil(Math.max(0, ...ls.map(t => textWidth(t, f))));
+  const P = S.parts.map(p => { const ls = linesOf(p.label); return { id: p.id, p, ls, w: Math.max(SEQ.minW, widest(ls, nameFont) + 2 * SEQ.padX), x: 0 }; });
+  const at = dict(); P.forEach((q, i) => { at[q.id] = i; });
+  const H = Math.max(SEQ.headH, ...P.map(q => q.ls.length * SEQ.nameLh + 22));
+  // Each column goes as far left as the heads, labels and notes between it and the columns before it allow.
+  const need = P.map(() => []);
+  const apart = (i, j, d) => { if (i > j) [i, j] = [j, i]; if (i !== j && i >= 0 && j < P.length) need[j].push([i, d]); };
+  for (let i = 1; i < P.length; i++) apart(i - 1, i, (P[i - 1].w + P[i].w) / 2 + SEQ.gap);
+  let num = 0;
+  const R = S.rows.map(r => {
+    if (isNote(r)) {
+      const ls = linesOf(r.label), w = Math.max(60, widest(ls, textFont) + 2 * SEQ.notePad + SEQ.fold), h = ls.length * SEQ.lh + 2 * SEQ.notePad;
+      const a = at[r.on[0]], b = r.side === 'over' && r.on.length > 1 ? at[r.on[1]] : a;
+      if (r.side === 'right') apart(a, a + 1, w + 2 * SEQ.noteGap);
+      else if (r.side === 'left') apart(a - 1, a, w + 2 * SEQ.noteGap);
+      else if (a === b) { apart(a - 1, a, w / 2 + SEQ.noteGap); apart(a, a + 1, w / 2 + SEQ.noteGap); }
+      else apart(a, b, w - 2 * SEQ.span);
+      return { r, note: true, ls, w, h, a: Math.min(a, b), b: Math.max(a, b) };
+    }
+    const text = (S.settings.autonumber ? `${++num}. ` : '') + r.label;
+    const ls = text ? linesOf(text) : [], lw = widest(ls, textFont), lh = ls.length * SEQ.lh, a = at[r.from], b = at[r.to];
+    if (a === b) {
+      const loop = Math.max(SEQ.selfH, lh + 4);
+      apart(a, a + 1, SEQ.self + (lw ? lw + 8 : 0) + SEQ.labelPad);
+      return { r, self: true, ls, lw, lh, a, b, loop, h: loop + 10 };
+    }
+    apart(a, b, lw + 2 * SEQ.labelPad);
+    return { r, ls, lw, lh, a, b, h: (ls.length ? lh + 5 : 6) + 10 };
+  });
+  P.forEach((q, j) => { q.x = Math.round(j ? Math.max(...need[j].map(([i, d]) => P[i].x + d)) : q.w / 2); });
+  // Rows, top to bottom, and where each one's pieces go.
+  let y = H + SEQ.rowTop, x1 = 0, x2 = 0;
+  const grow = (a, b) => { x1 = Math.min(x1, a); x2 = Math.max(x2, b); };
+  for (const q of P) grow(q.x - q.w / 2, q.x + q.w / 2);
+  for (const g of R) {
+    g.y = y; y += g.h + SEQ.rowGap;
+    if (g.note) {
+      const xa = P[g.a].x, xb = P[g.b].x;
+      if (g.r.side === 'right') g.x = xa + SEQ.noteGap;
+      else if (g.r.side === 'left') g.x = xa - SEQ.noteGap - g.w;
+      else if (g.a === g.b) g.x = Math.round(xa - g.w / 2);
+      else { g.x = xa - SEQ.span; g.w = xb - xa + 2 * SEQ.span; }
+      grow(g.x, g.x + g.w);
+    } else if (g.self) {
+      g.x1 = g.x2 = P[g.a].x; g.ay = g.y + 5; g.by = g.ay + g.loop;
+      grow(g.x1, g.x1 + SEQ.self + (g.lw ? g.lw + 8 : 0));
+    } else {
+      g.x1 = P[g.a].x; g.x2 = P[g.b].x; g.ay = g.y + g.h - 5;
+    }
+  }
+  const end = (R.length ? y - SEQ.rowGap : H + SEQ.rowTop) + SEQ.tail;   // where lifelines stop (and the bottom heads start)
+  return { H, P, R, end, bounds: { x1, y1: 0, x2, y2: S.settings.footbox ? end + H : end } };
+}
+// Draw a layout. `p` paints: CSS classes and hit areas on the canvas, plain colors in exports.
+function seqMarkup(L, p) {
+  const { H, P, R, end } = L, r2 = v => Math.round(v * 100) / 100;
+  const texts = (ls, x, top, lh, size, attrs, anchor) => ls.map((t, i) =>
+    `<text x="${r2(x)}" y="${r2(top + i * lh + lh / 2 + size * 0.35)}" text-anchor="${anchor}" ${attrs}>${esc(t)}</text>`).join('');
+  let out = '';
+  for (const q of P) out += `<line x1="${q.x}" y1="${H}" x2="${q.x}" y2="${end}" ${p.life(q)}/>` + p.lifeHit(q, H, end);
+  const head = (q, y, foot) => `<g ${p.part(q, foot)}><rect x="${q.x - q.w / 2}" y="${y}" width="${q.w}" height="${H}" rx="3" ${p.body(q)}/>`
+    + texts(q.ls, q.x, y + (H - q.ls.length * SEQ.nameLh) / 2, SEQ.nameLh, 13, p.name(q), 'middle') + '</g>';
+  for (const q of P) out += head(q, 0) + (S.settings.footbox ? head(q, end, true) : '');
+  for (const g of R) {
+    if (g.note) {
+      const { x, y, w, h } = g, f = SEQ.fold;
+      out += `<g ${p.note(g)}><path d="M${x},${y} H${x + w - f} L${x + w},${y + f} V${y + h} H${x} Z" ${p.noteBody(g)}/>`
+        + `<path d="M${x + w - f},${y} V${y + f} H${x + w}" ${p.fold(g)}/>`
+        + texts(g.ls, x + SEQ.notePad, y + SEQ.notePad, SEQ.lh, 12, p.noteText(g), 'start') + '</g>';
+      continue;
+    }
+    // A filled (sync) head covers the end of its line; an open head is drawn to the tip.
+    const open = g.r.type !== 'sync', inset = open ? 0 : SEQ.head / 2;
+    let d, dir;
+    if (g.self) {
+      const x = g.x1, xr = x + SEQ.self;
+      d = pathD([{ x, y: g.ay }, { x: xr, y: g.ay }, { x: xr, y: g.by }, { x: x + inset, y: g.by }], 4); dir = -1;
+    } else {
+      dir = Math.sign(g.x2 - g.x1) || 1;
+      d = `M${g.x1},${g.ay} L${g.x2 - dir * inset},${g.ay}`;
+    }
+    const tx = g.x2, ty = g.self ? g.by : g.ay, bx = tx - dir * SEQ.head, hw = open ? 5 : 4.5;
+    const arrow = open ? `<path d="M${bx},${ty - hw} L${tx},${ty} L${bx},${ty + hw}" ${p.open(g)}/>`
+      : `<path d="M${tx},${ty} L${bx},${ty - hw} L${bx},${ty + hw} Z" ${p.fill(g)}/>`;
+    let label = '';
+    if (g.ls.length && g.self) label = texts(g.ls, g.x1 + SEQ.self + 8, (g.ay + g.by - g.lh) / 2, SEQ.lh, 12, p.label(g), 'start');
+    else if (g.ls.length) {
+      const mid = (g.x1 + g.x2) / 2;   // the label breaks the lifelines it crosses
+      label = `<rect x="${r2(mid - g.lw / 2 - 4)}" y="${g.y - 1}" width="${g.lw + 8}" height="${g.lh + 2}" rx="2" ${p.labelBg(g)}/>`
+        + texts(g.ls, mid, g.y, SEQ.lh, 12, p.label(g), 'middle');
+    }
+    out += `<g ${p.msg(g)}>${p.hit(d)}<path d="${d}" ${p.line(g)}/>${arrow}${label}</g>`;
+  }
+  return out;
+}
+// Where a row or column would go, for drops and their previews. skip: the one being moved.
+const rowsBut = (L, skip) => L.R.filter(g => g.r.id !== skip);
+const seqIndexAt = (L, y, skip) => rowsBut(L, skip).filter(g => g.y + g.h / 2 < y).length;
+function seqGapY(L, i, skip) {
+  const R = rowsBut(L, skip), last = R[R.length - 1];
+  if (!R.length) return L.H + SEQ.rowTop / 2;
+  return i < R.length ? R[i].y - SEQ.rowGap / 2 : last.y + last.h + SEQ.rowGap / 2;
+}
+const seqColAt = (L, x, skip) => L.P.filter(q => q.id !== skip && q.x < x).length;
+function seqGapX(L, i, skip) {
+  const P = L.P.filter(q => q.id !== skip), a = P[i - 1], b = P[i];
+  if (!a && !b) return 0;
+  return !a ? b.x - b.w / 2 - SEQ.gap / 2 : !b ? a.x + a.w / 2 + SEQ.gap / 2 : (a.x + a.w / 2 + b.x - b.w / 2) / 2;
+}
+// The lifeline nearest x, if x is within half its head's width (or tol).
+function seqLifeAt(L, x, tol = 0) {
+  let best = null, bd = Infinity;
+  for (const q of L.P) { const d = Math.abs(q.x - x); if (d < bd && d <= Math.max(q.w / 2, tol)) { bd = d; best = q; } }
+  return best;
+}
+// A message that answers the sync call just above it starts out as a reply.
+function guessType(from, to, i) {
+  const prev = S.rows.slice(0, i).reverse().find(r => !isNote(r));
+  return from !== to && prev?.type === 'sync' && prev.from === to && prev.to === from ? 'reply' : 'sync';
+}
+function seqInsert(row, i = S.rows.length) { S.rows.splice(Math.max(0, Math.min(i, S.rows.length)), 0, row); return row; }
+const seqMessage = (from, to, i, label = '') => seqInsert({ id: nid('m'), from, to, type: guessType(from, to, i), label }, i);
+// Move a participant or a row to position i in its list (counted without it). True if it moved.
+function seqMoveTo(id, i) {
+  const list = partOf(id) ? S.parts : S.rows, j = list.findIndex(o => o.id === id);
+  if (j < 0) return false;
+  const [o] = list.splice(j, 1), k = Math.max(0, Math.min(i, list.length));
+  list.splice(k, 0, o);
+  return k !== j;
+}
+// Remove a participant (with the messages and notes that involve it) or a row.
+function seqRemove(id) {
+  if (partOf(id)) {
+    S.parts = S.parts.filter(p => p.id !== id);
+    S.rows = S.rows.filter(r => isNote(r) ? !r.on.includes(id) : r.from !== id && r.to !== id);
+  } else S.rows = S.rows.filter(r => r.id !== id);
+}
+
+/* Quick entry: PlantUML-style lines. "A -> B : label" (sync), "->>" (async), "-->" (reply), arrows pointing left,
+   "participant", "note left of / right of / over A[, B] : text" (or a block ending in "end note"), "autonumber",
+   "hide footbox" and "title". Participants are matched by name (or alias) and added when new. Lines for things
+   Snapblade doesn't draw yet (activate, alt, loop...) are skipped; anything else is reported back. */
+const ARROW_TYPES = { '->': 'sync', '->>': 'async', '-->': 'reply', '-->>': 'reply' };
+const SEQ_LINE = /^(.+?)\s*(<<--|<--|<<-|<-|-->>|-->|->>|->)\s*([^:]+?)\s*(?::\s?(.*))?$/;
+const SEQ_SKIP = /^(activate|deactivate|destroy|create|return|alt|else|opt|loop|par|and|break|critical|group|end|ref|box|autoactivate|skinparam|show|hide|newpage|delay|rect|over)\b|^(==|\.\.\.|\|\|\|)/i;
+function seqEnter(text, after = null) {
+  const out = { rows: [], parts: 0, skipped: 0, errors: [] };
+  const unq = s => s.trim().replace(/^"(.*)"$/, '$1').trim(), unesc = s => String(s || '').replace(/\\n/g, '\n');
+  const find = s => { const low = unq(s).toLowerCase(); return S.parts.find(p => oneLine(p.label).toLowerCase() === low) || S.parts.find(p => p.id.toLowerCase() === low); };
+  const make = (label, alias) => {
+    if (S.parts.length >= MAX_PARTS) throw new Error(`a diagram holds at most ${MAX_PARTS} participants`);
+    const p = { id: isId(alias) && !seqItem(alias) && !S.nodes.some(n => n.id === alias) ? alias : nid('p'), kind: 'participant', label };
+    S.parts.push(p); out.parts++;
+    return p;
+  };
+  const part = s => { const n = unq(s); if (!n) throw new Error('a participant has no name'); return find(n) || make(n); };
+  let at = after != null && S.rows.some(r => r.id === after) ? S.rows.findIndex(r => r.id === after) + 1 : S.rows.length;
+  const add = row => {
+    if (S.rows.length >= MAX_ROWS) throw new Error(`a diagram holds at most ${MAX_ROWS} messages and notes`);
+    seqInsert(row, at++); out.rows.push(row.id);
+  };
+  const lines = String(text).split(/\r?\n/).slice(0, 5000);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim(), low = line.toLowerCase();
+    let m;
+    try {
+      if (!line || line.startsWith("'") || line.startsWith('@') || low === 'sequencediagram') continue;
+      if (/^autonumber\b/.test(low)) S.settings.autonumber = true;
+      else if (low === 'hide footbox') S.settings.footbox = false;
+      else if ((m = line.match(/^title\s+(.+)$/i))) { S.title.title = unesc(m[1]).trim(); S.title.show = true; }
+      else if ((m = line.match(/^(participant|actor|boundary|control|entity|database|collections|queue)\s+(.+)$/i))) {
+        const body = m[2].replace(/\s+(#\S+|<<.*>>)\s*$/, '');
+        let label = unq(body), alias = null, d;
+        if ((d = body.match(/^"([^"]*)"\s+as\s+(\S+)$/i)) || (d = body.match(/^(\S+)\s+as\s+(\S+)$/i))) [label, alias] = [unq(d[1]), d[2]];
+        else if ((d = body.match(/^(\S+)\s+as\s+"([^"]*)"$/i))) [alias, label] = [d[1], d[2]];
+        if (!label) throw new Error('a participant has no name');
+        if (!find(label) && !(alias && find(alias))) make(unesc(label), alias);
+      } else if ((m = line.match(/^note\s+(left|right|over)(?:\s+of)?\s+(.+?)\s*(?::\s?(.*))?$/i))) {
+        let body = m[3];
+        if (body == null) {   // a block: the text runs to "end note"
+          const end = lines.findIndex((l, j) => j > i && /^\s*end\s*note\s*$/i.test(l));
+          if (end < 0) throw new Error('the note has no "end note" line');
+          body = lines.slice(i + 1, end).map(l => l.trim()).join('\n'); i = end;
+        }
+        const side = m[1].toLowerCase(), on = [...new Set(m[2].split(',').map(part).map(p => p.id))].slice(0, side === 'over' ? 2 : 1);
+        add({ id: nid('nt'), kind: 'note', side, on, label: unesc(body) });
+      } else if ((m = line.match(SEQ_LINE))) {
+        let [, a, arrow, b, label] = m;
+        if (arrow.startsWith('<')) { [a, b] = [b, a]; arrow = [...arrow].reverse().join('').replace(/</g, '>'); }
+        if (!unq(a) || !unq(b)) throw new Error('a message needs a participant at each end');
+        const from = part(a), to = part(b);
+        add({ id: nid('m'), from: from.id, to: to.id, type: ARROW_TYPES[arrow], label: unesc(label) });
+      } else if (SEQ_SKIP.test(line)) out.skipped++;
+      else out.errors.push({ line: i + 1, text: lines[i], why: "it isn't a message, note or participant" });
+    } catch (e) { out.errors.push({ line: i + 1, text: lines[i], why: e.message }); }
+  }
+  return out;
+}
+
 /* =====================================================================
    UI
    ===================================================================== */
@@ -1328,6 +1614,7 @@ let multi = [];                          // node ids when 2+ shapes are selected
 let sizeRef = 'first';                   // same-size reference: 'first' selected or 'largest'
 let spaceMode = 'keep', spaceGap = 40;   // Arrange spacing: keep, even or fixed (px)
 let clip = null, pasteN = 0;             // copied shapes, and how many times they've been pasted
+let seqNext = null;                      // after labeling a new message with Enter: { from, after } for the next one
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const snap = v => { const g = S.settings.grid; return Math.round(v / g) * g; };
@@ -1398,19 +1685,39 @@ function cleanEdge(e) {
   if (f && t) out.fixed = { from: f, to: t };
   return out;
 }
+// Participants, then rows. Ids are unique across both; a message or note that names a missing participant is dropped.
+function cleanSeq(s) {
+  const list = v => Array.isArray(v) ? v.filter(o => isObj(o) && isId(o.id)) : [];
+  const withStyle = (o, from) => { if (from.style) o.style = cleanStyle(from.style); return o; };
+  const parts = firstById(list(s.parts)).slice(0, MAX_PARTS).map(p => withStyle({ id: p.id, kind: 'participant', label: strOr(p.label) }, p));
+  const ids = new Set(parts.map(p => p.id)), has = v => isId(v) && ids.has(v);
+  const rows = firstById(list(s.rows).filter(r => !ids.has(r.id))).flatMap(r => {
+    if (r.kind === 'note') {
+      const side = oneOf(r.side, valuesOf(NOTE_SIDES), 'right');
+      const on = [...new Set(Array.isArray(r.on) ? r.on.filter(has) : [])].slice(0, side === 'over' ? 2 : 1);
+      return on.length ? [withStyle({ id: r.id, kind: 'note', side, on, label: strOr(r.label) }, r)] : [];
+    }
+    return has(r.from) && has(r.to) ? [withStyle({ id: r.id, from: r.from, to: r.to, type: oneOf(r.type, valuesOf(MSG_TYPES), 'sync'), label: strOr(r.label) }, r)] : [];
+  }).slice(0, MAX_ROWS);
+  return { type: 'sequence', nodes: [], edges: [], parts, rows };
+}
 function normalize(s) {
-  if (!isObj(s) || !Array.isArray(s.nodes) || !Array.isArray(s.edges)) return null;
+  if (!isObj(s)) return null;
+  const seq = s.type === 'sequence';
+  if (!seq && (!Array.isArray(s.nodes) || !Array.isArray(s.edges))) return null;
   const def = sample().settings, st = isObj(s.settings) ? s.settings : {};
   const settings = { mode: oneOf(st.mode, Object.keys(MODES), def.mode), grid: oneOf(st.grid, valuesOf(GRIDS), def.grid),
     showSlots: typeof st.showSlots === 'boolean' ? st.showSlots : def.showSlots, routing: oneOf(st.routing, valuesOf(ROUTINGS), def.routing),
     radius: numIn(st.radius, def.radius, 0, 16), labelPos: oneOf(st.labelPos, LABEL_POS, def.labelPos),
-    walls: typeof st.walls === 'boolean' ? st.walls : def.walls };
+    walls: typeof st.walls === 'boolean' ? st.walls : def.walls,
+    autonumber: typeof st.autonumber === 'boolean' ? st.autonumber : def.autonumber, footbox: typeof st.footbox === 'boolean' ? st.footbox : def.footbox };
   const ti = isObj(s.title) ? s.title : {}, tdef = titleDefaults();
   const title = { show: ti.show === true, title: strOr(ti.title), version: strOr(ti.version), date: strOr(ti.date), author: strOr(ti.author), pos: oneOf(ti.pos, CORNER_IDS, tdef.pos) };
   const lg = isObj(s.legend) ? s.legend : {}, ldef = legendDefaults();
   const legend = { show: lg.show === true, heading: strOr(lg.heading, ldef.heading), pos: oneOf(lg.pos, CORNER_IDS, ldef.pos),
     labels: Object.fromEntries(Object.entries(isObj(lg.labels) ? lg.labels : {}).filter(([, v]) => typeof v === 'string')),
     hidden: Array.isArray(lg.hidden) ? lg.hidden.filter(k => typeof k === 'string') : [] };
+  if (seq) return { ...cleanSeq(s), settings, title, legend };
   const nodes = firstById(s.nodes.filter(n => isObj(n) && isId(n.id))).map(cleanNode);
   const byIdIn = new Map(nodes.map(n => [n.id, n]));
   // A missing parent, or a loop of containers inside each other, puts the shape back on the canvas.
@@ -1452,6 +1759,8 @@ function settingsDocs() {
     labelPos: `where connector labels sit unless a connector says otherwise: ${or(LABEL_POS.map(q))}. Default ${q(d.labelPos)}.`,
     showSlots: `true or false: mark where connectors attach. Default ${d.showSlots}.`,
     walls: `true or false: keep shapes ${WALL} px apart while the user edits. Default ${d.walls}.`,
+    autonumber: `true or false: number the messages of a sequence diagram. Default ${d.autonumber}.`,
+    footbox: `true or false: draw a sequence diagram's participants at the bottom too. Default ${d.footbox}.`,
   };
 }
 const legendExamples = () => [
@@ -1459,17 +1768,18 @@ const legendExamples = () => [
   ['a dashed box with no fill', { kind: 'box', style: { dash: 'dashed', fill: 'none' } }], ['a dashed connector', { style: { dash: 'dashed' } }],
   ['an orange dashed connector', { style: { line: 'orange', dash: 'dashed' } }],
 ].map(([what, o]) => [what, styleKey(o)]);
-// The sample, as a file, one shape or connector per line. The date is fixed so the text doesn't change by the day.
-function exampleDiagram() { const s = sample(); s.title.date = '2026-10-07'; return s; }
-function exampleJson() {
-  const d = exampleDiagram(), list = a => '[\n' + a.map(o => '      ' + JSON.stringify(o)).join(',\n') + '\n    ]';
-  return '```json\n{\n  "format": "snapblade",\n  "version": 1,\n  "diagram": {\n    "nodes": ' + list(d.nodes) + ',\n    "edges": ' + list(d.edges) +
-    ',\n    "settings": ' + JSON.stringify(d.settings) + ',\n    "title": ' + JSON.stringify(d.title) + ',\n    "legend": ' + JSON.stringify(d.legend) + '\n  }\n}\n```\n';
+// A sample, as a file, one shape, connector, participant or row per line. The date is fixed so the text doesn't change by the day.
+function exampleDiagram(seq) { const s = seq ? seqSample() : sample(); s.title.date = '2026-10-07'; return s; }
+function exampleJson(d) {
+  const list = a => '[\n' + a.map(o => '      ' + JSON.stringify(o)).join(',\n') + '\n    ]';
+  const parts = (d.type ? [['type', q(d.type)], ['parts', list(d.parts)], ['rows', list(d.rows)]] : [['nodes', list(d.nodes)], ['edges', list(d.edges)]])
+    .concat(['settings', 'title', 'legend'].map(k => [k, JSON.stringify(d[k])]));
+  return '```json\n{\n  "format": "snapblade",\n  "version": 1,\n  "diagram": {\n' + parts.map(([k, v]) => `    "${k}": ${v}`).join(',\n') + '\n  }\n}\n```\n';
 }
 function agentSpec() {
   return `# Snapblade diagrams: instructions for AI agents
 
-Snapblade is a browser editor for box-and-line diagrams (architecture, systems, data flows): ${APP_URL}
+Snapblade is a browser editor for box-and-line diagrams (architecture, systems, data flows) and sequence diagrams: ${APP_URL}
 You write a diagram as JSON. The user saves your answer as a file ending in \`.snapblade\` (or \`.json\`) and opens it in Snapblade (File > Open, or drop it on the canvas).
 
 You decide what the shapes are and where they go. Snapblade draws the connectors itself: it picks the sides, spaces the anchor points, routes right-angled lines around the shapes and places the labels. So give every shape a sensible position and size, and leave the connector details on automatic.
@@ -1544,7 +1854,7 @@ ${Object.entries(settingsDocs()).map(([k, d]) => `- \x60${k}\x60: ${d}`).join('\
 
 - Title block: \`show\` true draws it. \`title\` (empty: the file's name), \`version\`, \`date\` and \`author\` are text; empty ones are left out. \`pos\` is ${or(CORNER_IDS.map(q))}. Default \`"${titleDefaults().pos}"\`.
 - Legend: \`show\` true draws it, \`heading\` is its heading (default \`"${legendDefaults().heading}"\`), \`pos\` as above (default \`"${legendDefaults().pos}"\`). The legend makes its own rows, one per distinct style in use; unstyled shapes and connectors get no row. \`labels\` maps a row's key to what that style means. \`hidden\` lists the keys of rows to leave out.
-- A row's key is \`<kind>:<line>|<dash>|<fill>\`. \`kind\` is \`box\`, \`container\` or \`connector\`. \`line\` is the preset or hex color, empty if none. \`dash\` is empty for solid. For shapes, \`fill\` is \`pair\` (followed by the tint if one is set, as in \`pair30\`) when the shape has a line color, empty for the default fill without one, or \`none\` or the hex color. Connectors have no fill part. Examples: ${legendExamples().map(([what, key]) => `${what}: \x60${key}\x60`).join('; ')}.
+- A row's key is \`<kind>:<line>|<dash>|<fill>\`. \`kind\` is \`box\`, \`container\` or \`connector\` (in a sequence diagram \`participant\`, \`message\` or \`note\`). \`line\` is the preset or hex color, empty if none. \`dash\` is empty for solid. For shapes, \`fill\` is \`pair\` (followed by the tint if one is set, as in \`pair30\`) when the shape has a line color, empty for the default fill without one, or \`none\` or the hex color. Connectors have no fill part. Examples: ${legendExamples().map(([what, key]) => `${what}: \x60${key}\x60`).join('; ')}.
 - Both blocks sit just outside the diagram in their corner. You never position them.
 
 ## Laying it out well
@@ -1568,18 +1878,38 @@ ${Object.entries(settingsDocs()).map(([k, d]) => `- \x60${k}\x60: ${d}`).join('\
 
 The sample diagram that ships with Snapblade:
 
-${exampleJson()}
-`;
+${exampleJson(exampleDiagram())}
+## Sequence diagrams
+
+A sequence diagram is a different kind of file: participants left to right, and rows (messages and notes) top to bottom. Nothing in it has a position. Snapblade makes each column as wide as the labels next to it need and spaces the rows evenly, so you only decide the order.
+
+    {"format": "snapblade", "version": 1, "diagram": {"type": "sequence", "parts": [...], "rows": [...], "settings": {...}, "title": {...}, "legend": {...}}}
+
+- \`type\` (required): \`"sequence"\`. Leave out \`nodes\` and \`edges\`; a sequence diagram doesn't use them.
+- \`parts\`: the participants, in order from left to right, at most ${MAX_PARTS}: \`{"id": "orders", "kind": "participant", "label": "Orders API"}\`. \`id\` follows the shape id rules, \`label\` is the text (\`\\n\` for a second line), \`kind\` may be left out, and \`style\` works as for boxes.
+- \`rows\`: messages and notes in the order things happen, at most ${MAX_ROWS}. Ids are unique across participants and rows.
+- A message: \`{"id": "m1", "from": "cust", "to": "web", "type": "sync", "label": "Place order"}\`. \`from\` and \`to\` are participant ids, the same one for a self-message; a message naming a participant that doesn't exist is dropped. \`type\` is ${or(valuesOf(MSG_TYPES).map(q))}: a call that waits for an answer (filled arrowhead), one that doesn't wait (open arrowhead), or the answer (dashed). Default \`"sync"\`. \`style\`: \`line\` and \`dash\` only; a reply is dashed unless \`dash\` says otherwise.
+- A note: \`{"id": "n1", "kind": "note", "side": "right", "on": ["gw"], "label": "Can take up to 5 s"}\`. \`side\` is ${or(valuesOf(NOTE_SIDES).map(q))}. \`on\` lists the participant it sits beside, or for \`"over"\` one or two participants (the note spans from one to the other). A note takes a row of its own. \`style\` works as for boxes.
+- \`settings.autonumber\` numbers the messages and \`settings.footbox\` repeats the participants at the bottom; the other settings don't apply. The title block and legend work as above.
+- Put each reply right after the call it answers. Keep labels short: an operation, an endpoint or an event name.
+
+The sequence sample that ships with Snapblade:
+
+${exampleJson(exampleDiagram(true))}`;
 }
-const snapshot = () => JSON.stringify({ nodes: S.nodes, edges: S.edges, title: S.title, legend: S.legend });
+// What undo keeps: everything but the settings. A sequence diagram adds type, parts and rows.
+const CONTENT = ['type', 'nodes', 'edges', 'parts', 'rows', 'title', 'legend'];
+const snapshot = () => JSON.stringify(Object.fromEntries(CONTENT.filter(k => S[k] !== undefined).map(k => [k, S[k]])));
+function setContent(s) { for (const k of CONTENT) { if (s[k] === undefined) delete S[k]; else S[k] = s[k]; } }
 function pushUndo() { undoStack.push(snapshot()); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; }
 function restore(from, to) {
   if (!from.length) return;
   to.push(snapshot());
-  const s = JSON.parse(from.pop());
-  S.nodes = s.nodes; S.edges = s.edges; S.title = s.title; S.legend = s.legend;
+  setContent(JSON.parse(from.pop()));
   multi = multi.filter(id => byId(id)); if (multi.length < 2) multi = [];
-  if (sel && !(sel.type === 'node' ? byId(sel.id) : S.edges.find(e => e.id === sel.id))) sel = null;
+  const exists = { node: () => byId(sel.id), edge: () => S.edges.find(e => e.id === sel.id), seq: () => isSeq() && seqItem(sel.id), annot: () => true };
+  if (sel && !exists[sel.type]?.()) sel = null;
+  seqNext = null; syncTypeUi();
   refresh(true, true);
 }
 
@@ -1669,8 +1999,14 @@ const boxesIn = g => S.nodes.filter(n => n.parent === g.id && n.kind === 'box').
 // Runs an Arrange step as one undo step, and only records it if something moved.
 function arrange(fn) {
   const before = snapshot(), r = fn();
-  if (snapshot() !== before) { undoStack.push(before); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; refresh(true, true); }
+  if (keepUndo(before)) refresh(true, true);
   return r;
+}
+// Record `before` as an undo step if the diagram changed since. True if it did.
+function keepUndo(before) {
+  if (snapshot() === before) return false;
+  undoStack.push(before); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0;
+  return true;
 }
 function arrangeLineUp(kind) {
   const r = arrange(() => lineUp(multi, kind, { mode: spaceMode, gap: spaceGap })), L = LINE_UP[kind];
@@ -1695,7 +2031,7 @@ function copySel() {
   return true;
 }
 function paste() {
-  if (!clip) return;
+  if (!clip || isSeq()) return;
   pushUndo();
   pasteN++;
   // With walls, copies start on the original and drop to the first free spot below it; without, they step down and right.
@@ -1715,7 +2051,16 @@ function paste() {
   refresh(true, true);
 }
 function cutSel() { if (copySel()) { pasteN = -1; deleteSel(); } }
-function duplicateSel() { if (copySel()) paste(); }
+function duplicateSel() {
+  if (sel?.type !== 'seq') { if (copySel()) paste(); return; }
+  // A participant or row: a copy right after it (a participant's copy has no messages).
+  const o = seqItem(sel.id); if (!o) return;
+  pushUndo();
+  const list = o.kind === 'participant' ? S.parts : S.rows, c = { ...JSON.parse(JSON.stringify(o)), id: nid(o.kind === 'participant' ? 'p' : isNote(o) ? 'nt' : 'm') };
+  list.splice(list.indexOf(o) + 1, 0, c);
+  sel = { type: 'seq', id: c.id };
+  refresh(true, true);
+}
 
 function toWorld(ev) {
   const r = svg.getBoundingClientRect();
@@ -1753,6 +2098,7 @@ function startEditing(initial) {
   // Title block / legend: their text lives in the side panel.
   if (sel?.type === 'annot') { const f = panel.querySelector('input[type=text]'); if (f) { f.focus(); f.select(); } return true; }
   if (sel?.type === 'node') openEditor(byId(sel.id));
+  else if (sel?.type === 'seq') openSeqEditor(sel.id);
   else if (sel?.type === 'edge') openEdgeEditor(S.edges.find(x => x.id === sel.id));
   else return false;
   if (initial != null) { editor.value = initial; editor.setSelectionRange(initial.length, initial.length); }
@@ -1796,17 +2142,44 @@ function syncModeButtons() {
 }
 
 /* ---------- rendering ---------- */
+// The start of the canvas markup: the dot grid, and the view's pan and zoom.
+function canvasStart(defs = '') {
+  const k = view.k, r = svg.getBoundingClientRect(), g = S.settings.grid;
+  return `<defs>
+    <pattern id="gp" width="${g}" height="${g}" x="${-g / 2}" y="${-g / 2}" patternUnits="userSpaceOnUse"><circle cx="${g / 2}" cy="${g / 2}" r="${Math.max(0.7, 0.9 / k)}" class="gdot"/></pattern>${defs}
+  </defs><g transform="translate(${view.x} ${view.y}) scale(${k})"><rect x="${-view.x / k}" y="${-view.y / k}" width="${r.width / k}" height="${r.height / k}" fill="url(#gp)"/>`;
+}
+// The end: title block and legend around bounds B, then the parts of the page that follow the canvas.
+function canvasEnd(h, B, P) {
+  const blocks = annotationLayout(B, UI_STACK, doc.name, LEGEND_HINT);
+  lastGeom.annots = blocks; lastGeom.bounds = B;
+  h += annotationMarkup(blocks, {
+    group: id => `class="ann${sel?.type === 'annot' && sel.id === id ? ' sel' : ''}" data-role="annot" data-id="${id}"`,
+    frame: () => 'class="ann-frame"', rule: () => 'class="ann-rule"', text: k => `class="ann-${k}"`,
+    swatch: canvasSwatch, empty: LEGEND_HINT,
+  });
+  if (drag?.kind === 'annot' && drag.moved) {
+    const b = blocks.find(q => q.id === drag.id);
+    if (b) h += `<rect class="ann-ghost" x="${drag.cur.x - drag.off.x}" y="${drag.cur.y - drag.off.y}" width="${b.w}" height="${b.h}" rx="4"/>`;
+  }
+  return h;
+}
+function canvasDone(h, P) {
+  svg.innerHTML = h + '</g>';
+  updateStatus(P);
+  syncPanelValues();
+  document.getElementById('zlbl').textContent = Math.round(view.k * 100) + '%';
+  document.getElementById('undoBtn').disabled = !undoStack.length;
+  document.getElementById('redoBtn').disabled = !redoStack.length;
+}
 function render() {
   if (!svg) return;
+  if (isSeq()) { renderSeq(); return; }
   const P = computePorts(), k = view.k, st = S.settings;
-  const r = svg.getBoundingClientRect(), g = st.grid;
   const sw = (s) => s / k;
-  let h = `<defs>
-    <pattern id="gp" width="${g}" height="${g}" x="${-g / 2}" y="${-g / 2}" patternUnits="userSpaceOnUse"><circle cx="${g / 2}" cy="${g / 2}" r="${Math.max(0.7, 0.9 / k)}" class="gdot"/></pattern>
+  let h = canvasStart(`
     <marker id="ah" viewBox="0 0 10 10" refX="10" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ahead"/></marker>
-    <marker id="ahs" viewBox="0 0 10 10" refX="10" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ahead sel"/></marker>
-  </defs><g transform="translate(${view.x} ${view.y}) scale(${k})">`;
-  h += `<rect x="${-view.x / k}" y="${-view.y / k}" width="${r.width / k}" height="${r.height / k}" fill="url(#gp)"/>`;
+    <marker id="ahs" viewBox="0 0 10 10" refX="10" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" class="ahead sel"/></marker>`);
 
   const moving = drag?.kind === 'move' && drag.moved ? new Set(drag.ids.flatMap(subtree)) : null;
   const selSet = new Set(selectedIds());
@@ -1859,17 +2232,7 @@ function render() {
   }
 
   // Title block and legend, placed around everything else.
-  const blocks = annotationLayout(contentBounds(S.nodes, S.edges, R, labelRects), UI_STACK, doc.name, LEGEND_HINT);
-  lastGeom.annots = blocks;
-  h += annotationMarkup(blocks, {
-    group: id => `class="ann${sel?.type === 'annot' && sel.id === id ? ' sel' : ''}" data-role="annot" data-id="${id}"`,
-    frame: () => 'class="ann-frame"', rule: () => 'class="ann-rule"', text: k => `class="ann-${k}"`,
-    swatch: canvasSwatch, empty: LEGEND_HINT,
-  });
-  if (drag?.kind === 'annot' && drag.moved) {
-    const b = blocks.find(q => q.id === drag.id);
-    if (b) h += `<rect class="ann-ghost" x="${drag.cur.x - drag.off.x}" y="${drag.cur.y - drag.off.y}" width="${b.w}" height="${b.h}" rx="4"/>`;
-  }
+  h = canvasEnd(h, contentBounds(S.nodes, S.edges, R, labelRects));
 
   if (st.showSlots) {
     for (const e of S.edges) {
@@ -1932,18 +2295,54 @@ function render() {
     const pv = previewEnd(drag, drag.cur);
     if (pv) h += `<circle class="drop-dot" cx="${pv.x}" cy="${pv.y}" r="${sw(4.5)}"/>`;
   }
-  h += '</g>';
-  svg.innerHTML = h;
-  updateStatus(P);
-  syncPanelValues();
-  document.getElementById('zlbl').textContent = Math.round(k * 100) + '%';
-  document.getElementById('undoBtn').disabled = !undoStack.length;
-  document.getElementById('redoBtn').disabled = !redoStack.length;
+  canvasDone(h, P);
+}
+// A sequence diagram: drawn from seqLayout(), with previews for the drag in progress.
+function renderSeq() {
+  const L = seqLayout(), selId = sel?.type === 'seq' ? sel.id : null, d = drag?.moved ? drag : null;
+  const ghost = d && (d.kind === 'rowmove' || d.kind === 'partmove') ? d.id : null, hot = d?.kind === 'msgnew' ? d.over : seqNext?.from;
+  lastGeom = { R: {}, labels: dict(), seq: L };
+  const cls = (base, id) => `${base}${id === selId ? ' sel' : ''}${id === ghost ? ' ghost' : ''}`;
+  let h = canvasStart() + seqMarkup(L, {
+    part: q => `class="${cls('part', q.id)}" data-role="part" data-id="${esc(q.id)}" style="${styleVars(q.p)}"`,
+    body: () => 'class="b-body"', name: () => 'class="s-name"',
+    life: q => `class="s-life${q.id === hot ? ' hot' : seqNext ? ' pick' : q.id === selId ? ' sel' : ''}" style="${styleVars(q.p)}"`,
+    lifeHit: (q, y1, y2) => `<rect class="s-lifehit" data-role="life" data-id="${esc(q.id)}" x="${q.x - 8}" y="${y1}" width="16" height="${y2 - y1}"/>`,
+    msg: g => `class="${cls('msg', g.r.id)}" data-role="row" data-id="${esc(g.r.id)}" style="${styleVars(withDash(g.r))}"`,
+    hit: path => `<path class="hit" d="${path}"/>`, line: () => 'class="s-line"', fill: () => 'class="s-fill"', open: () => 'class="s-open"',
+    labelBg: () => 'class="s-label-bg"', label: () => 'class="s-label"',
+    note: g => `class="${cls('note', g.r.id)}" data-role="row" data-id="${esc(g.r.id)}" style="${styleVars(g.r)}"`,
+    noteBody: () => 'class="n-body"', fold: () => 'class="n-fold"', noteText: () => 'class="n-text"',
+  });
+  // Where the message being drawn, or the row or participant being moved, will land.
+  if (d?.kind === 'msgnew') {
+    const q = L.P.find(x => x.id === d.from), y = seqGapY(L, seqIndexAt(L, d.start.y)), to = L.P.find(x => x.id === d.over);
+    h += to === q ? `<path class="temp" d="M${q.x},${y} H${q.x + SEQ.self} V${y + SEQ.selfH} H${q.x}"/>`
+      : `<path class="temp" d="M${q.x},${y} H${to ? to.x : d.cur.x}"/>`;
+  }
+  if (d?.kind === 'rowmove') { const y = seqGapY(L, seqIndexAt(L, d.cur.y, d.id), d.id); h += `<line class="s-gap" x1="${L.bounds.x1 - 12}" y1="${y}" x2="${L.bounds.x2 + 12}" y2="${y}"/>`; }
+  if (d?.kind === 'partmove') { const x = seqGapX(L, seqColAt(L, d.cur.x, d.id), d.id); h += `<line class="s-gap" x1="${x}" y1="-12" x2="${x}" y2="${L.bounds.y2 + 12}"/>`; }
+  canvasDone(canvasEnd(h, L.bounds));
+}
+function seqStatus() {
+  const name = id => oneLine(partOf(id)?.label || ''), o = sel?.type === 'seq' && seqItem(sel.id);
+  if (drag?.kind === 'msgnew') return drag.over ? `${name(drag.from)} → ${name(drag.over)}${drag.over === drag.from ? '  ·  self-message' : ''}` : `Message from ${name(drag.from)}: drop on a lifeline (its own for a self-message)`;
+  if (drag?.kind === 'rowmove' && drag.moved) return 'Drop where the row should go';
+  if (drag?.kind === 'partmove' && drag.moved) return 'Drop where the participant should go';
+  if (seqNext) return `Next message from ${name(seqNext.from)}: click the lifeline it goes to (its own for a self-message). Esc to stop.`;
+  if (!o) {
+    const notes = S.rows.filter(isNote).length;
+    return `${S.parts.length} participants  ·  ${S.rows.length - notes} messages  ·  ${notes} notes`;
+  }
+  if (o.kind === 'participant') return `Participant  ·  ${S.rows.filter(r => !isNote(r) && (r.from === o.id || r.to === o.id)).length} messages  ·  ←/→ moves it`;
+  if (isNote(o)) return `Note ${o.side === 'over' ? 'over' : o.side + ' of'} ${o.on.map(name).join(' and ')}  ·  ↑/↓ moves it`;
+  return `${name(o.from)} → ${name(o.to)}  ·  ${o.type}  ·  ↑/↓ moves it`;
 }
 
 function updateStatus(P) {
   let t;
-  if (drag?.kind === 'connect' || drag?.kind === 'reattach') {
+  if (isSeq() && sel?.type !== 'annot') t = seqStatus();
+  else if (drag?.kind === 'connect' || drag?.kind === 'reattach') {
     const n = drag.over && byId(drag.over);
     t = n ? `${drag.kind === 'connect' ? 'Connect to' : 'Move end to'} ${oneLine(n.label)}  ·  ${drag.zone === 'auto' ? 'auto side' : drag.zone + ' side'}`
       : 'Drop on a shape: near an edge pins that side, the middle picks one automatically';
@@ -1973,7 +2372,8 @@ const num = (f, v, label, dis) => `<label class="num"><span>${label}</span><inpu
 function renderPanel() {
   if (!panel) return;
   let h;
-  if (multi.length) h = multiPanel();
+  if (isSeq() && sel?.type !== 'annot') h = sel?.type === 'seq' && seqItem(sel.id) ? seqPanel(seqItem(sel.id)) : seqDiagramPanel();
+  else if (multi.length) h = multiPanel();
   else if (sel?.type === 'node' && byId(sel.id)) h = nodePanel(byId(sel.id));
   else if (sel?.type === 'edge' && S.edges.some(e => e.id === sel.id)) h = edgePanel(S.edges.find(e => e.id === sel.id));
   else if (sel?.type === 'annot') h = sel.id === 'title' ? titlePanel() : legendPanel();
@@ -2020,6 +2420,60 @@ function legendPanel() {
   <section><p class="eyebrow">Position</p>${cornerPicker(L.pos)}<p class="desc">Or drag the legend toward a corner.</p></section>
   <div class="row"><button class="btn danger" type="button" data-act="annHide">Hide legend</button></div>`;
 }
+const annSection = () => `<section>
+    <p class="eyebrow">Title block &amp; legend</p>
+    <div class="togglerow"><label class="check"><input type="checkbox" id="f-showTitle" data-field="showTitle"${S.title.show ? ' checked' : ''}> Title block</label>${S.title.show ? '<button class="mini" type="button" data-act="selectAnn" data-val="title">Edit</button>' : ''}</div>
+    <div class="togglerow"><label class="check"><input type="checkbox" id="f-showLegend" data-field="showLegend"${S.legend.show ? ' checked' : ''}> Legend</label>${S.legend.show ? '<button class="mini" type="button" data-act="selectAnn" data-val="legend">Edit</button>' : ''}</div>
+  </section>
+  <div class="row"><button class="mini" type="button" data-act="help">Shortcuts and help</button></div>`;
+function seqDiagramPanel() {
+  const st = S.settings;
+  return `<section>
+    <p class="eyebrow">Sequence diagram</p>
+    <label class="check"><input id="f-autonumber" type="checkbox" data-field="autonumber"${st.autonumber ? ' checked' : ''}> Number messages</label>
+    <label class="check"><input id="f-footbox" type="checkbox" data-field="footbox"${st.footbox ? ' checked' : ''}> Participants at the bottom too</label>
+    <p class="desc">Columns size themselves to their labels and rows are evenly spaced. Drag from one lifeline to another to add a message, or type in the box at the top of the canvas.</p>
+  </section>
+  ${annSection()}`;
+}
+const partSelect = (field, cur, label, none) => `<label class="field"><span>${label}</span><select id="f-${field}" data-field="${field}">${none ? `<option value=""${cur ? '' : ' selected'}>${none}</option>` : ''}${S.parts.map(p => `<option value="${esc(p.id)}"${p.id === cur ? ' selected' : ''}>${esc(oneLine(p.label) || p.id)}</option>`).join('')}</select></label>`;
+const moveButtons = (a, b) => `<div class="row"><button class="btn" type="button" data-act="seqMove" data-val="-1">${a}</button><button class="btn" type="button" data-act="seqMove" data-val="1">${b}</button></div>`;
+function seqPanel(o) {
+  const name = id => esc(oneLine(partOf(id)?.label || ''));
+  if (o.kind === 'participant') {
+    const n = S.rows.filter(r => !isNote(r) && (r.from === o.id || r.to === o.id)).length;
+    return `<section>
+      <p class="eyebrow">Participant</p>
+      <label class="field"><span>Text</span><textarea id="f-label" data-field="label" rows="2">${esc(o.label)}</textarea></label>
+      ${moveButtons('Move left', 'Move right')}
+      <p class="meta">${n} message${n === 1 ? '' : 's'}</p>
+    </section>
+    ${styleSections([o])}
+    <div class="row"><button class="btn" type="button" data-act="duplicate">Duplicate</button><button class="btn danger" type="button" data-act="delete">Delete participant</button></div>
+    <p class="desc">Deleting a participant also deletes its messages and notes.</p>`;
+  }
+  if (isNote(o)) return `<section>
+      <p class="eyebrow">Note</p>
+      <label class="field"><span>Text</span><textarea id="f-label" data-field="label" rows="2">${esc(o.label)}</textarea></label>
+      <div class="field"><span>Position</span>${seg('noteSide', NOTE_SIDES, o.side)}</div>
+      ${partSelect('noteOn', o.on[0], 'Participant')}
+      ${o.side === 'over' ? partSelect('noteTo', o.on[1], 'Spans to', 'Just this one') : ''}
+      ${moveButtons('Move up', 'Move down')}
+    </section>
+    ${styleSections([o])}
+    <div class="row"><button class="btn" type="button" data-act="duplicate">Duplicate</button><button class="btn danger" type="button" data-act="delete">Delete note</button></div>`;
+  return `<section>
+      <p class="eyebrow">Message</p>
+      <p class="ends"><b>${name(o.from)}</b> → <b>${name(o.to)}</b></p>
+      <label class="field"><span>Label</span><textarea id="f-label" data-field="label" rows="2" placeholder="No label">${esc(o.label)}</textarea></label>
+      <div class="grid2">${partSelect('msgFrom', o.from, 'From')}${partSelect('msgTo', o.to, 'To')}</div>
+      <div class="field"><span>Kind</span>${seg('msgType', MSG_TYPES, o.type)}</div>
+      <p class="desc">Sync is a call that waits for an answer (filled arrowhead). Async doesn't wait (open arrowhead). Reply is the answer (dashed). From and To the same participant make a self-message.</p>
+      ${moveButtons('Move up', 'Move down')}
+    </section>
+    ${styleSections([o])}
+    <div class="row"><button class="btn" type="button" data-act="reverse">Reverse direction</button><button class="btn" type="button" data-act="duplicate">Duplicate</button><button class="btn danger" type="button" data-act="delete">Delete message</button></div>`;
+}
 function diagramPanel() {
   const st = S.settings;
   return `
@@ -2032,12 +2486,7 @@ function diagramPanel() {
     <label class="check"><input id="f-slots" type="checkbox" data-field="showSlots"${st.showSlots ? ' checked' : ''}> Show anchor points</label>
     <label class="check" title="Shapes side by side stay at least ${WALL} px apart. Hold Alt while dragging to overlap them."><input id="f-walls" type="checkbox" data-field="walls"${st.walls ? ' checked' : ''}> Shapes can't overlap</label>
   </section>
-  <section>
-    <p class="eyebrow">Title block &amp; legend</p>
-    <div class="togglerow"><label class="check"><input type="checkbox" id="f-showTitle" data-field="showTitle"${S.title.show ? ' checked' : ''}> Title block</label>${S.title.show ? '<button class="mini" type="button" data-act="selectAnn" data-val="title">Edit</button>' : ''}</div>
-    <div class="togglerow"><label class="check"><input type="checkbox" id="f-showLegend" data-field="showLegend"${S.legend.show ? ' checked' : ''}> Legend</label>${S.legend.show ? '<button class="mini" type="button" data-act="selectAnn" data-val="legend">Edit</button>' : ''}</div>
-  </section>
-  <div class="row"><button class="mini" type="button" data-act="help">Shortcuts and help</button></div>`;
+  ${annSection()}`;
 }
 function portCounts(n) {
   const P = computePorts(), c = { top: 0, right: 0, bottom: 0, left: 0 };
@@ -2068,9 +2517,9 @@ function fillHexOf(n) {
   if (fill === 'none') return null;
   if (isHex(fill)) return fill.toLowerCase();
   const base = resolveHex(n.kind === 'group' ? 'var(--paper)' : 'var(--node-bg)');
-  return st.line ? mixHex(lineHexOf(n), base, tintOf(n)) : resolveHex(n.kind === 'group' ? 'var(--group-bg)' : 'var(--node-bg)');
+  return st.line ? mixHex(lineHexOf(n), base, tintOf(n)) : resolveHex(n.kind === 'group' ? 'var(--group-bg)' : n.kind === 'note' ? 'var(--note-bg)' : 'var(--node-bg)');
 }
-const styleTargets = () => sel?.type === 'edge' ? S.edges.filter(e => e.id === sel.id) : selectedIds().map(byId).filter(Boolean);
+const styleTargets = () => sel?.type === 'edge' ? S.edges.filter(e => e.id === sel.id) : sel?.type === 'seq' ? [seqItem(sel.id)].filter(Boolean) : selectedIds().map(byId).filter(Boolean);
 function setStyle(patch) { for (const t of styleTargets()) t.style = tidyStyle({ ...(t.style || {}), ...patch }); }
 function colorInputs(kind, hex) {
   const rgb = hexToRgb(hex);
@@ -2103,7 +2552,7 @@ function styleSections(targets) {
     <p class="eyebrow">Line${targets.length > 1 ? ` · ${targets.length} shapes` : ''}</p>
     <div class="swatches">${['', ...PRESETS].map(swatch).join('')}</div>
     ${colorInputs('line', lineHexOf(o))}
-    <div class="field"><span>Pattern</span>${seg('dash', DASHES, st.dash || 'solid')}</div>
+    <div class="field"><span>Pattern</span>${seg('dash', DASHES, o.type ? msgDash(o) : st.dash || 'solid')}</div>
   </section>`;
   const painter = targets.length === 1 ? `<div class="row">
     <button class="btn" type="button" data-act="copyStyle" title="Ctrl+Shift+C">Copy style</button>
@@ -2268,6 +2717,7 @@ function onField(t) {
   if (f === 'radius') { st.radius = +t.value; t.previousElementSibling.textContent = `Corner radius · ${st.radius} px`; render(); save(); return; }
   if (f === 'showSlots') { st.showSlots = t.checked; render(); save(); return; }
   if (f === 'walls') { st.walls = t.checked; save(); return; }
+  if (f === 'autonumber' || f === 'footbox') { st[f] = t.checked; render(); save(); return; }
   if (f === 'showTitle' || f === 'showLegend') {
     pushUndo();
     const blk = f === 'showTitle' ? S.title : S.legend;
@@ -2305,6 +2755,15 @@ function onField(t) {
     setStyle(patch); refresh(false, true); syncColorInputs(); return;
   }
   if (!fieldUndo) { pushUndo(); fieldUndo = true; }
+  if (sel?.type === 'seq') {
+    const o = seqItem(sel.id); if (!o) return;
+    if (f === 'label') { o.label = t.value; refresh(false, true); return; }
+    if (f === 'msgFrom') o.from = t.value;
+    if (f === 'msgTo') o.to = t.value;
+    if (f === 'noteOn') o.on = [t.value, ...o.on.slice(1).filter(id => id !== t.value)];
+    if (f === 'noteTo') o.on = t.value && t.value !== o.on[0] ? [o.on[0], t.value] : [o.on[0]];
+    refresh(true, true); return;
+  }
   if (sel?.type === 'node') {
     const n = byId(sel.id), v = parseFloat(t.value);
     if (f === 'label') n.label = t.value;
@@ -2372,7 +2831,13 @@ function onAct(b) {
   }
   if (act === 'selectInside') { setMulti(boxesIn(byId(sel.id))); render(); return; }
   pushUndo();
-  if (sel?.type === 'node') {
+  if (sel?.type === 'seq') {
+    const o = seqItem(sel.id);
+    if (act === 'msgType') o.type = val;
+    if (act === 'noteSide') { o.side = val; if (val !== 'over') o.on = o.on.slice(0, 1); }
+    if (act === 'reverse') [o.from, o.to] = [o.to, o.from];
+    if (act === 'seqMove') { const list = o.kind === 'participant' ? S.parts : S.rows; seqMoveTo(o.id, list.indexOf(o) + +val); }
+  } else if (sel?.type === 'node') {
     const n = byId(sel.id);
     if (act === 'layout') n.layout = val;
     if (act === 'align') n.align = val;
@@ -2390,6 +2855,7 @@ function deleteSel() {
   if (!sel) return;
   pushUndo();
   if (sel.type === 'annot') (sel.id === 'title' ? S.title : S.legend).show = false;
+  else if (sel.type === 'seq') seqRemove(sel.id);
   else if (sel.type === 'node') {
     const ids = new Set(selectedIds().flatMap(subtree));
     S.nodes = S.nodes.filter(n => !ids.has(n.id));
@@ -2419,13 +2885,35 @@ function addNode(kind, at) {
   refresh(true, true);
   openEditor(n);
 }
+// Sequence diagrams: a participant after the selected one (or at world x, or at the end), named as you type.
+function addPart(atX) {
+  pushUndo();
+  const sp = sel?.type === 'seq' && partOf(sel.id);
+  const i = atX != null ? (lastGeom.seq?.P || []).filter(q => q.x < atX).length : sp ? S.parts.indexOf(sp) + 1 : S.parts.length;
+  const p = { id: nid('p'), kind: 'participant', label: 'Participant' };
+  S.parts.splice(i, 0, p); sel = { type: 'seq', id: p.id }; seqNext = null;
+  refresh(true, true); openSeqEditor(p.id, true);
+}
+// A note below the selected row, beside what's selected: right of a participant or of a message's receiver.
+function addSeqNote() {
+  if (!S.parts.length) { toast('Add a participant first.', true); return; }
+  const o = sel?.type === 'seq' && seqItem(sel.id);
+  const on = !o ? S.parts[0].id : o.kind === 'participant' ? o.id : isNote(o) ? o.on[0] : o.to;
+  const i = o && o.kind !== 'participant' ? S.rows.indexOf(o) + 1 : S.rows.length;
+  pushUndo();
+  const n = seqInsert({ id: nid('nt'), kind: 'note', side: 'right', on: [on], label: 'Note' }, i);
+  sel = { type: 'seq', id: n.id }; seqNext = null;
+  refresh(true, true); openSeqEditor(n.id, true);
+}
 function fit() {
-  if (!S.nodes.length) return;
+  if (!hasContent()) return;
   const r = svg.getBoundingClientRect();
   let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
-  for (const n of [...S.nodes, ...(lastGeom.annots || [])]) { x1 = Math.min(x1, n.x); y1 = Math.min(y1, n.y); x2 = Math.max(x2, n.x + n.w); y2 = Math.max(y2, n.y + n.h); }
-  const pad = 48, k = Math.max(0.2, Math.min((r.width - 2 * pad) / (x2 - x1), (r.height - 2 * pad - 30) / (y2 - y1), 1.25));
-  view = { k, x: (r.width - (x2 - x1) * k) / 2 - x1 * k, y: (r.height - 30 - (y2 - y1) * k) / 2 - y1 * k };
+  const B = isSeq() && seqLayout().bounds, shapes = B ? [{ x: B.x1, y: B.y1, w: B.x2 - B.x1, h: B.y2 - B.y1 }] : S.nodes;
+  for (const n of [...shapes, ...(lastGeom.annots || [])]) { x1 = Math.min(x1, n.x); y1 = Math.min(y1, n.y); x2 = Math.max(x2, n.x + n.w); y2 = Math.max(y2, n.y + n.h); }
+  // A sequence diagram starts at the top, below the quick-entry box.
+  const pad = 48, top = B ? 70 : pad, k = Math.max(0.2, Math.min((r.width - 2 * pad) / (x2 - x1), (r.height - top - pad - 30) / (y2 - y1), 1.25));
+  view = { k, x: (r.width - (x2 - x1) * k) / 2 - x1 * k, y: B ? top - y1 * k : (r.height - 30 - (y2 - y1) * k) / 2 - y1 * k };
   render();
 }
 function zoomAt(f, mx, my) {
@@ -2441,7 +2929,7 @@ function openEditor(n) {
     left: x + 'px', top: y + 'px', width: Math.max(120, n.w * view.k) + 'px',
     height: (isG ? HEADER * view.k : Math.max(36, n.h * view.k)) + 'px', textAlign: isG ? 'left' : 'center',
   });
-  delete editor.dataset.edge; editor.dataset.id = n.id; editor.value = n.label; editor.hidden = false;
+  delete editor.dataset.edge; delete editor.dataset.seq; editor.dataset.id = n.id; editor.value = n.label; editor.hidden = false;
   editor.focus(); editor.select();
 }
 function openEdgeEditor(e) {
@@ -2455,14 +2943,39 @@ function openEdgeEditor(e) {
     cx = p.x * view.k + view.x; cy = p.y * view.k + view.y;
   }
   Object.assign(editor.style, { left: (cx - 70) + 'px', top: (cy - 18) + 'px', width: '140px', height: '36px', textAlign: 'center' });
-  delete editor.dataset.id; editor.dataset.edge = e.id;
+  delete editor.dataset.id; delete editor.dataset.seq; editor.dataset.edge = e.id;
   editor.value = e.label || ''; editor.hidden = false;
   editor.focus(); editor.select();
   render();
 }
-function commitEditor(cancel) {
+// Edit a participant's name, a message's label or a note's text in place. fresh: it was just added, so its
+// label belongs to the same undo step, and Enter on a new message goes on to the next one.
+function openSeqEditor(id, fresh) {
+  const L = lastGeom.seq || seqLayout(), o = seqItem(id); if (!o) return;
+  let b;
+  if (o.kind === 'participant') { const q = L.P.find(x => x.id === id); b = { x: q.x - q.w / 2, y: 0, w: q.w, h: L.H }; }
+  else {
+    const g = L.R.find(x => x.r.id === id);
+    if (isNote(o)) b = { x: g.x, y: g.y, w: g.w, h: g.h };
+    else if (g.self) b = { x: g.x1 + SEQ.self + 4, y: g.y, w: Math.max(140, g.lw + 20), h: Math.max(30, g.h) };
+    else { const w = Math.max(140, g.lw + 20); b = { x: (g.x1 + g.x2) / 2 - w / 2, y: g.y - 4, w, h: Math.max(30, g.lh + 10) }; }
+  }
+  Object.assign(editor.style, { left: b.x * view.k + view.x + 'px', top: b.y * view.k + view.y + 'px', width: Math.max(120, b.w * view.k) + 'px',
+    height: Math.max(32, b.h * view.k) + 'px', textAlign: isNote(o) ? 'left' : 'center' });
+  delete editor.dataset.id; delete editor.dataset.edge; editor.dataset.seq = id; editor.dataset.fresh = fresh ? '1' : '';
+  editor.value = o.label; editor.hidden = false;
+  editor.focus(); editor.select();
+}
+function commitEditor(cancel, viaEnter) {
   if (editor.hidden) return;
   editor.hidden = true;
+  if (editor.dataset.seq) {
+    const o = isSeq() && seqItem(editor.dataset.seq), fresh = editor.dataset.fresh === '1';
+    delete editor.dataset.seq; delete editor.dataset.fresh;
+    if (!cancel && o && editor.value !== o.label) { if (!fresh) pushUndo(); o.label = editor.value; }
+    if (viaEnter && fresh && o?.from) seqNext = { from: o.to, after: o.id };
+    refresh(true, true); return;
+  }
   if (editor.dataset.edge) {
     const e = S.edges.find(x => x.id === editor.dataset.edge);
     delete editor.dataset.edge;
@@ -2509,6 +3022,7 @@ function onDown(ev) {
     drag = { kind: 'pan', sx: ev.clientX, sy: ev.clientY, vx: view.x, vy: view.y };
     svg.classList.add('panning'); render(); return;
   }
+  if (isSeq() && role !== 'annot') { seqDown(p, role, id); return; }
   if (!role) {
     // Empty canvas: drag out a selection box (Shift/Ctrl adds to the current selection).
     const keep = additive ? selectedIds() : [];
@@ -2553,6 +3067,7 @@ function onMove(ev) {
     if (!drag.moved && Math.hypot(p.x - drag.start.x, p.y - drag.start.y) < 4 / view.k) return;
     drag.moved = true; drag.cur = p; render(); return;
   }
+  if (isSeq()) { seqDrag(p); return; }
   if (drag.kind === 'move') {
     const n = byId(drag.id);
     const single = drag.ids.length === 1;
@@ -2605,6 +3120,7 @@ function onUp(ev) {
     }
     render(); return;
   }
+  if (isSeq() && d.kind !== 'pan') { seqUp(d, p); return; }
   if (d.kind === 'marquee') {
     // Shapes entirely inside the box; a container inside the box brings its contents along implicitly.
     const r = rectOf(d.start, p);
@@ -2651,9 +3167,61 @@ function doubleAt(p) {
   if (blk) { select({ type: 'annot', id: blk.id }); render(); startEditing(); return; }
   const eid = hitEdge(p);
   if (eid) { select({ type: 'edge', id: eid }); render(); startEditing(); return; }
+  if (isSeq()) {
+    const r = svg.getBoundingClientRect(), el = document.elementFromPoint(r.left + view.x + p.x * view.k, r.top + view.y + p.y * view.k)?.closest('#cv [data-role]');
+    const id = el?.dataset.id;
+    if (id && seqItem(id)) { select({ type: 'seq', id }); render(); startEditing(); }
+    else if (!el) { sel = null; addPart(p.x); }
+    return;
+  }
   const n = hitNode(p, 0);
   if (n) { select({ type: 'node', id: n.id }); render(); startEditing(); return; }
   sel = null; addNode('box', p);
+}
+// Sequence diagrams. Press a head to move the participant sideways, a lifeline to draw a message to another one
+// (or back to itself), a message or note to move its row. While going on from a labeled message, a press on a
+// lifeline adds the next message.
+function seqDown(p, role, id) {
+  if (seqNext && (role === 'life' || role === 'part')) { drag = { kind: 'chain', to: id }; return; }
+  seqNext = null;
+  if (!role) { select(null); drag = null; render(); return; }
+  select({ type: 'seq', id });
+  drag = { kind: role === 'part' ? 'partmove' : role === 'life' ? 'msgnew' : 'rowmove', id, from: id, start: p, cur: p, moved: false, over: null };
+  render();
+}
+function seqDrag(p) {
+  if (drag.kind === 'chain') return;
+  if (!drag.moved && Math.hypot(p.x - drag.start.x, p.y - drag.start.y) < 4 / view.k) return;
+  drag.moved = true; drag.cur = p;
+  if (drag.kind === 'msgnew') drag.over = seqLifeAt(lastGeom.seq || seqLayout(), p.x, 20 / view.k)?.id ?? null;
+  render();
+}
+function seqUp(d, p) {
+  const L = lastGeom.seq || seqLayout();
+  // New messages open their label editor once the press has finished moving focus around.
+  if (d.kind === 'chain') { const { from, after } = seqNext || {}; seqNext = null; setTimeout(() => seqAddAfter(from, d.to, after), 0); return; }
+  if (!d.moved) { render(); return; }
+  if (d.kind === 'msgnew') {
+    const to = seqLifeAt(L, p.x, 20 / view.k), i = seqIndexAt(L, d.start.y);
+    if (to) setTimeout(() => seqAddAfter(d.from, to.id, S.rows[i - 1]?.id ?? null), 0); else render();
+    return;
+  }
+  arrange(() => seqMoveTo(d.id, d.kind === 'rowmove' ? seqIndexAt(L, p.y, d.id) : seqColAt(L, p.x, d.id)));
+  render();
+}
+// A new message from one participant to another, right below row `after` (at the top if null).
+function seqAddAfter(from, to, after) {
+  if (!partOf(from) || !partOf(to)) { render(); return; }
+  pushUndo();
+  const m = seqMessage(from, to, after == null ? 0 : S.rows.findIndex(r => r.id === after) + 1);
+  sel = { type: 'seq', id: m.id };
+  refresh(true, true); openSeqEditor(m.id, true);
+}
+// Arrow keys: a participant moves left or right, a message or note up or down.
+function seqNudge(k) {
+  const o = seqItem(sel.id); if (!o) return;
+  const part = o.kind === 'participant', step = (part ? { ArrowLeft: -1, ArrowRight: 1 } : { ArrowUp: -1, ArrowDown: 1 })[k];
+  if (step) arrange(() => seqMoveTo(o.id, (part ? S.parts : S.rows).indexOf(o) + step));
 }
 function onCancel() {
   if (!drag) return;
@@ -2682,11 +3250,20 @@ function updateDocUi() {
   dot.hidden = !doc.dirty;
   dot.title = fileHandle ? 'Unsaved changes' : 'Not saved to a file yet';
   document.title = `${doc.dirty ? '• ' : ''}${doc.name} · Snapblade`;
-  document.getElementById('emptyHint').hidden = S.nodes.length > 0;
+  document.getElementById('emptyHint').hidden = hasContent();
+}
+// Show the controls for the kind of diagram on the canvas.
+function syncTypeUi() {
+  const seq = isSeq();
+  for (const id of ['addBox', 'addGroup', 'modeSeg', 'modeLbl']) document.getElementById(id).hidden = seq;
+  for (const id of ['addPart', 'addNote', 'quick']) document.getElementById(id).hidden = !seq;
+  document.getElementById('emptyHint').textContent = seq ? 'Double-click to add a participant, or type a line such as  Customer -> Web app : checkout  in the box above.'
+    : 'Double-click anywhere to add a box, or drop a .snapblade file here to open it.';
 }
 function serialize() {
+  const seq = isSeq() ? { type: S.type, parts: S.parts, rows: S.rows } : {};
   return JSON.stringify({ format: 'snapblade', version: 1, saved: new Date().toISOString(),
-    diagram: { nodes: S.nodes, edges: S.edges, settings: S.settings, title: S.title, legend: S.legend } }, null, 2);
+    diagram: { ...seq, nodes: S.nodes, edges: S.edges, settings: S.settings, title: S.title, legend: S.legend } }, null, 2);
 }
 function parseDiagram(text) {
   let d;
@@ -2726,11 +3303,11 @@ function loadDiagram(text, filename, handle) {
   try { s = parseDiagram(text); } catch (e) { toast(e.message, true); return false; }
   // Draw the new diagram before committing to it. If that fails, put the current one back,
   // so a file this build can't draw never leaves a dead canvas or reaches the saved copy.
-  const prev = { ...S }, prevSel = [sel, multi, hover];
-  Object.assign(S, s); sel = null; multi = []; hover = null;
+  const prev = S, prevSel = [sel, multi, hover];
+  S = s; sel = null; multi = []; hover = null; seqNext = null; syncTypeUi();
   try { layoutAll(false); refresh(true, false); }
   catch (e) {
-    Object.assign(S, prev); [sel, multi, hover] = prevSel; refresh(true, false);
+    S = prev; [sel, multi, hover] = prevSel; syncTypeUi(); refresh(true, false);
     toast("That file couldn't be opened. Something in it can't be drawn.", true); return false;
   }
   fileHandle = handle || null;
@@ -2752,22 +3329,26 @@ async function openFile() {
   }
   document.getElementById('fileInput').click();
 }
-async function newDiagram() {
+async function newDiagram(type) {
   if (!(await confirmDiscard())) return;
-  S.nodes = []; S.edges = []; S.title = { ...titleDefaults(), pos: S.title.pos }; S.legend = { ...legendDefaults(), pos: S.legend.pos };
-  fileHandle = null; doc = { name: 'Untitled diagram', dirty: false };
-  undoStack.length = 0; redoStack.length = 0; sel = null; multi = [];
-  view = { x: 40, y: 40, k: 1 };
-  refresh(true, false); save(false); updateDocUi();
+  const seq = type === 'sequence';
+  setContent({ ...(seq ? { type, parts: [], rows: [] } : {}), nodes: [], edges: [],
+    title: { ...titleDefaults(), pos: S.title.pos }, legend: { ...legendDefaults(), pos: S.legend.pos } });
+  fileHandle = null; doc = { name: seq ? 'Untitled sequence diagram' : 'Untitled diagram', dirty: false };
+  undoStack.length = 0; redoStack.length = 0; sel = null; multi = []; seqNext = null;
+  view = seq ? { x: 60, y: 90, k: 1 } : { x: 40, y: 40, k: 1 };
+  syncTypeUi(); refresh(true, false); save(false); updateDocUi();
+  if (seq) document.getElementById('quickIn').focus();
 }
-// Put the sample back (undoable). The "Things to try" steps in Help refer to it.
-function loadSample() {
-  pushUndo(); const s = sample(); S.nodes = s.nodes; S.edges = s.edges; S.settings.mode = s.settings.mode; S.title = s.title; S.legend = s.legend;
-  sel = null; multi = []; syncModeButtons(); layoutAll(false); refresh(true, true); fit();
+// Put a sample back (undoable). The "Things to try" steps in Help refer to them.
+function loadSample(seq) {
+  pushUndo(); const s = seq ? seqSample() : sample(); setContent(s);
+  if (!seq) S.settings.mode = s.settings.mode;
+  sel = null; multi = []; seqNext = null; syncTypeUi(); syncModeButtons(); layoutAll(false); refresh(true, true); fit();
 }
 // Before replacing the diagram: if it has changes not saved to a file, ask first.
 async function confirmDiscard() {
-  if (!doc.dirty || !S.nodes.length) return true;
+  if (!doc.dirty || !hasContent()) return true;
   const choice = await ask(`
     <h2 id="modalTitle">Save changes to “${esc(doc.name)}”?</h2>
     <p>Your work is kept in this browser, but these changes haven't been saved to a file.</p>
@@ -2858,6 +3439,16 @@ function guideHtml() {
       <li>The legend makes its own <b>Rows</b>, one per color and line style in use. Type what each one means; <b>Hide</b> leaves a row out. Its <b>Heading</b> can be changed.</li>
       <li><b>Position</b>: ${b(labels(CORNERS))}, or drag the block toward a corner. Blocks sit just outside the diagram and never cover it. <b>Hide title block</b> and <b>Hide legend</b> turn them off.</li></ul>`],
     ['settings', 'Diagram settings', `<p>With nothing selected, the <b>Diagram</b> panel holds: <b>Connector routing</b> (${b(labels(ROUTINGS))}), <b>Connector labels sit near</b> (${b(labels(LABEL_SPOTS))}), <b>Grid snap</b> (${b(labels(GRIDS))}, the step shapes move in), <b>Corner radius</b>, <b>Show anchor points</b> and <b>Shapes can't overlap</b>.</p>`],
+    ['seq', 'Sequence diagrams', `<p><b>New sequence diagram</b> in the File menu starts one. Participants run left to right and messages top to bottom. Nothing is placed by hand: columns are as wide as the labels between them need, and rows are evenly spaced.</p><ul>
+      <li><b>+ Participant</b> adds a participant after the selected one; double-clicking empty canvas adds one there. Drag a head sideways to reorder; the messages follow.</li>
+      <li>Drag from one lifeline to another to add a message at that row (rows below shift down). Drag along a lifeline and let go on it for a self-message. Type the label and press Enter: then click the lifeline the next message goes to, and keep going. Esc stops.</li>
+      <li>Drag a message or note up or down to move its row. The arrow keys do the same (left and right for a participant).</li>
+      <li>The <b>Message</b> panel sets its <b>Label</b>, <b>From</b> and <b>To</b>, and its <b>Kind</b>: ${b(labels(MSG_TYPES))}. Sync is a call that waits (filled arrowhead), Async doesn't wait (open arrowhead), Reply is the answer (dashed). A message that answers the sync call right above it starts out as a Reply. <b>Move up</b>, <b>Move down</b> and <b>Reverse direction</b> are there too.</li>
+      <li><b>+ Note</b> adds a <b>Note</b> below the selected row. Its <b>Position</b> is ${b(labels(NOTE_SIDES))} its <b>Participant</b>; an Over note <b>Spans to</b> a second one. A note takes its own row, so nothing overlaps.</li>
+      <li>The <b>Participant</b> panel has <b>Move left</b> and <b>Move right</b>; <b>Delete participant</b> also deletes its messages and notes. Participants, messages and notes take colors and patterns like boxes and connectors, and get legend rows the same way.</li>
+      <li><b>Duplicate</b> (Ctrl+D) puts a copy of a message, note or participant right after it. <b>Delete message</b>, <b>Delete note</b>, <b>Delete participant</b> or the Delete key removes one.</li>
+      <li>The <b>Sequence diagram</b> settings: <b>Number messages</b>, and <b>Participants at the bottom too</b>.</li>
+      <li>Type in the box at the top of the canvas (or just start typing with nothing selected) and press Enter. It reads PlantUML: <code>A -&gt; B : label</code> (sync), <code>-&gt;&gt;</code> (async), <code>--&gt;</code> (reply), arrows pointing left, <code>participant "Long name" as X</code>, <code>note left of A : text</code> (or <code>right of</code>, <code>over A, B</code>, or a note block ending in <code>end note</code>), <code>autonumber</code>, <code>hide footbox</code> and <code>title</code>. New names become participants. Lines go in below the selected row. Paste a whole PlantUML diagram to bring it in; lines for things Snapblade doesn't draw yet (activate, alt, loop) are skipped, and lines it can't read stay in the box.</li></ul>`],
     ['files', 'Files', `<ul>
       <li>Everything is kept in this browser as you work. The <b>File</b> menu has <b>New diagram</b>, <b>Open</b> (Ctrl+O), <b>Save</b> (Ctrl+S) and <b>Save as</b> (Ctrl+Shift+S), for <code>.snapblade</code> files. You can also drop a file onto the canvas.</li>
       <li>In Chrome and Edge, Save writes back to the same file; other browsers download it. A dot next to the name means changes not yet saved to a file. Click the name to rename the diagram.</li></ul>`],
@@ -2881,9 +3472,9 @@ function helpHtml() {
     <div class="row"><button class="btn primary" type="button" data-copy-spec>Copy instructions</button></div>
     <pre class="spec">${esc(agentSpec())}</pre>`,
     keys: `<dl class="keys">
-      <dt>Double-click</dt><dd>Rename a box, container or connector, or add a box on empty canvas</dd>
+      <dt>Double-click</dt><dd>Rename a box, container or connector, or add a box on empty canvas (a participant in a sequence diagram)</dd>
       <dt>F2 / Enter</dt><dd>Rename the selection. Or just start typing to replace its text</dd>
-      <dt>Arrow keys</dt><dd>Nudge by one grid step (Shift: 1 px)</dd>
+      <dt>Arrow keys</dt><dd>Nudge by one grid step (Shift: 1 px). In a sequence diagram, move the selected row up or down, or participant left or right</dd>
       <dt>Alt+drag</dt><dd>Move or resize a shape so it overlaps others (shapes otherwise stay ${WALL} px apart)</dd>
       <dt>Delete</dt><dd>Remove selection</dd>
       <dt>Ctrl+Z / Ctrl+Y</dt><dd>Undo / redo</dd>
@@ -2910,7 +3501,15 @@ function helpHtml() {
       <li>Drag <b>Customers</b> down a little, then click Straighten connectors in its panel.</li>
       <li>Select a box and press Ctrl+D a few times to duplicate it.</li>
     </ol>
-    <div class="row"><button class="btn" type="button" data-choice="sample">Load the sample diagram</button><span class="desc">Replaces the canvas. Ctrl+Z undoes it.</span></div>`,
+    <div class="row"><button class="btn" type="button" data-choice="sample">Load the sample diagram</button><span class="desc">Replaces the canvas. Ctrl+Z undoes it.</span></div>
+    <p>And with the sequence sample:</p>
+    <ol class="try">
+      <li>Drag from the <b>Customer</b> lifeline to <b>Web app</b> between two messages. Type a label, press Enter, then click the next lifeline.</li>
+      <li>Drag <b>Validate cart</b> down a few rows, or select it and press the arrow keys.</li>
+      <li>Click in the box at the top of the canvas and type <code>Orders API --&gt; Customer : email</code>, then Enter.</li>
+      <li>Select a message and switch its Kind between Sync, Async and Reply.</li>
+    </ol>
+    <div class="row"><button class="btn" type="button" data-choice="seqsample">Load the sequence sample</button><span class="desc">Replaces the canvas. Ctrl+Z undoes it.</span></div>`,
     anchors: `<p>Choose a mode with the Anchors buttons in the top bar. It decides where connectors attach to a box's side.</p>
     ${Object.entries(MODES).map(([m, [name, desc]]) => `<div class="mode-card${m === S.settings.mode ? ' current' : ''}">
       <strong>${name}${m === S.settings.mode ? ' <span class="meta">(current)</span>' : ''}</strong><p class="desc">${desc}</p></div>`).join('')}`,
@@ -2925,7 +3524,8 @@ async function copySpec() {
   catch (e) { toast("Couldn't copy here. Select the text below and copy it, or use the llms.txt address.", true); }
 }
 async function openHelp() {
-  if ((await ask(helpHtml(), 'help', box => box.querySelector('[data-help][aria-pressed="true"]').focus())) === 'sample') loadSample();
+  const choice = await ask(helpHtml(), 'help', box => box.querySelector('[data-help][aria-pressed="true"]').focus());
+  if (choice === 'sample' || choice === 'seqsample') loadSample(choice === 'seqsample');
 }
 function helpTabSwitch(b) {
   const box = document.querySelector('#modal .modal');
@@ -2946,6 +3546,7 @@ function toggleMenu() {
 function fileCommand(cmd) {
   closeMenu();
   if (cmd === 'new') newDiagram();
+  if (cmd === 'newseq') newDiagram('sequence');
   if (cmd === 'open') openFile();
   if (cmd === 'save') saveFile(false);
   if (cmd === 'saveas') saveFile(true);
@@ -2968,7 +3569,7 @@ function themeColors(theme) {
   const root = document.documentElement, prev = root.getAttribute('data-theme');
   root.setAttribute('data-theme', theme);
   const cs = getComputedStyle(root), T = {};
-  for (const t of ['paper', 'node-bg', 'node-stroke', 'group-bg', 'group-stroke', 'edge', 'ink', 'ink-2', ...PRESETS.map(p => 'p-' + p)]) T[t] = cs.getPropertyValue('--' + t).trim();
+  for (const t of ['paper', 'node-bg', 'node-stroke', 'group-bg', 'group-stroke', 'edge', 'ink', 'ink-2', 'note-bg', 'note-stroke', ...PRESETS.map(p => 'p-' + p)]) T[t] = cs.getPropertyValue('--' + t).trim();
   prev == null ? root.removeAttribute('data-theme') : root.setAttribute('data-theme', prev);
   return T;
 }
@@ -2982,14 +3583,14 @@ function parseColor(c) {
 }
 function exportColors(o, T) {
   const st = o.style || {};
-  const def = !o.kind ? T.edge : o.kind === 'group' ? T['group-stroke'] : T['node-stroke'];
+  const def = !o.kind ? T.edge : o.kind === 'group' ? T['group-stroke'] : o.kind === 'note' ? T['note-stroke'] : T['node-stroke'];
   const line = parseColor(!st.line ? def : isHex(st.line) ? st.line : T['p-' + st.line]).hex;
   if (!o.kind) return { line };
   const fill = st.fill || 'pair';
   if (fill === 'none') return { line, fill: 'none', fo: 1 };
   if (isHex(fill)) return { line, fill: fill.toLowerCase(), fo: 1 };
   if (st.line) return { line, fill: mixHex(line, parseColor(o.kind === 'group' ? T.paper : T['node-bg']).hex, tintOf(o)), fo: 1 };
-  const c = parseColor(o.kind === 'group' ? T['group-bg'] : T['node-bg']);
+  const c = parseColor(o.kind === 'group' ? T['group-bg'] : o.kind === 'note' ? T['note-bg'] : T['node-bg']);
   return { line, fill: c.hex, fo: c.a };
 }
 function wrapText(text, maxW, font) {
@@ -3036,7 +3637,8 @@ function buildExportSvg(o) {
   let ids = new Set(S.nodes.map(n => n.id));
   if (o.scope === 'selection' && selectedIds().length) ids = new Set(topLevel(selectedIds()).flatMap(subtree));
   const nodes = S.nodes.filter(n => ids.has(n.id));
-  if (!nodes.length) return null;
+  const seq = isSeq() && seqLayout(fam);
+  if (seq ? !S.parts.length : !nodes.length) return null;
   const edges = S.edges.filter(e => ids.has(e.from.node) && ids.has(e.to.node));
   layoutAll();
   const P = computePorts(), R = computeRoutes(P), segs = routeSegments(R), taken = [], labels = dict();
@@ -3045,8 +3647,8 @@ function buildExportSvg(o) {
     if (lb) { taken.push({ x: lb.x - 3, y: lb.y - 3, w: lb.w + 6, h: lb.h + 6 }); labels[e.id] = lb; }
   }
   // Bounds of everything drawn (including the title block and legend), plus a margin.
-  const B = contentBounds(nodes, edges, R, labels);
-  const blocks = o.scope === 'selection' || o.annots === false ? [] : annotationLayout(B, fam, doc.name);
+  const B = seq ? seq.bounds : contentBounds(nodes, edges, R, labels);
+  const blocks = (o.scope === 'selection' && !seq) || o.annots === false ? [] : annotationLayout(B, fam, doc.name);
   let { x1, y1, x2, y2 } = B;
   for (const b of blocks) { x1 = Math.min(x1, b.x); y1 = Math.min(y1, b.y); x2 = Math.max(x2, b.x + b.w); y2 = Math.max(y2, b.y + b.h); }
   const pad = 32, ox = Math.floor(x1 - pad), oy = Math.floor(y1 - pad), W = Math.ceil(x2 - x1 + 2 * pad), H = Math.ceil(y2 - y1 + 2 * pad);
@@ -3061,7 +3663,23 @@ function buildExportSvg(o) {
     `<text x="${r2(cx)}" y="${r2(cy + (i - (lines.length - 1) / 2) * lh + size * 0.35)}" text-anchor="middle" ${fontAttrs(size, weight)} fill="${color}">${esc(t)}</text>`).join('');
 
   let out = '';
-  const order = nodes.map((n, i) => ({ n, i, d: depth(n), gk: n.kind === 'group' ? 0 : 1 })).sort((a, b) => a.d - b.d || a.gk - b.gk || a.i - b.i);
+  if (seq) {
+    const ink = parseColor(T.ink).hex, col = q => exportColors(q, T), fo = c => c.fo < 1 ? ` fill-opacity="${c.fo}"` : '';
+    out += seqMarkup(seq, {
+      part: () => '', lifeHit: () => '', hit: () => '', msg: () => '', note: () => '',
+      body: q => { const c = col(q.p); return `fill="${c.fill}"${fo(c)} stroke="${c.line}" stroke-width="1.5"${dash(q.p.style)}`; },
+      name: () => `${fontAttrs(13, 500)} fill="${ink}"`,
+      life: q => `stroke="${q.p.style?.line ? col(q.p).line : parseColor(T['group-stroke']).hex}" stroke-width="1.25" stroke-dasharray="5 4"`,
+      line: g => `fill="none" stroke="${col(g.r).line}" stroke-width="1.5" stroke-linejoin="round"${dash(withDash(g.r).style)}`,
+      fill: g => `fill="${col(g.r).line}"`,
+      open: g => `fill="none" stroke="${col(g.r).line}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"`,
+      labelBg: () => `fill="${labelBg}"`, label: () => `${fontAttrs(12, 500)} fill="${ink}"`,
+      noteBody: g => { const c = col(g.r); return `fill="${c.fill}"${fo(c)} stroke="${c.line}" stroke-width="1.25" stroke-linejoin="round"${dash(g.r.style)}`; },
+      fold: g => `fill="none" stroke="${col(g.r).line}" stroke-width="1.25" stroke-linejoin="round"`,
+      noteText: () => `${fontAttrs(12, 500)} fill="${ink}"`,
+    });
+  }
+  const order = (seq ? [] : nodes).map((n, i) => ({ n, i, d: depth(n), gk: n.kind === 'group' ? 0 : 1 })).sort((a, b) => a.d - b.d || a.gk - b.gk || a.i - b.i);
   for (const { n } of order) {
     const c = exportColors(n, T), fo = c.fo < 1 ? ` fill-opacity="${c.fo}"` : '';
     if (n.kind === 'group') {
@@ -3074,7 +3692,7 @@ function buildExportSvg(o) {
         + textLines(wrapText(n.label, n.w - 16, font(500, 13)), n.x + n.w / 2, n.y + n.h / 2, 13, 500, parseColor(T.ink).hex, 16.25);
     }
   }
-  for (const e of edges) {
+  for (const e of seq ? [] : edges) {
     const pts = R[e.id], c = exportColors(e, T);
     out += `<path d="${pathD(pts.map(p => ({ x: r2(p.x), y: r2(p.y) })), S.settings.radius)}" fill="none" stroke="${c.line}" stroke-width="1.5" stroke-linejoin="round"${dash(e.style)}/>`;
     // Arrowheads as plain triangles (more portable than SVG markers).
@@ -3198,7 +3816,7 @@ async function refreshExportPreview(box) {
   info.textContent = `${fileBase()}.${o.format}  ·  ${size}`;
 }
 async function openExport() {
-  if (!S.nodes.length) { toast('There is nothing to export yet.', true); return; }
+  if (!hasContent()) { toast('There is nothing to export yet.', true); return; }
   if (!selectedIds().length) exportOpts.scope = 'all';
   const choice = await ask(exportDialogHtml(), '', refreshExportPreview);
   if (choice !== 'download' && choice !== 'copy') return;
@@ -3226,6 +3844,30 @@ async function copyExport(o) {
   }
 }
 
+/* ---------- quick entry (sequence diagrams) ---------- */
+function fitQuick() {
+  const q = document.getElementById('quickIn');
+  q.style.height = 'auto'; q.style.height = Math.min(q.scrollHeight + 2, 180) + 'px'; q.style.overflowY = q.scrollHeight > 178 ? 'auto' : 'hidden';
+}
+function focusQuick(text = '') {
+  const q = document.getElementById('quickIn');
+  q.focus(); q.value += text; q.setSelectionRange(q.value.length, q.value.length); fitQuick();
+}
+// Add what the box says, below the selected row (or at the end), as one undo step. Lines it couldn't read stay in the box.
+function quickEnter() {
+  const q = document.getElementById('quickIn'), text = q.value;
+  if (!text.trim() || !isSeq()) return;
+  const before = snapshot(), after = sel?.type === 'seq' && S.rows.some(r => r.id === sel.id) ? sel.id : null;
+  const r = seqEnter(text, after), lines = text.split(/\r?\n/);
+  keepUndo(before);
+  if (r.rows.length) sel = { type: 'seq', id: r.rows[r.rows.length - 1] };
+  seqNext = null;
+  q.value = r.errors.map(e => lines[e.line - 1]).join('\n'); fitQuick();
+  refresh(true, true);
+  if (r.errors.length) toast(`Couldn't read ${r.errors.length > 1 ? r.errors.length + ' lines' : 'that line'}: ${r.errors[0].why}. A message looks like  A -> B : label`, true);
+  else if (r.skipped) toast(`Skipped ${r.skipped} line${r.skipped > 1 ? 's' : ''} Snapblade doesn't draw yet (activate, alt, loop and the like).`);
+}
+
 function init() {
   svg = document.getElementById('cv'); stage = document.getElementById('stage'); panel = document.getElementById('panel');
   statusEl = document.getElementById('status'); editor = document.getElementById('editor');
@@ -3237,7 +3879,7 @@ function init() {
     setAside(); S = sample(); doc = { name: 'Untitled diagram', dirty: false }; layoutAll(false); fit();
     toast("The diagram saved in this browser couldn't be drawn. It was set aside, and the sample loaded instead.", true);
   }
-  syncModeButtons(); renderPanel(); updateDocUi();
+  syncModeButtons(); syncTypeUi(); renderPanel(); updateDocUi();
 
   // Files and export
   const docName = document.getElementById('docName');
@@ -3291,7 +3933,7 @@ function init() {
   }, { passive: false });
 
   editor.addEventListener('keydown', ev => {
-    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); commitEditor(); }
+    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); commitEditor(false, true); }
     if (ev.key === 'Escape') { ev.preventDefault(); commitEditor(true); }
   });
   editor.addEventListener('blur', () => commitEditor());
@@ -3305,6 +3947,14 @@ function init() {
   document.getElementById('modeSeg').addEventListener('click', ev => { const b = ev.target.closest('[data-mode]'); if (b) setMode(b.dataset.mode); });
   document.getElementById('addBox').addEventListener('click', () => addNode('box'));
   document.getElementById('addGroup').addEventListener('click', () => addNode('group'));
+  document.getElementById('addPart').addEventListener('click', () => addPart());
+  document.getElementById('addNote').addEventListener('click', addSeqNote);
+  const quickIn = document.getElementById('quickIn');
+  quickIn.addEventListener('input', fitQuick);
+  quickIn.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); quickEnter(); }
+    if (ev.key === 'Escape') { ev.preventDefault(); quickIn.blur(); }
+  });
   document.getElementById('undoBtn').addEventListener('click', () => restore(undoStack, redoStack));
   document.getElementById('redoBtn').addEventListener('click', () => restore(redoStack, undoStack));
   document.getElementById('fitBtn').addEventListener('click', fit);
@@ -3333,10 +3983,12 @@ function init() {
     else if (k === '?' && !sel && !mod) { ev.preventDefault(); openHelp(); }
     else if (mod && k.toLowerCase() === 'a') { ev.preventDefault(); setMulti(topLevel(S.nodes.map(n => n.id))); render(); }
     else if (k === 'Delete' || k === 'Backspace') { if (sel) { ev.preventDefault(); deleteSel(); } }
-    else if (k === 'Escape') { select(null); render(); }
+    else if (k === 'Escape') { seqNext = null; select(null); render(); }
     else if ((k === 'F2' || k === 'Enter') && sel) { ev.preventDefault(); startEditing(); }
     else if (sel && sel.type !== 'annot' && k.length === 1 && k !== ' ' && !mod && !ev.altKey) { ev.preventDefault(); startEditing(k); }
+    else if (isSeq() && !sel && k.length === 1 && k !== ' ' && !mod && !ev.altKey) { ev.preventDefault(); focusQuick(k); }
     else if (k === ' ') { spaceDown = true; }
+    else if (sel?.type === 'seq' && k.startsWith('Arrow')) { ev.preventDefault(); seqNudge(k); }
     else if (sel?.type === 'node' && k.startsWith('Arrow')) {
       ev.preventDefault();
       const s = ev.shiftKey ? 1 : S.settings.grid;

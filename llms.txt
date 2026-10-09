@@ -1,6 +1,6 @@
 # Snapblade diagrams: instructions for AI agents
 
-Snapblade is a browser editor for box-and-line diagrams (architecture, systems, data flows): https://mmunchinski.github.io/snapblade/
+Snapblade is a browser editor for box-and-line diagrams (architecture, systems, data flows) and sequence diagrams: https://mmunchinski.github.io/snapblade/
 You write a diagram as JSON. The user saves your answer as a file ending in `.snapblade` (or `.json`) and opens it in Snapblade (File > Open, or drop it on the canvas).
 
 You decide what the shapes are and where they go. Snapblade draws the connectors itself: it picks the sides, spaces the anchor points, routes right-angled lines around the shapes and places the labels. So give every shape a sensible position and size, and leave the connector details on automatic.
@@ -73,6 +73,8 @@ Usually leave `settings` out.
 - `labelPos`: where connector labels sit unless a connector says otherwise: "start", "center" or "end". Default "start".
 - `showSlots`: true or false: mark where connectors attach. Default true.
 - `walls`: true or false: keep shapes 20 px apart while the user edits. Default true.
+- `autonumber`: true or false: number the messages of a sequence diagram. Default false.
+- `footbox`: true or false: draw a sequence diagram's participants at the bottom too. Default true.
 
 ## Title block and legend
 
@@ -81,7 +83,7 @@ Usually leave `settings` out.
 
 - Title block: `show` true draws it. `title` (empty: the file's name), `version`, `date` and `author` are text; empty ones are left out. `pos` is "top-left", "top-right", "bottom-left" or "bottom-right". Default `"bottom-right"`.
 - Legend: `show` true draws it, `heading` is its heading (default `"Legend"`), `pos` as above (default `"bottom-left"`). The legend makes its own rows, one per distinct style in use; unstyled shapes and connectors get no row. `labels` maps a row's key to what that style means. `hidden` lists the keys of rows to leave out.
-- A row's key is `<kind>:<line>|<dash>|<fill>`. `kind` is `box`, `container` or `connector`. `line` is the preset or hex color, empty if none. `dash` is empty for solid. For shapes, `fill` is `pair` (followed by the tint if one is set, as in `pair30`) when the shape has a line color, empty for the default fill without one, or `none` or the hex color. Connectors have no fill part. Examples: a green box: `box:green||pair`; a container with a blue line and a 30% tint: `container:blue||pair30`; a dashed box with no fill: `box:|dashed|none`; a dashed connector: `connector:|dashed`; an orange dashed connector: `connector:orange|dashed`.
+- A row's key is `<kind>:<line>|<dash>|<fill>`. `kind` is `box`, `container` or `connector` (in a sequence diagram `participant`, `message` or `note`). `line` is the preset or hex color, empty if none. `dash` is empty for solid. For shapes, `fill` is `pair` (followed by the tint if one is set, as in `pair30`) when the shape has a line color, empty for the default fill without one, or `none` or the hex color. Connectors have no fill part. Examples: a green box: `box:green||pair`; a container with a blue line and a 30% tint: `container:blue||pair30`; a dashed box with no fill: `box:|dashed|none`; a dashed connector: `connector:|dashed`; an orange dashed connector: `connector:orange|dashed`.
 - Both blocks sit just outside the diagram in their corner. You never position them.
 
 ## Laying it out well
@@ -137,10 +139,59 @@ The sample diagram that ships with Snapblade:
       {"id":"e9","from":{"node":"inv","side":"auto"},"to":{"node":"idb","side":"auto"},"arrow":"end","label":"SQL"},
       {"id":"e10","from":{"node":"pay","side":"auto"},"to":{"node":"gw","side":"auto"},"arrow":"end","label":"REST\nmTLS","style":{"dash":"dashed"}}
     ],
-    "settings": {"mode":"straighten","grid":10,"showSlots":true,"routing":"ortho","radius":6,"labelPos":"start","walls":true},
+    "settings": {"mode":"straighten","grid":10,"showSlots":true,"routing":"ortho","radius":6,"labelPos":"start","walls":true,"autonumber":false,"footbox":true},
     "title": {"show":true,"title":"Order platform","version":"0.3","date":"2026-10-07","author":"","pos":"bottom-right"},
     "legend": {"show":true,"heading":"Legend","pos":"bottom-left","labels":{"box:blue||pair":"People and client apps","box:green||pair":"Database","box:amber||pair":"Cache","box:|dashed|none":"Third-party service","connector:|dashed":"Leaves our network"},"hidden":[]}
   }
 }
 ```
 
+## Sequence diagrams
+
+A sequence diagram is a different kind of file: participants left to right, and rows (messages and notes) top to bottom. Nothing in it has a position. Snapblade makes each column as wide as the labels next to it need and spaces the rows evenly, so you only decide the order.
+
+    {"format": "snapblade", "version": 1, "diagram": {"type": "sequence", "parts": [...], "rows": [...], "settings": {...}, "title": {...}, "legend": {...}}}
+
+- `type` (required): `"sequence"`. Leave out `nodes` and `edges`; a sequence diagram doesn't use them.
+- `parts`: the participants, in order from left to right, at most 100: `{"id": "orders", "kind": "participant", "label": "Orders API"}`. `id` follows the shape id rules, `label` is the text (`\n` for a second line), `kind` may be left out, and `style` works as for boxes.
+- `rows`: messages and notes in the order things happen, at most 1000. Ids are unique across participants and rows.
+- A message: `{"id": "m1", "from": "cust", "to": "web", "type": "sync", "label": "Place order"}`. `from` and `to` are participant ids, the same one for a self-message; a message naming a participant that doesn't exist is dropped. `type` is "sync", "async" or "reply": a call that waits for an answer (filled arrowhead), one that doesn't wait (open arrowhead), or the answer (dashed). Default `"sync"`. `style`: `line` and `dash` only; a reply is dashed unless `dash` says otherwise.
+- A note: `{"id": "n1", "kind": "note", "side": "right", "on": ["gw"], "label": "Can take up to 5 s"}`. `side` is "left", "right" or "over". `on` lists the participant it sits beside, or for `"over"` one or two participants (the note spans from one to the other). A note takes a row of its own. `style` works as for boxes.
+- `settings.autonumber` numbers the messages and `settings.footbox` repeats the participants at the bottom; the other settings don't apply. The title block and legend work as above.
+- Put each reply right after the call it answers. Keep labels short: an operation, an endpoint or an event name.
+
+The sequence sample that ships with Snapblade:
+
+```json
+{
+  "format": "snapblade",
+  "version": 1,
+  "diagram": {
+    "type": "sequence",
+    "parts": [
+      {"id":"cust","kind":"participant","label":"Customer","style":{"line":"blue"}},
+      {"id":"web","kind":"participant","label":"Web app"},
+      {"id":"orders","kind":"participant","label":"Orders API"},
+      {"id":"pay","kind":"participant","label":"Payments API"},
+      {"id":"gw","kind":"participant","label":"Payment gateway\n(external)","style":{"dash":"dashed","fill":"none"}},
+      {"id":"bus","kind":"participant","label":"Event bus","style":{"line":"amber"}}
+    ],
+    "rows": [
+      {"id":"m1","from":"cust","to":"web","type":"sync","label":"Place order"},
+      {"id":"m2","from":"web","to":"orders","type":"sync","label":"POST /orders"},
+      {"id":"m3","from":"orders","to":"orders","type":"sync","label":"Validate cart"},
+      {"id":"m4","from":"orders","to":"pay","type":"sync","label":"Authorize payment"},
+      {"id":"m5","from":"pay","to":"gw","type":"sync","label":"Charge card"},
+      {"id":"n1","kind":"note","side":"over","on":["pay","gw"],"label":"mTLS. Can take up to 5 s."},
+      {"id":"m6","from":"gw","to":"pay","type":"reply","label":"Approved"},
+      {"id":"m7","from":"pay","to":"orders","type":"reply","label":"Authorized"},
+      {"id":"m8","from":"orders","to":"bus","type":"async","label":"OrderPlaced"},
+      {"id":"m9","from":"orders","to":"web","type":"reply","label":"201 Created"},
+      {"id":"m10","from":"web","to":"cust","type":"reply","label":"Order confirmed"}
+    ],
+    "settings": {"mode":"straighten","grid":10,"showSlots":true,"routing":"ortho","radius":6,"labelPos":"start","walls":true,"autonumber":false,"footbox":true},
+    "title": {"show":true,"title":"Checkout","version":"0.3","date":"2026-10-07","author":"","pos":"bottom-right"},
+    "legend": {"show":true,"heading":"Legend","pos":"bottom-left","labels":{"participant:blue||pair":"People","participant:|dashed|none":"Third-party service","participant:amber||pair":"Messaging"},"hidden":[]}
+  }
+}
+```

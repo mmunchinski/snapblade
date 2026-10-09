@@ -410,14 +410,17 @@ test('llms.txt is the current agent instructions (run npm run docs after changin
   assert.ok(file === json('agentSpec()'), 'llms.txt is out of date: run npm run docs');
 });
 
-test('the agent instructions\' example opens unchanged', () => {
-  const spec = json('agentSpec()'), example = spec.match(/```json\n([\s\S]*?)```/)[1];
-  const file = JSON.parse(example);
-  assert.deepStrictEqual(json(`parseDiagram(${JSON.stringify(example)})`), file.diagram);
+test('the agent instructions\' examples open unchanged', () => {
+  const examples = [...json('agentSpec()').matchAll(/```json\n([\s\S]*?)```/g)].map(m => m[1]);
+  assert.equal(examples.length, 2, 'a box diagram and a sequence diagram');
+  for (const example of examples) {
+    const file = JSON.parse(example), d = file.diagram.type ? { nodes: [], edges: [], ...file.diagram } : file.diagram;   // a sequence diagram leaves out nodes and edges
+    assert.deepStrictEqual(json(`parseDiagram(${JSON.stringify(example)})`), d);
+  }
 });
 
 test('the agent instructions name every field a diagram can keep', () => {
-  const spec = json('agentSpec()').split('## Example')[0];   // the example would mention them all anyway
+  const spec = json('agentSpec()').replace(/```json[\s\S]*?```/g, '');   // the examples would mention them all anyway
   // Everything normalize() keeps, from a diagram that uses every kind of field.
   const keys = json(`(() => {
     const d = normalize({ nodes: [
@@ -428,9 +431,105 @@ test('the agent instructions name every field a diagram can keep', () => {
       settings: sample().settings, title: sample().title, legend: { ...sample().legend, hidden: ['box:blue||pair'] } });
     const keys = new Set(), walk = (o, skip) => { if (Array.isArray(o)) o.forEach(v => walk(v)); else if (o && typeof o === 'object') for (const k in o) { if (!skip) keys.add(k); walk(o[k], k === 'labels'); } };
     walk({ format: 1, version: 1, diagram: d });
+    walk(normalize({ type: 'sequence', parts: [{ id: 'a', label: 'A', style: { line: 'blue' } }],
+      rows: [{ id: 'm', from: 'a', to: 'a', type: 'reply', label: 'x', style: { dash: 'dotted' } }, { id: 'n', kind: 'note', side: 'over', on: ['a'], label: 'n' }] }));
     return [...keys];
   })()`);
   assert.ok(keys.length > 35, `found ${keys.length} fields`);
   const missing = keys.filter(k => !spec.includes('`' + k + '`') && !spec.includes('"' + k + '"'));
   assert.deepEqual(missing, [], 'fields the instructions never mention');
+});
+
+// ---------- sequence diagrams ----------
+// Nothing in a sequence diagram has a position: these pin that the layout always leaves room for what's drawn.
+test('sequence: columns make room for every head, label and note, and rows never overlap', () => {
+  run(`S = normalize(seqSample()); S.rows.push(
+    { id: 'wide', from: 'cust', to: 'web', type: 'sync', label: 'a very long message label that needs a wider gap than the heads' },
+    { id: 'far', from: 'cust', to: 'bus', type: 'async', label: 'x' },
+    { id: 'self2', from: 'web', to: 'web', type: 'sync', label: 'a self-message with a long label' },
+    { id: 'nl', kind: 'note', side: 'left', on: ['orders'], label: 'a note to the left of Orders API' },
+    { id: 'nr', kind: 'note', side: 'right', on: ['cust'], label: 'a note right of the customer' },
+    { id: 'no', kind: 'note', side: 'over', on: ['pay'], label: 'a wide note over Payments API only' })`);
+  const L = json(`(() => { const L = seqLayout(); return { ...L, R: L.R.map(g => ({ ...g, r: g.r.id, tw: g.ls.length ? Math.max(...g.ls.map(t => textWidth(t))) : 0 })) }; })()`);
+  const x = Object.fromEntries(L.P.map(q => [q.id, q]));
+  L.P.slice(1).forEach((q, i) => assert.ok(q.x - q.w / 2 >= L.P[i].x + L.P[i].w / 2 + 40, `heads ${L.P[i].id} and ${q.id} keep 40 px apart`));
+  for (const g of L.R) {
+    const next = L.R[L.R.indexOf(g) + 1];
+    if (next) assert.ok(next.y >= g.y + g.h + 14, `row ${next.r} starts below ${g.r}`);
+    if (g.note) {
+      // A note crosses no lifeline except the ones it is on (or spans).
+      for (const [i, q] of L.P.entries()) if (i < g.a || i > g.b) assert.ok(q.x < g.x || q.x > g.x + g.w, `note ${g.r} clear of ${q.id}`);
+    } else if (g.self) assert.ok(!L.P[g.a + 1] || L.P[g.a + 1].x > g.x1 + 36 + 8 + g.tw, `self-message ${g.r} label clear of the next lifeline`);
+    else assert.ok(Math.abs(g.x2 - g.x1) >= g.tw + 24, `label of ${g.r} fits between its lifelines`);
+  }
+  assert.ok(L.bounds.x1 <= Math.min(...L.R.filter(g => g.note).map(g => g.x)), 'bounds hold the notes');
+  assert.equal(L.bounds.y2, L.end + L.H, 'participants at the bottom too');
+  run('S.settings.footbox = false');
+  assert.equal(json('seqLayout().bounds.y2'), json('seqLayout().end'));
+});
+
+test('sequence: numbering prefixes messages only, and widens the columns it needs to', () => {
+  run(`S = normalize({ type: 'sequence', parts: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }],
+    rows: [{ id: 'm1', from: 'a', to: 'b', label: 'x'.repeat(30) }, { id: 'n', kind: 'note', on: ['a'], label: 'n' }, { id: 'm2', from: 'b', to: 'a', label: '' }] })`);
+  const off = json('seqLayout().P[1].x');
+  run('S.settings.autonumber = true');
+  assert.deepEqual(json('seqLayout().R.map(g => g.ls)'), [['1. ' + 'x'.repeat(30)], ['n'], ['2. ']]);
+  assert.ok(json('seqLayout().P[1].x') > off);
+});
+
+test('sequence: quick entry reads PlantUML lines, matches participants by name and inserts after a row', () => {
+  run(`S = normalize({ type: 'sequence', parts: [{ id: 'web', label: 'Web app' }], rows: [] })`);
+  const r = json(`seqEnter(${JSON.stringify(['@startuml', 'autonumber', 'title Checkout', 'participant "Orders API" as orders', 'actor Customer',
+    'customer -> web app : Place order', 'Web app ->> Orders : event\\nsecond line', 'Orders API --> "Web app": 201', 'Orders <- Web app: get',
+    'Web app <<-- Orders API', 'web -> web : self', 'note left of Customer : hi', 'note over Web app, Orders API: across', 'note right of web',
+    'two', 'lines', 'end note', "' a comment", 'activate web', 'alt ok', 'end', 'this is not a line', 'X -> : nobody', '@enduml'].join('\n'))})`);
+  assert.deepEqual([r.parts, r.rows.length, r.skipped], [2, 9, 3]);
+  assert.deepEqual(r.errors.map(e => e.line), [22, 23]);
+  assert.deepEqual(json('S.parts.map(p => [p.id, p.label])').slice(0, 2), [['web', 'Web app'], ['orders', 'Orders API']]);
+  const cust = json('S.parts[2].id');
+  assert.deepEqual(json('S.rows.map(r => r.kind ? [r.side, r.on, r.label] : [r.from, r.to, r.type, r.label])'), [
+    [cust, 'web', 'sync', 'Place order'], ['web', 'orders', 'async', 'event\nsecond line'], ['orders', 'web', 'reply', '201'],
+    ['web', 'orders', 'sync', 'get'], ['orders', 'web', 'reply', ''], ['web', 'web', 'sync', 'self'],
+    ['left', [cust], 'hi'], ['over', ['web', 'orders'], 'across'], ['right', ['web'], 'two\nlines']].map(x => x));
+  assert.deepEqual(json('[S.settings.autonumber, S.title.title, S.title.show]'), [true, 'Checkout', true]);
+  // After a row: the new lines go right below it, in order.
+  json(`seqEnter('Web app -> Orders API : one\\nWeb app -> Orders API : two', S.rows[0].id)`);
+  assert.deepEqual(json('S.rows.slice(0, 3).map(r => r.label)'), ['Place order', 'one', 'two']);
+  // Whatever it adds survives a reload.
+  assert.deepStrictEqual(json('normalize(JSON.parse(JSON.stringify(S)))'), json('S'));
+});
+
+test('sequence: a message answering the sync call above starts as a reply; rows and columns move; removing a participant takes its rows', () => {
+  run(`S = normalize(seqSample())`);
+  assert.equal(json(`seqMessage('pay', 'orders', 4).type`), 'reply', 'right below Orders -> Payments');
+  assert.equal(json(`seqMessage('pay', 'orders', 0).type`), 'sync');
+  run(`S = normalize(seqSample())`);
+  assert.equal(json(`seqMoveTo('m1', 2)`), true);
+  assert.deepEqual(json('S.rows.slice(0, 3).map(r => r.id)'), ['m2', 'm3', 'm1']);
+  assert.equal(json(`seqMoveTo('m2', 0)`), false, 'already there');
+  assert.equal(json(`seqMoveTo('bus', 0)`), true);
+  assert.equal(json('S.parts[0].id'), 'bus');
+  run(`seqRemove('gw')`);
+  assert.ok(json(`S.rows.every(r => r.kind ? !r.on.includes('gw') : r.from !== 'gw' && r.to !== 'gw')`));
+  assert.deepEqual(json('S.rows.map(r => r.id)'), ['m2', 'm3', 'm1', 'm4', 'm7', 'm8', 'm9', 'm10']);
+  // Insertion points follow the rows on screen.
+  const L = json('(() => { const L = seqLayout(); return { y: L.R.map(g => [g.y, g.h]) }; })()');
+  assert.equal(json(`seqIndexAt(seqLayout(), ${L.y[2][0] + L.y[2][1]})`), 3, 'below the middle of row 2');
+  assert.equal(json(`seqIndexAt(seqLayout(), 0)`), 0);
+});
+
+test('sequence: normalize drops what a sequence diagram cannot hold', () => {
+  run(`S = normalize(${JSON.stringify({ type: 'sequence', nodes: [box('x')], edges: [link('e', 'x', 'x')],
+    parts: [{ id: 'a', label: 'A', kind: 'box', style: { line: 'red', fill: '<b>' } }, { id: 'a', label: 'dup' }, { id: 'b c' }, { id: 'b', label: 7 }, 'x', null],
+    rows: [{ id: 'a', from: 'a', to: 'b' }, { id: 'm', from: 'a', to: 'b', type: 'call', label: 'ok', extra: 1 }, { id: 'm', from: 'b', to: 'a' },
+      { id: 'n1', kind: 'note', side: 'under', on: ['a', 'b'] }, { id: 'n2', kind: 'note', side: 'over', on: ['b', 'a', 'b', 'zz'] },
+      { id: 'n3', kind: 'note', on: ['zz'] }, { id: 'n4', kind: 'note', on: 'a' }, { id: 'm2', from: 'a', to: 'zz' }, { id: '__proto__', from: 'b', to: 'b' }] })})`);
+  assert.deepEqual(json('S'), json(`({ type: 'sequence', nodes: [], edges: [],
+    parts: [{ id: 'a', kind: 'participant', label: 'A', style: { line: 'red' } }, { id: 'b', kind: 'participant', label: '' }],
+    rows: [{ id: 'm', from: 'a', to: 'b', type: 'sync', label: 'ok' }, { id: 'n1', kind: 'note', side: 'right', on: ['a'], label: '' },
+      { id: 'n2', kind: 'note', side: 'over', on: ['b', 'a'], label: '' }, { id: '__proto__', from: 'b', to: 'b', type: 'sync', label: '' }],
+    settings: sample().settings, title: normalize({ nodes: [], edges: [] }).title, legend: normalize({ nodes: [], edges: [] }).legend })`));
+  run(`S = normalize({ type: 'sequence', parts: Array.from({ length: 300 }, (_, i) => ({ id: 'p' + i })), rows: Array.from({ length: 3000 }, (_, i) => ({ id: 'r' + i, from: 'p0', to: 'p1' })) })`);
+  assert.deepEqual(json('[S.parts.length, S.rows.length]'), [100, 1000]);
+  assert.ok(json('seqLayout().R.length') === 1000);
 });

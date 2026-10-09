@@ -63,7 +63,18 @@ const CONTEXTS = [
   // Walking the container controls may leave Application tier in a row or column layout, which would disable Arrange.
   ['several shapes', "freeApp(); multi = ['orders', 'inv', 'pay']; sel = { type: 'node', id: 'orders' }"],
   ['container, then boxes inside it', "freeApp(); multi = ['app', 'orders', 'inv']; sel = { type: 'node', id: 'app' }"],
+  // Sequence diagrams: the sample is loaded once, and the contexts after it keep working on it.
+  ['sequence diagram', "seqOn(); sel = null; multi = []"],
+  ['participant', "seqOn(); sel = { type: 'seq', id: 'orders' }; multi = []"],
+  ['message', "seqOn(); sel = { type: 'seq', id: 'm4' }; multi = []"],
+  ['note', "seqOn(); sel = { type: 'seq', id: 'n1' }; multi = []"],
+  ['sequence title block', "seqOn(); S.title.show = true; sel = { type: 'annot', id: 'title' }; multi = []"],
 ];
+// Defines freeApp() and seqOn() in the page, for the contexts above.
+const contextHelpers = h => h.ev(() => {
+  window.freeApp = () => { if (!isSeq() && byId('app').layout !== 'free') { byId('app').layout = 'free'; layoutAll(); save(); } };
+  window.seqOn = () => { if (!isSeq()) { setContent(seqSample()); syncTypeUi(); save(); } };
+});
 const rgb = hex => `rgb(${[1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`;
 
 test('double-click renames boxes and connectors; typing and F2 also edit', async () => {
@@ -253,7 +264,7 @@ test('the diagram panel holds settings only; Help opens from the bar, F1 and ?',
 test('every control in every panel survives a reload and a file round trip', { timeout: 180000 }, async () => {
   const h = await open();
   const SKIP = new Set(['delete', 'duplicate', 'help', 'annHide']);   // remove or add shapes, or open a dialog
-  await h.ev(() => { window.freeApp = () => { if (byId('app').layout !== 'free') { byId('app').layout = 'free'; layoutAll(); save(); } }; });
+  await contextHelpers(h);
   const controls = () => h.ev(() => [...document.querySelectorAll('#panel [data-act], #panel [data-field], #modeSeg [data-mode]')]
     .filter(el => !el.disabled && el.offsetParent !== null)
     .map(el => ({
@@ -300,7 +311,8 @@ test('every control in every panel survives a reload and a file round trip', { t
     }
   }
   const seen = [...visited].join(' ');
-  for (const k of ['f-tint', 'f-fill-hex', 'f-line-r', 'data-act="align"', 'f-gap', 'f-fromSide', 'data-mode="fixed"', 'data-field="leg-label"', 'f-ann-author', 'data-act="annPos"', 'f-radius', 'data-act="lineUp"', 'data-act="straighten"', 'f-spaceGap'])
+  for (const k of ['f-tint', 'f-fill-hex', 'f-line-r', 'data-act="align"', 'f-gap', 'f-fromSide', 'data-mode="fixed"', 'data-field="leg-label"', 'f-ann-author', 'data-act="annPos"', 'f-radius', 'data-act="lineUp"', 'data-act="straighten"', 'f-spaceGap',
+    'f-autonumber', 'f-footbox', 'data-act="msgType"', 'f-msgFrom', 'f-noteTo', 'data-act="noteSide"', 'data-act="seqMove"'])
     assert.ok(seen.includes(k), `the walk reached ${k}`);
   assert.ok(visited.size > 120, `walked ${visited.size} controls`);
 
@@ -467,7 +479,7 @@ test('a hostile file cannot run script: unexpected values are dropped or reset',
     assert.deepEqual(await h.ev(() => [byId('g').layout, byId('g').pad, byId('g').align, byId('g').parent === null || byId('g2').parent === null]), ['free', 20, 'center', true]);
     assert.deepEqual(await h.ev(() => S.edges[0]), { id: 'e1', from: { node: 'a', side: 'auto' }, to: { node: 'b', side: 'left' }, arrow: 'end', label: 'ok', style: {} });
     assert.deepEqual(await h.ev(() => [S.settings, S.title.pos, S.legend.pos, S.legend.labels, S.legend.hidden]),
-      [{ mode: 'straighten', grid: 10, showSlots: true, routing: 'ortho', radius: 6, labelPos: 'start', walls: true }, 'bottom-right', 'bottom-left', {}, []]);
+      [{ mode: 'straighten', grid: 10, showSlots: true, routing: 'ortho', radius: 6, labelPos: 'start', walls: true, autonumber: false, footbox: true }, 'bottom-right', 'bottom-left', {}, []]);
     const svg = await h.ev(() => buildExportSvg({ theme: 'light', background: 'white', scope: 'all' }).svg);
     assert.doesNotMatch(svg, /onerror|<img/);
   };
@@ -769,7 +781,7 @@ test('connecting: an edge band pins that side and lights it up; the middle is au
 
 test('the Help guide mentions every control, panel heading, top-bar button and export option', { timeout: 120000 }, async () => {
   const h = await open(), { page } = h;
-  await h.ev(() => { window.freeApp = () => { if (byId('app').layout !== 'free') { byId('app').layout = 'free'; layoutAll(); } }; });
+  await contextHelpers(h);
   // What each control is called on screen: its text, its field's label, or its aria-label. Counts and values
   // after a "·" change with the diagram, so they're left off.
   const names = sel => h.ev(sel => [...document.querySelectorAll(sel)].filter(el => el.offsetParent !== null).map(el => {
@@ -782,9 +794,11 @@ test('the Help guide mentions every control, panel heading, top-bar button and e
   const all = new Set();
   for (const [, setup] of CONTEXTS) {
     await h.ev(`(() => { ${setup}; renderPanel(); render(); })()`);
-    for (const n of await names('#panel [data-act], #panel [data-field], #panel .eyebrow')) all.add(n);
+    for (const n of await names('#panel [data-act], #panel [data-field], #panel .eyebrow, .bar button')) all.add(n);
   }
-  for (const n of await names('.bar button, #fileMenu button')) all.add(n);
+  await page.click('#fileBtn');
+  for (const n of await names('#fileMenu button')) all.add(n);
+  await page.keyboard.press('Escape');
   await h.ev(() => { sel = null; multi = []; renderPanel(); });
   await page.click('#exportBtn');
   for (const fmt of ['PNG', 'PDF']) {
@@ -814,4 +828,160 @@ test('Help: the guide links to its sections; the AI tab shows the agent instruct
   assert.equal(await h.ev(() => navigator.clipboard.readText()), spec);
   assert.match(await page.textContent('#toast'), /Instructions copied/);
   assert.deepEqual(h.errors, []);
+});
+
+// ---------- sequence diagrams ----------
+// Screen positions in a sequence diagram: a point on a participant's lifeline at world y, and the middle of a row.
+const seqAt = (h, id, y) => h.ev(([id, y]) => { const q = lastGeom.seq.P.find(q => q.id === id), r = svg.getBoundingClientRect(); return { x: r.left + view.x + q.x * view.k, y: r.top + view.y + y * view.k }; }, [id, y]);
+const seqRow = (h, id) => h.ev(id => { const g = lastGeom.seq.R.find(g => g.r.id === id), r = svg.getBoundingClientRect();
+  const p = g.note ? { x: g.x + g.w / 2, y: g.y + g.h / 2 } : g.self ? { x: g.x1 + SEQ.self, y: (g.ay + g.by) / 2 } : { x: (g.x1 + g.x2) / 2, y: g.ay };
+  return { x: r.left + view.x + p.x * view.k, y: r.top + view.y + p.y * view.k }; }, id);
+const seqBottom = h => h.ev(() => lastGeom.seq.end - 12);
+const seqSampleOn = h => h.ev(() => { loadSample(true); undoStack.length = 0; });
+const rows = h => h.ev(() => S.rows.map(r => r.kind ? `note ${r.side} ${r.on.join(',')}: ${r.label}` : `${r.from}>${r.to} ${r.type}: ${r.label}`));
+
+test('sequence diagrams: New, quick entry, double-click adds a participant, drag between lifelines adds a message, Enter goes on to the next', async () => {
+  const h = await open(), { page } = h;
+  await page.click('#fileBtn'); await page.click('[data-file="newseq"]'); await page.waitForTimeout(100);
+  assert.equal(await h.ev(() => S.type), 'sequence');
+  assert.deepEqual(await h.ev(() => ['addBox', 'addGroup', 'modeSeg', 'addPart', 'addNote', 'quick'].map(id => document.getElementById(id).hidden)), [true, true, true, false, false, false]);
+  assert.ok(await h.ev(() => document.activeElement.id === 'quickIn'), 'the quick-entry box has the focus');
+  await page.keyboard.type('Customer -> Web app : checkout'); await page.keyboard.press('Enter');
+  await page.keyboard.type('Web app -> "Orders API" : POST /orders'); await page.keyboard.press('Enter');
+  assert.deepEqual(await h.ev(() => S.parts.map(p => p.label)), ['Customer', 'Web app', 'Orders API']);
+  const [c, w, o] = await h.ev(() => S.parts.map(p => p.id));
+  assert.deepEqual(await rows(h), [`${c}>${w} sync: checkout`, `${w}>${o} sync: POST /orders`]);
+  assert.equal(await h.ev(() => document.getElementById('quickIn').value), '');
+  // A line it can't read stays in the box.
+  await page.keyboard.type('nonsense here'); await page.keyboard.press('Enter');
+  assert.equal(await h.ev(() => document.getElementById('quickIn').value), 'nonsense here');
+  assert.match(await page.textContent('#toast'), /Couldn't read/);
+  await page.fill('#quickIn', ''); await page.keyboard.press('Escape');
+
+  // Double-click right of the last head: a participant there, named as you type.
+  const lastHead = await seqAt(h, o, 20);
+  await page.mouse.dblclick(lastHead.x + 200, lastHead.y); await page.waitForTimeout(80);
+  assert.equal((await h.editor()).open, true);
+  await page.keyboard.type('Payments'); await page.keyboard.press('Enter');
+  assert.deepEqual(await h.ev(() => S.parts.map(p => p.label)), ['Customer', 'Web app', 'Orders API', 'Payments']);
+  const pay = await h.ev(() => S.parts[3].id);
+
+  // Drag from one lifeline to another below the last row: a message at the end, label editor open.
+  const y = await seqBottom(h);
+  await h.drag(await seqAt(h, o, y), await seqAt(h, pay, y)); await page.waitForTimeout(80);
+  await page.keyboard.type('charge'); await page.keyboard.press('Enter');
+  assert.match(await page.textContent('#status'), /Next message from Payments/);
+  // Enter went on: click the lifeline the next one goes to. It answers the call above, so it starts as a reply.
+  await page.mouse.click(...Object.values(await seqAt(h, o, y - 30))); await page.waitForTimeout(80);
+  await page.keyboard.type('ok'); await page.keyboard.press('Enter');
+  await page.keyboard.press('Escape');
+  assert.deepEqual((await rows(h)).slice(2), [`${o}>${pay} sync: charge`, `${pay}>${o} reply: ok`]);
+  // A drag that stays on its own lifeline is a self-message, inserted at the row where it started.
+  const top = await h.ev(() => lastGeom.seq.H + 10);
+  await h.drag(await seqAt(h, w, top), { ...(await seqAt(h, w, top)), y: (await seqAt(h, w, top)).y + 40 }); await page.waitForTimeout(80);
+  await page.keyboard.type('think'); await page.keyboard.press('Enter');
+  assert.deepEqual((await rows(h))[0], `${w}>${w} sync: think`);
+  // Each new message, with its label, is one undo step.
+  await page.keyboard.press('Escape'); await page.keyboard.press('Control+z');
+  assert.equal((await rows(h)).length, 4);
+  await page.keyboard.press('Control+z');
+  assert.deepEqual((await rows(h)).slice(2), [`${o}>${pay} sync: charge`]);
+  // Survives a reload.
+  const before = await h.ev(() => JSON.parse(JSON.stringify(S)));
+  await page.reload(); await page.waitForTimeout(300);
+  assert.deepStrictEqual(await h.ev(() => JSON.parse(JSON.stringify(S))), before);
+  assert.equal(await h.ev(() => document.getElementById('quick').hidden), false);
+  assert.deepEqual(h.errors, []);
+});
+
+test('sequence diagrams: drag rows and participants to reorder, arrow keys, panel controls, delete and undo', async () => {
+  const h = await open(), { page } = h;
+  await seqSampleOn(h);
+  // Drag Place order down below Validate cart.
+  await h.drag(await seqRow(h, 'm1'), { ...(await seqRow(h, 'm3')), y: (await seqRow(h, 'm3')).y + 12 });
+  assert.deepEqual(await h.ev(() => S.rows.slice(0, 3).map(r => r.id)), ['m2', 'm3', 'm1']);
+  // Drag the Event bus head left of Orders API.
+  await h.drag(await seqAt(h, 'bus', 20), { ...(await seqAt(h, 'orders', 20)), x: (await seqAt(h, 'orders', 20)).x - 70 });
+  assert.deepEqual(await h.ev(() => S.parts.map(p => p.id)), ['cust', 'web', 'bus', 'orders', 'pay', 'gw']);
+  // Arrow keys move the selection: a row up or down, a participant left or right.
+  await page.mouse.click(...Object.values(await seqRow(h, 'm1')));
+  assert.deepEqual(await h.ev(() => sel), { type: 'seq', id: 'm1' });
+  await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowUp');
+  assert.deepEqual(await h.ev(() => S.rows.slice(0, 3).map(r => r.id)), ['m1', 'm2', 'm3']);
+  await page.mouse.click(...Object.values(await seqAt(h, 'bus', 20)));
+  await page.keyboard.press('ArrowRight');
+  assert.deepEqual(await h.ev(() => S.parts.map(p => p.id)), ['cust', 'web', 'orders', 'bus', 'pay', 'gw']);
+  // The message panel: kind, ends, reverse.
+  await page.mouse.click(...Object.values(await seqRow(h, 'm2')));
+  await h.button('Async');
+  await page.selectOption('#f-msgTo', 'pay');
+  await h.button('Reverse direction');
+  assert.deepEqual(await h.ev(() => S.rows.find(r => r.id === 'm2')), { id: 'm2', from: 'pay', to: 'web', type: 'async', label: 'POST /orders' });
+  // A note: position and span.
+  await page.mouse.click(...Object.values(await seqRow(h, 'n1')));
+  await h.button('Left of');
+  assert.deepEqual(await h.ev(() => S.rows.find(r => r.id === 'n1').on), ['pay']);
+  await h.button('Over'); await page.selectOption('#f-noteTo', 'cust');
+  assert.deepEqual(await h.ev(() => S.rows.find(r => r.id === 'n1')), { id: 'n1', kind: 'note', side: 'over', on: ['pay', 'cust'], label: 'mTLS. Can take up to 5 s.' });
+  // Deleting a participant takes its messages and notes; undo brings them back.
+  const all = await rows(h);
+  await page.mouse.click(...Object.values(await seqAt(h, 'gw', 20)));
+  await page.keyboard.press('Delete');
+  assert.ok(await h.ev(() => !partOf('gw') && S.rows.every(r => r.kind ? !r.on.includes('gw') : r.from !== 'gw' && r.to !== 'gw')));
+  await page.keyboard.press('Control+z');
+  assert.deepEqual(await rows(h), all);
+  // A note added beside the selected message, typed in place.
+  await page.mouse.click(...Object.values(await seqRow(h, 'm4')));
+  await page.click('#addNote'); await page.keyboard.type('retries twice'); await page.keyboard.press('Enter');
+  const i = await h.ev(() => S.rows.findIndex(r => r.id === 'm4'));
+  assert.deepEqual(await h.ev(i => { const r = S.rows[i + 1]; return [r.kind, r.side, r.on, r.label]; }, i), ['note', 'right', ['pay'], 'retries twice']);
+  // Typing with nothing selected goes to the quick-entry box.
+  await page.keyboard.press('Escape'); await h.clear();
+  await page.keyboard.type('Customer ->> Event bus : ping'); await page.keyboard.press('Enter');
+  assert.deepEqual((await rows(h)).at(-1), 'cust>bus async: ping');
+  assert.deepEqual(h.errors, []);
+});
+
+test('sequence diagrams export to SVG and PNG, and come back from a saved file unchanged', async () => {
+  const h = await open(), { page } = h;
+  await seqSampleOn(h);
+  const svgText = await h.ev(() => buildExportSvg({ theme: 'light', background: 'white', scope: 'all' }).svg);
+  for (const t of ['Payment gateway', '(external)', 'Validate cart', 'mTLS. Can take up to 5 s.', 'Legend'.toUpperCase(), 'Checkout']) assert.ok(svgText.includes(t), `export has ${t}`);
+  assert.doesNotMatch(svgText, /foreignObject|var\(--|data-role/);
+  assert.equal((svgText.match(/stroke-dasharray="5 4"/g) || []).length, 6, 'one dashed lifeline per participant');
+  await page.click('#exportBtn'); await page.click('[data-ex="format"][data-val="png"]');
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('[data-choice="download"]')]);
+  assert.match(dl.suggestedFilename(), /\.png$/);
+  // Save and reopen.
+  const before = await h.ev(() => JSON.parse(JSON.stringify(S)));
+  const file = await h.ev(() => serialize());
+  await h.ev(() => { doc.dirty = false; return newDiagram(); });
+  await page.waitForTimeout(100);
+  assert.equal(await h.ev(() => isSeq()), false);
+  await dropFile(h, file, 'checkout.snapblade'); await page.waitForTimeout(300);
+  assert.deepStrictEqual(await h.ev(() => JSON.parse(JSON.stringify(S))), before);
+  assert.equal(await h.ev(() => document.getElementById('addPart').hidden), false);
+  assert.deepEqual(h.errors, []);
+});
+
+test('a hostile sequence file cannot run script; it opens with what is valid', async () => {
+  const pwn = '"><img src=x onerror="window.__pwn=1">';
+  const diagram = { type: 'sequence',
+    parts: [{ id: 'a', label: pwn, style: { line: pwn } }, { id: 'b' + pwn, label: 'B' }, { id: 'b', label: 'B', kind: pwn }],
+    rows: [{ id: 'm', from: 'a', to: 'b', type: pwn, label: pwn }, { id: 'n', kind: 'note', side: pwn, on: ['b', pwn], label: pwn },
+      { id: 'x' + pwn, from: 'a', to: 'b' }, { id: 'y', from: 'a', to: pwn }] };
+  const h = await open(), { page } = h;
+  await dropFile(h, JSON.stringify({ format: 'snapblade', version: 1, diagram }), 'hostile.snapblade'); await page.waitForTimeout(300);
+  const check = async () => {
+    assert.equal(await h.ev(() => window.__pwn), undefined);
+    assert.equal(await h.ev(() => document.querySelectorAll('img').length), 0);
+    assert.deepEqual(await h.ev(() => [S.parts.map(p => [p.id, p.kind, p.style]), S.rows.map(r => r.id)]), [[['a', 'participant', {}], ['b', 'participant', undefined]], ['m', 'n']]);
+    assert.deepEqual(await h.ev(() => [S.rows[0].type, S.rows[1].side, S.rows[1].on]), ['sync', 'right', ['b']]);
+    assert.ok((await h.ev(() => svg.textContent)).includes(pwn), 'the text is shown as text');
+    assert.doesNotMatch(await h.ev(() => buildExportSvg({ theme: 'light', background: 'white', scope: 'all' }).svg), /<img|onerror="/);
+    assert.deepEqual(h.errors, []);
+  };
+  await check();
+  await page.reload(); await page.waitForTimeout(300);
+  await check();
 });
