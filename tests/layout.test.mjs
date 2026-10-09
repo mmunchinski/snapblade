@@ -583,6 +583,15 @@ test('sequence groups: a labeled box behind neighbouring participants; members s
   run(`seqMoveGroup('g', 0)`); assert.deepEqual(json('S.parts.map(p => p.id)'), ['d', 'e', 'a', 'b', 'c']);
   run(`seqMoveGroup('g', 2)`); assert.deepEqual(json('S.parts.map(p => p.id)'), ['a', 'b', 'c', 'd', 'e'], 'a spot inside another group snaps to its nearer edge');
   run(`seqStepGroup('g', -1)`); assert.deepEqual(json('S.parts.map(p => p.id)'), ['d', 'e', 'a', 'b', 'c'], 'a step hops over a whole group');
+  // Resizing by an edge: participants it passes join or leave; it keeps one member and stops at another group.
+  // Now g is d,e and the other group a,b,c.
+  const mem = id => json(`S.groups.find(g => g.id === '${id}').parts`);
+  run(`seqResizeGroup('${gid}', 'l', 0)`); assert.deepEqual(mem(gid), ['a', 'b', 'c'], 'stops at the group to its left');
+  run(`seqResizeGroup('${gid}', 'l', 4)`); assert.deepEqual(mem(gid), ['c'], 'keeps one member');
+  run(`seqResizeGroup('${gid}', 'l', 3)`); assert.deepEqual(mem(gid), ['b', 'c']);
+  run(`seqResizeGroup('g', 'r', 4)`); assert.deepEqual(mem('g'), ['d', 'e', 'a'], 'takes in a; stops at the group to its right');
+  run(`seqResizeGroup('g', 'r', 0)`); assert.deepEqual(mem('g'), ['d']);
+  assert.deepEqual(json('S.parts.map(p => p.id)'), ['d', 'e', 'a', 'b', 'c'], 'resizing never moves participants');
   run(`seqRemove('${gid}')`); assert.deepEqual(json('S.groups.map(g => g.id)'), ['g'], 'ungrouping keeps the participants');
   assert.equal(json('S.parts.length'), 5);
   // Styled groups get a legend row, named as groups.

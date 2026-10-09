@@ -18,7 +18,9 @@ after(async () => { await browser?.close(); server?.close(); });
 
 // A fresh page with the sample diagram and helpers for driving it.
 async function open(opts = {}) {
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, colorScheme: opts.scheme || 'light', acceptDownloads: true, permissions: opts.permissions || [] });
+  // Reduced motion by default, so the sequence glide never moves a target out from under a click; the glide test turns it on.
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 }, colorScheme: opts.scheme || 'light', acceptDownloads: true, permissions: opts.permissions || [],
+    reducedMotion: opts.motion ? 'no-preference' : 'reduce' });
   if (opts.init) await ctx.addInitScript(opts.init);
   const page = await ctx.newPage();
   const errors = []; page.on('pageerror', e => errors.push(e.message));
@@ -1242,6 +1244,64 @@ test('sequence groups: pick heads (Shift+click or a box), Group, drag the label 
   const kept = await h.ev(() => JSON.parse(JSON.stringify(S)));
   await page.reload(); await page.waitForTimeout(300);
   assert.deepStrictEqual(await h.ev(() => JSON.parse(JSON.stringify(S))), kept);
+  assert.deepEqual(h.errors, []);
+});
+
+test('sequence drags preview the drop live; group edges resize the group; Esc cancels; things glide into place', async () => {
+  const h = await open({ motion: true }), { page } = h;
+  await seqSampleOn(h);
+  const order = () => h.ev(() => S.parts.map(p => p.id));
+  const members = () => h.ev(() => S.groups.map(g => g.parts.join()));
+  const head = async id => seqAt(h, id, await seqHeadY(h));
+  const drawnX = id => h.ev(id => { const b = document.querySelector(`#cv .part[data-id="${id}"] .s-headhit`); return +b.getAttribute('x') + +b.getAttribute('width') / 2; }, id);
+  const boxRight = id => h.ev(id => { const g = document.querySelector(`#cv .sgroup[data-k="g:${id}"] .g-body`); return +g.getAttribute('x') + +g.getAttribute('width'); }, id);
+  // Drag Payments API past the gateway, without letting go: the diagram shows it there and out of the group; nothing changes yet.
+  const pay = await head('pay'), gw = await head('gw');
+  await page.mouse.move(pay.x, pay.y); await page.mouse.down(); await page.mouse.move(gw.x + 60, gw.y, { steps: 6 });
+  assert.deepEqual(await order(), ['cust', 'web', 'orders', 'pay', 'gw', 'bus'], 'the model waits for the drop');
+  assert.ok(await drawnX('pay') > await drawnX('gw'), 'drawn where it will land');
+  assert.ok(await boxRight('platform') < await drawnX('gw'), 'the group already shows it leaving');
+  // Esc cancels the drag: back as it was, and releasing does nothing.
+  await page.keyboard.press('Escape'); await page.mouse.up();
+  assert.deepEqual(await order(), ['cust', 'web', 'orders', 'pay', 'gw', 'bus']);
+  assert.ok(await drawnX('pay') < await drawnX('gw'));
+  // A real drop does what the preview showed.
+  await page.waitForTimeout(500);
+  await h.drag(pay, { x: gw.x + 60, y: gw.y });
+  assert.deepEqual(await order(), ['cust', 'web', 'orders', 'gw', 'pay', 'bus']);
+  assert.deepEqual(await members(), ['web,orders']);
+  await page.keyboard.press('Control+z');
+  // Drag the group's right edge over the gateway: it joins, nobody moves. One undo step.
+  const edge = () => h.ev(() => { const o = lastGeom.seq.groups[0], r = svg.getBoundingClientRect(); return { x: r.left + view.x + o.x2 * view.k, y: r.top + view.y + (o.y2 - 60) * view.k }; });
+  await page.waitForTimeout(500);
+  const e = await edge();
+  await page.mouse.move(e.x, e.y); await page.mouse.down(); await page.mouse.move((await head('gw')).x + 20, e.y, { steps: 6 });
+  assert.ok(await boxRight('platform') > await drawnX('gw'), 'the box grows over the gateway while dragging');
+  await page.mouse.up();
+  assert.deepEqual(await members(), ['web,orders,pay,gw']);
+  assert.deepEqual(await order(), ['cust', 'web', 'orders', 'pay', 'gw', 'bus']);
+  assert.match(await page.textContent('#status'), /Group/);
+  // Drag the left edge in past Web app: it leaves.
+  const left = await h.ev(() => { const o = lastGeom.seq.groups[0], r = svg.getBoundingClientRect(); return { x: r.left + view.x + o.x1 * view.k, y: r.top + view.y + (o.y2 - 60) * view.k }; });
+  await page.waitForTimeout(500);
+  await h.drag(left, { x: (await head('web')).x + 20, y: left.y });
+  assert.deepEqual(await members(), ['orders,pay,gw']);
+  await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z');
+  assert.deepEqual(await members(), ['web,orders,pay']);
+  // The glide: after an arrow-key move, the participants slide to their new spots.
+  await page.mouse.click(...Object.values(await head('bus')));
+  await page.keyboard.press('ArrowLeft');
+  assert.ok(await h.ev(() => document.querySelector('#cv .part[data-id="bus"]').getAnimations().length > 0), 'Event bus slides');
+  assert.ok(await h.ev(() => document.querySelector('#cv .part[data-id="gw"]').getAnimations().length > 0), 'and the gateway makes way');
+  assert.deepEqual(h.errors, []);
+});
+
+test('sequence glide is off for reduced motion', async () => {
+  const h = await open(), { page } = h;
+  await seqSampleOn(h);
+  await page.mouse.click(...Object.values(await seqAt(h, 'bus', await seqHeadY(h))));
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(await h.ev(() => document.getAnimations().length), 0);
   assert.deepEqual(h.errors, []);
 });
 

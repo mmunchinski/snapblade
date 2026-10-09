@@ -251,6 +251,7 @@ dl.keys dd { margin: 0; }
 .s-headhit { fill: transparent; stroke: none; }
 .g-rule { stroke: var(--ln, var(--group-stroke)); stroke-opacity: .55; }
 .s-grouphit { fill: transparent; stroke: none; cursor: grab; }
+.s-gedge { fill: transparent; stroke: none; cursor: ew-resize; }
 .sgroup.sel .g-body { stroke: var(--accent); stroke-width: 2; }
 .sgroup.sel .g-label { fill: var(--accent); }
 .s-name { font: 500 13px var(--ui); fill: var(--ink); pointer-events: none; }
@@ -395,7 +396,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 39</span>
+      Snapblade <span class="tag">playground &middot; build 40</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -1719,13 +1720,14 @@ function seqMarkup(L, p) {
     out += `<g ${p.group(o)}><rect x="${o.x1}" y="${o.y1}" width="${w}" height="${h}" rx="6" ${p.groupBox(o)}/>`
       + `<line x1="${o.x1}" y1="${SEQ.groupH}" x2="${o.x2}" y2="${SEQ.groupH}" ${p.groupRule(o)}/>`
       + `<text x="${o.x1 + 12}" y="${o.y1 + 17}" ${p.groupLabel(o)}>${esc(oneLine(o.g.label).toUpperCase())}</text>`
-      + p.groupHit(o, o.x1, o.y1, w, SEQ.groupH) + '</g>';
+      + p.groupHit(o, o.x1, o.y1, w, SEQ.groupH) + p.groupEdge(o, 'l', o.x1, o.y1, o.y2) + p.groupEdge(o, 'r', o.x2, o.y1, o.y2) + '</g>';
   }
   // Lifelines, dotted through each delay.
   const waits = R.filter(g => g.brk === 'delay').map(g => [g.y, g.y + g.h]);
-  const seg = (q, a, b, wait) => b > a ? `<line x1="${q.x}" y1="${r2(a)}" x2="${q.x}" y2="${r2(b)}" ${p.life(q, wait)}/>` : '';
+  let n = 0;
+  const seg = (q, a, b, wait) => b > a ? `<line x1="${q.x}" y1="${r2(a)}" x2="${q.x}" y2="${r2(b)}" ${p.life(q, wait, n++)}/>` : '';
   for (const q of P) {
-    let y = H;
+    let y = H; n = 0;
     for (const [a, b] of waits) { out += seg(q, y, a) + seg(q, a, b, true); y = b; }
     out += seg(q, y, end) + p.lifeHit(q, H, end);
   }
@@ -1753,9 +1755,9 @@ function seqMarkup(L, p) {
   for (const q of P) out += head(q) + (S.settings.footbox ? head(q, true) : '');
   // Activation bars, then frames over them (their tabs and conditions stay readable), then the messages.
   // A bar that crosses a delay is dashed for that stretch: still busy, while time passes.
-  const bar = (a, y1, y2, wait) => y2 > y1 ? `<rect x="${a.x}" y="${r2(y1)}" width="${a.w}" height="${r2(y2 - y1)}" ${p.act(a, wait)}/>` : '';
+  const bar = (a, y1, y2, wait) => y2 > y1 ? `<rect x="${a.x}" y="${r2(y1)}" width="${a.w}" height="${r2(y2 - y1)}" ${p.act(a, wait, n++)}/>` : '';
   for (const a of A) {
-    let y = a.y1;
+    let y = a.y1; n = 0;
     for (const [w1, w2] of waits) if (w2 > y && w1 < a.y2) { out += bar(a, y, Math.max(y, w1)) + bar(a, Math.max(y, w1), Math.min(a.y2, w2), true); y = Math.min(a.y2, w2); }
     out += bar(a, y, a.y2);
   }
@@ -1867,17 +1869,8 @@ function seqGapY(L, i, skip) {
   return i < R.length ? R[i].y - SEQ.rowGap / 2 : last.y + last.h + SEQ.rowGap / 2;
 }
 const seqColAt = (L, x, skip) => L.P.filter(q => q.id !== skip && q.x < x).length;
-// Where a dragged group lands: a position among the participants outside it, and the x of that gap.
+// Where a dragged group lands: a position among the participants outside it.
 const seqGroupColAt = (L, x, id) => { const g = groupById(id); return L.P.filter(q => !g?.parts.includes(q.id) && q.x < x).length; };
-function seqGroupGapX(L, k, id) {
-  const g = groupById(id), P = L.P.filter(q => !g?.parts.includes(q.id)), a = P[k - 1], b = P[k];
-  return !a && !b ? 0 : !a ? b.x - b.w / 2 - SEQ.gap / 2 : !b ? a.x + a.w / 2 + SEQ.gap / 2 : (a.x + a.w / 2 + b.x - b.w / 2) / 2;
-}
-function seqGapX(L, i, skip) {
-  const P = L.P.filter(q => q.id !== skip), a = P[i - 1], b = P[i];
-  if (!a && !b) return 0;
-  return !a ? b.x - b.w / 2 - SEQ.gap / 2 : !b ? a.x + a.w / 2 + SEQ.gap / 2 : (a.x + a.w / 2 + b.x - b.w / 2) / 2;
-}
 // The lifeline nearest x, if x is within half its head's width (or tol).
 function seqLifeAt(L, x, tol = 0) {
   let best = null, bd = Infinity;
@@ -1941,6 +1934,18 @@ function seqMoveGroup(id, k, dir = 0) {
   }
   S.parts = [...rest.slice(0, k), ...block, ...rest.slice(k)];
   return S.parts.map(p => p.id).join() !== before;
+}
+// Resize a group by an edge: side 'l' makes participant k its first member, 'r' its last. The participants stay put;
+// the ones the edge passes join or leave. It keeps one member and stops at another group.
+function seqResizeGroup(id, side, k) {
+  const g = groupById(id); if (!g) return false;
+  const at = partsAt(), a = at[g.parts[0]], b = at[g.parts[g.parts.length - 1]], before = g.parts.join();
+  const owner = i => S.parts[i] && groupOf(S.parts[i].id);
+  let lo = a, hi = b;
+  if (side === 'l') { lo = Math.min(Math.max(k, 0), b); for (let i = a - 1; i >= lo; i--) if (owner(i) && owner(i) !== g) { lo = i + 1; break; } }
+  else { hi = Math.max(Math.min(k, S.parts.length - 1), a); for (let i = b + 1; i <= hi; i++) if (owner(i) && owner(i) !== g) { hi = i - 1; break; } }
+  g.parts = S.parts.slice(lo, hi + 1).map(p => p.id);
+  return g.parts.join() !== before;
 }
 // One step left or right, hopping over a whole neighbouring group.
 function seqStepGroup(id, d) {
@@ -2843,33 +2848,76 @@ function render() {
   canvasDone(h, P);
 }
 // A sequence diagram: drawn from seqLayout(), with previews for the drag in progress.
+// Drags that change the diagram, as the change itself: the live preview runs it on a trial copy, the drop for real.
+const PREVIEWED = ['rowmove', 'partmove', 'groupmove', 'gresize'];
+function seqDropOp(d) {
+  const L = d.L0;   // positions from before the drag, so the preview doesn't chase itself
+  if (d.kind === 'rowmove') return () => seqMoveTo(d.id, seqDropAt(L, d.cur.y, d.id));
+  if (d.kind === 'partmove') return () => seqMoveTo(d.id, seqColAt(L, d.cur.x, d.id));
+  if (d.kind === 'groupmove') return () => seqMoveGroup(d.id, seqGroupColAt(L, d.cur.x, d.id));
+  return () => seqResizeGroup(d.id, d.side, L.P.filter(q => q.x < d.cur.x).length - (d.side === 'r' ? 1 : 0));
+}
+// Run fn on a copy of the participants, rows and groups, then put them back: what a drop would draw, without making it.
+function seqTrial(fn) {
+  const { parts, rows, groups } = S, gp = groups.map(g => g.parts);
+  Object.assign(S, { parts: [...parts], rows: [...rows], groups: [...groups] });
+  try { return fn(); } finally { groups.forEach((g, i) => { g.parts = gp[i]; }); Object.assign(S, { parts, rows, groups }); }
+}
+// Glide: after a redraw, whatever moved slides from where it was. Pieces are matched by data-k; positions are world
+// coordinates, so panning and zooming never glide. Off for reduced motion and when the tab shows another diagram.
+const GLIDE_MS = 150;
+let glideOf = null, glideView = null;   // the diagram and view the canvas was last drawn with
+function glideFrom() {
+  if (glideOf !== S || !glideView || matchMedia('(prefers-reduced-motion: reduce)').matches) return null;
+  const r = svg.getBoundingClientRect(), v = glideView, at = new Map();
+  for (const el of svg.querySelectorAll('[data-k]')) { const b = el.getBoundingClientRect(); at.set(el.dataset.k, [(b.left - r.left - v.x) / v.k, (b.top - r.top - v.y) / v.k]); }
+  return at;
+}
+function glideTo(at) {
+  glideOf = S; glideView = { x: view.x, y: view.y, k: view.k };
+  if (!at?.size) return;
+  const r = svg.getBoundingClientRect();
+  for (const el of svg.querySelectorAll('[data-k]')) {
+    const was = at.get(el.dataset.k); if (!was) continue;
+    const b = el.getBoundingClientRect(), dx = was[0] - (b.left - r.left - view.x) / view.k, dy = was[1] - (b.top - r.top - view.y) / view.k;
+    if (Math.abs(dx) + Math.abs(dy) >= 0.5) el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: GLIDE_MS, easing: 'ease-out' });
+  }
+}
 function renderSeq() {
-  const L = seqLayout(), d = drag?.moved ? drag : null;
+  const d = drag?.moved ? drag : null, was = glideFrom();
+  const h = d && PREVIEWED.includes(d.kind) ? seqTrial(() => { seqDropOp(d)(); return seqDraw(d); }) : seqDraw(d);
+  canvasDone(h);
+  glideTo(was);
+}
+// The canvas markup for the diagram as it stands (or as a drop being previewed would leave it).
+function seqDraw(d) {
+  const L = seqLayout();
   if (view.follow) followView(L);
   const cur = d?.kind === 'rowbox' ? seqBoxRun(L, d) : sel, selId = cur?.type === 'seq' ? cur.id : null;   // a box shows what it would pick
-  const ghost = d && (d.kind === 'rowmove' || d.kind === 'partmove') && !seqOwner(d.id) ? d.id : null, hot = d?.kind === 'msgnew' ? d.over : seqNext?.from;
+  const ghost = d && (d.kind === 'rowmove' || d.kind === 'partmove' || d.kind === 'groupmove') && !seqOwner(d.id) ? d.id : null, hot = d?.kind === 'msgnew' ? d.over : seqNext?.from;
   const pspan = partSpan(cur), span = !pspan && cur?.to && seqSpan(cur.id, cur.to), picked = new Set(pspan ? S.parts.slice(pspan[0], pspan[1] + 1).map(p => p.id) : span ? S.rows.slice(span[0], span[1] + 1).map(r => r.id) : [selId]);
   lastGeom = { R: {}, labels: dict(), seq: L };
-  const cls = (base, id) => `${base}${picked.has(id) ? ' sel' : ''}${id === ghost ? ' ghost' : ''}`;
+  const cls = (base, id) => `${base}${picked.has(id) ? ' sel' : ''}${id === ghost ? ' ghost' : ''}`, row = g => `data-role="row" data-id="${esc(g.r.id)}" data-k="r:${esc(g.r.id)}"`;
   let h = canvasStart() + seqMarkup(L, {
-    part: q => `class="${cls('part', q.id)}" data-role="part" data-id="${esc(q.id)}" style="${styleVars(q.p)}"`,
+    part: (q, foot) => `class="${cls('part', q.id)}" data-role="part" data-id="${esc(q.id)}" data-k="h:${esc(q.id)}:${foot ? 'f' : 't'}" style="${styleVars(q.p)}"`,
     body: () => 'class="b-body"', figure: () => 'class="b-line"', name: () => 'class="s-name"',
     headHit: (x, y, w, h) => `<rect class="s-headhit" x="${x}" y="${y}" width="${w}" height="${h}"/>`,
-    group: o => `class="${cls('sgroup', o.g.id)}" style="${styleVars(o.g)}"`, groupBox: () => 'class="g-body"', groupRule: () => 'class="g-rule"', groupLabel: () => 'class="g-label"',
+    group: o => `class="${cls('sgroup', o.g.id)}" data-k="g:${esc(o.g.id)}" style="${styleVars(o.g)}"`,
+    groupEdge: (o, side, x, y1, y2) => `<rect class="s-gedge" data-role="gedge" data-id="${esc(o.g.id)}" data-side="${side}" x="${x - 4}" y="${y1}" width="8" height="${y2 - y1}"><title>Drag to take participants in or leave them out</title></rect>`, groupBox: () => 'class="g-body"', groupRule: () => 'class="g-rule"', groupLabel: () => 'class="g-label"',
     groupHit: (o, x, y, w, h) => `<rect class="s-grouphit" data-role="group" data-id="${esc(o.g.id)}" x="${x}" y="${y}" width="${w}" height="${h}"><title>Drag to move the group</title></rect>`,
-    life: (q, wait) => `class="s-life${q.id === hot ? ' hot' : seqNext ? ' pick' : q.id === selId ? ' sel' : ''}${wait ? ' wait' : ''}" style="${styleVars(q.p)}"`,
-    brk: g => `class="${cls('brk', g.r.id)}" data-role="row" data-id="${esc(g.r.id)}"`, divLine: () => 'class="d-line"', divBox: () => 'class="d-box"',
+    life: (q, wait, n) => `class="s-life${q.id === hot ? ' hot' : seqNext ? ' pick' : q.id === selId ? ' sel' : ''}${wait ? ' wait' : ''}" data-k="l:${esc(q.id)}:${n}" style="${styleVars(q.p)}"`,
+    brk: g => `class="${cls('brk', g.r.id)}" ${row(g)}`, divLine: () => 'class="d-line"', divBox: () => 'class="d-box"',
     lifeHit: (q, y1, y2) => `<rect class="s-lifehit" data-role="life" data-id="${esc(q.id)}" x="${q.x - 8}" y="${y1}" width="16" height="${y2 - y1}"/>`,
-    msg: g => `class="${cls('msg', g.r.id)}" data-role="row" data-id="${esc(g.r.id)}" style="${styleVars(withDash(g.r))}"`,
+    msg: g => `class="${cls('msg', g.r.id)}" ${row(g)} style="${styleVars(withDash(g.r))}"`,
     hit: path => `<path class="hit" d="${path}"/>`, line: () => 'class="s-line"', fill: () => 'class="s-fill"', open: () => 'class="s-open"',
     labelBg: () => 'class="s-label-bg"', label: () => 'class="s-label"',
-    note: g => `class="${cls('note', g.r.id)}" data-role="row" data-id="${esc(g.r.id)}" style="${styleVars(g.r)}"`,
+    note: g => `class="${cls('note', g.r.id)}" ${row(g)} style="${styleVars(g.r)}"`,
     noteBody: () => 'class="n-body"', fold: () => 'class="n-fold"', noteText: () => 'class="n-text"',
-    act: (a, wait) => `class="s-act${wait ? ' wait' : ''}" style="${styleVars(barStyle(a.q.p))}"`,
-    frame: g => `class="${cls('frame', g.r.id)}" data-role="row" data-id="${esc(g.r.id)}"`,
+    act: (a, wait, n) => `class="s-act${wait ? ' wait' : ''}" data-k="a:${esc(a.q.id)}:${esc(S.rows[a.i]?.id || '')}:${a.lead ? 1 : 0}:${n}" style="${styleVars(barStyle(a.q.p))}"`,
+    frame: g => `class="${cls('frame', g.r.id)}" ${row(g)}`,
     frameBox: () => 'class="f-box"', tab: () => 'class="f-tab"', kind: () => 'class="f-kind"', guard: () => 'class="f-guard"',
-    sec: g => `class="${cls('fsec', g.r.id)}" data-role="row" data-id="${esc(g.r.id)}"`, secLine: () => 'class="f-else"',
-    frameEnd: g => `class="${cls('fend', g.frame)}" data-role="row" data-id="${esc(g.r.id)}"`,
+    sec: g => `class="${cls('fsec', g.r.id)}" ${row(g)}`, secLine: () => 'class="f-else"',
+    frameEnd: g => `class="${cls('fend', g.frame)}" ${row(g)}`,
   });
   // Where the message being drawn, or the row or participant being moved, will land.
   if (d?.kind === 'msgnew') {
@@ -2877,18 +2925,16 @@ function renderSeq() {
     h += to === q ? `<path class="temp" d="M${q.x},${y} H${q.x + SEQ.self} V${y + SEQ.selfH} H${q.x}"/>`
       : `<path class="temp" d="M${q.x},${y} H${to ? to.x : d.cur.x}"/>`;
   }
-  if (d?.kind === 'rowmove') { const y = seqGapY(L, seqDropAt(L, d.cur.y, d.id), d.id); h += `<line class="s-gap" x1="${L.bounds.x1 - 12}" y1="${y}" x2="${L.bounds.x2 + 12}" y2="${y}"/>`; }
-  if (d?.kind === 'partmove') { const x = seqGapX(L, seqColAt(L, d.cur.x, d.id), d.id); h += `<line class="s-gap" x1="${x}" y1="-12" x2="${x}" y2="${L.bounds.y2 + 12}"/>`; }
-  if (d?.kind === 'groupmove') { const x = seqGroupGapX(L, seqGroupColAt(L, d.cur.x, d.id), d.id); h += `<line class="s-gap" x1="${x}" y1="-12" x2="${x}" y2="${L.bounds.y2 + 12}"/>`; }
   if (d?.kind === 'rowbox') { const r = rectOf(d.start, d.cur); h += `<rect class="marquee" x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}"/>`; }
-  canvasDone(canvasEnd(h, L.bounds));
+  return canvasEnd(h, L.bounds);
 }
 function seqStatus() {
   const name = id => oneLine(partOf(id)?.label || ''), o = sel?.type === 'seq' && seqItem(sel.id);
   if (drag?.kind === 'msgnew') return drag.over ? `${name(drag.from)} → ${name(drag.over)}${drag.over === drag.from ? '  ·  self-message' : ''}` : `Message from ${name(drag.from)}: drop on a lifeline (its own for a self-message)`;
   if (drag?.kind === 'rowmove' && drag.moved) return seqOwner(drag.id) ? 'Drop where this edge of the frame should go. It takes in the rows it passes.' : 'Drop where the row should go';
   if (drag?.kind === 'partmove' && drag.moved) return 'Drop where the participant should go. Between two members of a group, it joins the group.';
-  if (drag?.kind === 'groupmove' && drag.moved) return 'Drop where the group should go';
+  if (drag?.kind === 'groupmove' && drag.moved) return 'Drop where the group should go. Esc cancels.';
+  if (drag?.kind === 'gresize' && drag.moved) return 'Drag over participants to take them in or leave them out. Esc cancels.';
   if (drag?.kind === 'rowbox' && drag.moved) {
     const run = seqBoxRun(lastGeom.seq || seqLayout(), drag);
     if (run && partOf(run.id)) { const ps = partSpan(run), k = ps ? ps[1] - ps[0] + 1 : 1; return `${k} participant${k === 1 ? '' : 's'}  ·  release to select, then Group`; }
@@ -3725,7 +3771,7 @@ function onDown(ev) {
     drag = { kind: 'pan', sx: ev.clientX, sy: ev.clientY, vx: view.x, vy: view.y };
     svg.classList.add('panning'); render(); return;
   }
-  if (isSeq() && role !== 'annot') { seqDown(p, role, id, additive); return; }
+  if (isSeq() && role !== 'annot') { seqDown(p, role, id, additive, t); return; }
   if (!role) {
     // Empty canvas: drag out a selection box (Shift/Ctrl adds to the current selection).
     const keep = additive ? selectedIds() : [];
@@ -3884,7 +3930,7 @@ function doubleAt(p) {
 // Sequence diagrams. Press a head to move the participant sideways, a lifeline to draw a message to another one
 // (or back to itself), a message or note to move its row. While going on from a labeled message, a press on a
 // lifeline adds the next message.
-function seqDown(p, role, id, additive) {
+function seqDown(p, role, id, additive, t) {
   if (seqNext && (role === 'life' || role === 'part')) { drag = { kind: 'chain', to: id }; return; }
   seqNext = null;
   // Empty canvas: drag a box over rows to select them as a run (Shift adds to the run already selected).
@@ -3900,9 +3946,14 @@ function seqDown(p, role, id, additive) {
     || additive && role === 'part' && sel?.type === 'seq' && partOf(sel.id)) {
     select(pick === sel.id ? { type: 'seq', id: pick } : { type: 'seq', id: sel.id, to: pick }); drag = null; render(); return;
   }
-  if (role === 'group') { select({ type: 'seq', id }); drag = { kind: 'groupmove', id, start: p, cur: p, moved: false }; render(); return; }
+  const L0 = lastGeom.seq || seqLayout();
+  if (role === 'group' || role === 'gedge') {
+    select({ type: 'seq', id });
+    drag = { kind: role === 'group' ? 'groupmove' : 'gresize', id, side: t?.dataset.side, start: p, cur: p, moved: false, L0 };
+    render(); return;
+  }
   select({ type: 'seq', id: pick });
-  drag = { kind: role === 'part' ? 'partmove' : role === 'life' ? 'msgnew' : 'rowmove', id, from: id, start: p, cur: p, moved: false, over: null };
+  drag = { kind: role === 'part' ? 'partmove' : role === 'life' ? 'msgnew' : 'rowmove', id, from: id, start: p, cur: p, moved: false, over: null, L0 };
   render();
 }
 function seqDrag(p) {
@@ -3918,13 +3969,13 @@ function seqUp(d, p) {
   if (d.kind === 'chain') { const { from, after } = seqNext || {}; seqNext = null; setTimeout(() => seqAddAfter(from, d.to, after), 0); return; }
   if (!d.moved) { render(); return; }
   if (d.kind === 'rowbox') { select(seqBoxRun(L, d)); render(); return; }
-  if (d.kind === 'groupmove') { arrange(() => seqMoveGroup(d.id, seqGroupColAt(L, p.x, d.id))); render(); return; }
+
   if (d.kind === 'msgnew') {
     const to = seqLifeAt(L, p.x, 20 / view.k), i = seqIndexAt(L, d.start.y);
     if (to) setTimeout(() => seqAddAfter(d.from, to.id, S.rows[i - 1]?.id ?? null), 0); else render();
     return;
   }
-  arrange(() => seqMoveTo(d.id, d.kind === 'rowmove' ? seqDropAt(L, p.y, d.id) : seqColAt(L, p.x, d.id)));
+  d.cur = p; arrange(seqDropOp(d));
   render();
 }
 // A new message from one participant to another, right below row `after` (at the top if null).
@@ -4168,7 +4219,8 @@ function guideHtml() {
       <li>Drag a message or note up or down to move its row. The arrow keys do the same (left and right for a participant).</li>
       <li>The <b>Message</b> panel sets its <b>Label</b>, <b>From</b> and <b>To</b>, and its <b>Kind</b>: ${b(labels(MSG_TYPES))}. Sync is a call that waits (filled arrowhead), Async doesn't wait (open arrowhead), Reply is the answer (dashed). A message that answers a call still waiting for its answer starts out as a Reply. <b>Move up</b>, <b>Move down</b> and <b>Reverse direction</b> are there too.</li>
       <li><b>+ Note</b> adds a <b>Note</b> below the selected row. Its <b>Position</b> is ${b(labels(NOTE_SIDES))} its <b>Participant</b>; an Over note <b>Spans to</b> a second one. A note takes its own row, so nothing overlaps.</li>
-      <li>A <b>Group</b> is a labeled box behind neighbouring participants (PlantUML's <code>box</code>), say the services you own. Click a head and Shift+click another, or drag a box over the heads from empty canvas, to pick a run of <b>Participants</b>; their panel offers <b>Group</b> (off when one of them is already in a group: groups don't nest) and <b>Delete participants</b>. Type the label and press Enter. Drag the label to move the group, or use the arrow keys; a participant dropped between two members joins the group, one dragged out leaves, and a participant's own panel has a <b>Group</b> select. The group's panel styles it like a container; <b>Ungroup</b> removes the box and keeps the participants.</li>
+      <li>Every drag shows its result as you go: move a participant, a row, a group or a frame's edge and the diagram is drawn as if you'd let go, with what you're dragging faded where it will land. Esc cancels. After a change, things glide to their new places (not when your system asks for reduced motion).</li>
+      <li>A <b>Group</b> is a labeled box behind neighbouring participants (PlantUML's <code>box</code>), say the services you own. Click a head and Shift+click another, or drag a box over the heads from empty canvas, to pick a run of <b>Participants</b>; their panel offers <b>Group</b> (off when one of them is already in a group: groups don't nest) and <b>Delete participants</b>. Type the label and press Enter. Drag the label to move the group, or use the arrow keys. Drag its left or right edge over participants to take them in or leave them out (nobody moves; it keeps one member and stops at another group). A participant dropped between two members joins the group, one dragged out leaves, and a participant's own panel has a <b>Group</b> select. The group's panel styles it like a container; <b>Ungroup</b> removes the box and keeps the participants.</li>
       <li><b>+ Divider</b> adds a row below the selected one, ready to label: a <b>Divider</b> (${BREAK_HINTS.divider}: a double line across the whole diagram, its label boxed in the middle, like PlantUML's <code>== Setup ==</code>) or a <b>Delay</b> (${BREAK_HINTS.delay}: the lifelines go dotted for a stretch, with an optional label such as <code>5 minutes later</code>). Its panel's <b>Kind</b> switches between the two; drag it or use the arrow keys to move it, like any row, and <b>Delete divider</b> (or <b>Delete delay</b>) removes it.</li>
       <li>The <b>Participant</b> panel has <b>Move left</b> and <b>Move right</b>; <b>Delete participant</b> also deletes its messages and notes. Participants, messages and notes take colors and patterns like boxes and connectors, and get legend rows the same way.</li>
       <li><b>+ Frame</b> puts the selected message or note in a frame: ${FRAME_TYPES.map(([v, l]) => `<b>${l}</b> (${FRAME_HINTS[v]})`).join(', ')}. To take in several rows, drag a box over them from empty canvas (only how far up and down it reaches counts; Shift+drag adds to the rows already selected), or click the first and Shift+click the last; the <b>Rows</b> panel then offers <b>Put in a frame</b> and <b>Delete rows</b> too. A frame the rows cut into is taken in whole. Type the condition and press Enter; it shows in brackets beside the kind.</li>
@@ -4249,6 +4301,7 @@ function helpHtml() {
       <li>Select <b>Payments API</b> and click <b>+ Note</b>: a note goes right of its lifeline, ready to type.</li>
       <li>Select a message and switch its Kind between Sync, Async and Reply.</li>
       <li>Drag a box from above the heads over <b>Payment gateway</b> and <b>Event bus</b>, click <b>Group</b> and type <code>Third parties</code>. Then drag the new group's label to the left.</li>
+      <li>Drag the right edge of <b>Our platform</b> over <b>Payment gateway</b> to take it in, then back to leave it out.</li>
       <li>Select <b>Validate cart</b>, then <b>+ Divider</b> &gt; Divider and type <code>Payment</code> to mark the next phase.</li>
       <li>Click the + at the end of the tabs and add a Box diagram tab: one file can hold the architecture and its sequence diagrams. Double-click a tab to rename it.</li>
     </ol>
@@ -4554,7 +4607,7 @@ function buildExportSvg(o) {
   if (seq) {
     const ink = parseColor(T.ink).hex, frameInk = parseColor(T['ink-2']).hex, col = q => exportColors(q, T), fo = c => c.fo < 1 ? ` fill-opacity="${c.fo}"` : '';
     out += seqMarkup(seq, {
-      part: () => '', lifeHit: () => '', headHit: () => '', hit: () => '', msg: () => '', note: () => '', group: () => '', groupHit: () => '',
+      part: () => '', lifeHit: () => '', headHit: () => '', hit: () => '', msg: () => '', note: () => '', group: () => '', groupHit: () => '', groupEdge: () => '',
       groupBox: o => { const c = col(o.g); return `fill="${c.fill}"${fo(c)} stroke="${c.line}" stroke-width="1.25"${dash(o.g.style)}`; },
       groupRule: o => `stroke="${col(o.g).line}" stroke-opacity=".55"`,
       groupLabel: o => `${fontAttrs(11.5, 600)} letter-spacing=".8" fill="${o.g.style?.line ? col(o.g).line : frameInk}"`,
@@ -4909,6 +4962,7 @@ function init() {
     if (k === 'Alt' && drag) ev.preventDefault();   // Alt+drag ignores walls; keep the browser from opening its menu
     if (!document.getElementById('modal').hidden) { if (k === 'Escape') { ev.preventDefault(); closeModal('cancel'); } return; }
     if (k === 'Escape' && !document.getElementById('fileMenu').hidden) { closeMenu(); document.getElementById('fileBtn').focus(); return; }
+    if (k === 'Escape' && drag && isSeq()) { ev.preventDefault(); drag = null; svg.classList.remove('panning'); render(); return; }   // cancel a drag; the preview goes
     if (mod && k.toLowerCase() === 's') { ev.preventDefault(); if (document.activeElement === editor) commitEditor(); saveFile(ev.shiftKey); return; }
     if (mod && k.toLowerCase() === 'o') { ev.preventDefault(); openFile(); return; }
     if (k === 'F1') { ev.preventDefault(); if (document.activeElement === editor) commitEditor(); openHelp(); return; }
