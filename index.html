@@ -7,7 +7,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-cwA324n5z7peWu9bfsax6INSSiql3imCkYD+Rp4PtWI=' https://cdn.jsdelivr.net/npm/jspdf@4.2.1/ https://cdn.jsdelivr.net/npm/svg2pdf.js@2.8.1/; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob:; connect-src https://fonts.googleapis.com https://fonts.gstatic.com; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-hDdielD1319clcoIxMG6LeI+WyaqxRyjzPKXb+BosHc=' https://cdn.jsdelivr.net/npm/jspdf@4.2.1/ https://cdn.jsdelivr.net/npm/svg2pdf.js@2.8.1/; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob:; connect-src https://fonts.googleapis.com https://fonts.gstatic.com; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Snapblade</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -217,7 +217,7 @@ dl.keys dd { margin: 0; }
 .g-body { fill: var(--fl, var(--group-bg)); stroke: var(--ln, var(--group-stroke)); stroke-dasharray: var(--dash, none); stroke-width: 1.25; }
 .g-rule { stroke: var(--ln, var(--group-stroke)); stroke-width: 1; opacity: .55; }
 .group.drop .g-body { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; fill: var(--accent-soft); }
-.g-label { font: 600 11.5px var(--ui); fill: var(--ln, var(--ink-2)); letter-spacing: .07em; text-transform: uppercase; }
+.g-label { font: 600 11.5px var(--ui); fill: var(--ink-2); letter-spacing: .07em; text-transform: uppercase; }
 .g-meta { font: 10px var(--mono); fill: var(--ink-3); }
 .lblwrap { pointer-events: none; overflow: visible; }
 .lbl {
@@ -418,7 +418,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 43</span>
+      Snapblade <span class="tag">playground &middot; build 44</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -5007,7 +5007,7 @@ function buildExportSvg(o) {
       part: () => '', lifeHit: () => '', headHit: () => '', hit: () => '', msg: () => '', note: () => '', group: () => '', groupHit: () => '', groupEdge: () => '',
       groupBox: o => { const c = col(o.g); return `fill="${c.fill}"${fo(c)} stroke="${c.line}" stroke-width="1.25"${dash(o.g.style)}`; },
       groupRule: o => `stroke="${col(o.g).line}" stroke-opacity=".55"`,
-      groupLabel: o => `${fontAttrs(11.5, 600)} letter-spacing=".8" fill="${o.g.style?.line ? col(o.g).line : frameInk}"`,
+      groupLabel: () => `${fontAttrs(11.5, 600)} letter-spacing=".8" fill="${frameInk}"`,
       body: q => { const c = col(q.p); return `fill="${c.fill}"${fo(c)} stroke="${c.line}" stroke-width="1.5"${dash(q.p.style)}`; },
       figure: q => `fill="none" stroke="${col(q.p).line}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"${dash(q.p.style)}`,
       name: () => `${fontAttrs(13, 500)} fill="${ink}"`,
@@ -5032,7 +5032,7 @@ function buildExportSvg(o) {
   for (const { n } of order) {
     const c = exportColors(n, T), fo = c.fo < 1 ? ` fill-opacity="${c.fo}"` : '';
     if (n.kind === 'group') {
-      const title = n.style?.line ? c.line : parseColor(T['ink-2']).hex;
+      const title = parseColor(T['ink-2']).hex;   // neutral like box text, so any line color stays readable
       out += `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="6" fill="${c.fill}"${fo} stroke="${c.line}" stroke-width="1.25"${dash(n.style)}/>`
         + `<line x1="${n.x}" y1="${n.y + HEADER}" x2="${n.x + n.w}" y2="${n.y + HEADER}" stroke="${c.line}" stroke-opacity=".55"/>`
         + `<text x="${n.x + 12}" y="${n.y + 19}" ${fontAttrs(11.5, 600)} letter-spacing=".8" fill="${title}">${esc(oneLine(n.label).toUpperCase())}</text>`;

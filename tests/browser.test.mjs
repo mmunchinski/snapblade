@@ -473,6 +473,21 @@ test('saved palettes: a hostile palette file or stored copy cannot run script or
   assert.deepEqual(h.errors, []);
 });
 
+test('a container\'s label stays neutral whatever its line color, on the canvas and in exports (owner\'s report)', async () => {
+  const h = await open(), { page } = h;
+  const neutral = await h.ev(() => resolveHex('var(--ink-2)'));
+  await h.ev(() => { byId('app').style = { line: '#ffee00' }; refresh(true, false); });
+  assert.equal(await h.css('app', '.g-label', 'fill'), rgb(neutral));
+  const exported = await h.ev(() => buildExportSvg({ theme: 'light', background: 'white', scope: 'all', annots: true }).svg);
+  assert.ok(exported.includes(`fill="${neutral}">APPLICATION TIER</text>`), 'the export uses the neutral color too');
+  // A sequence diagram's participant group, likewise.
+  await h.ev(() => { loadSample(true); S.groups[0].style = { line: '#ffee00' }; refresh(true, false); });
+  assert.equal(await h.ev(() => getComputedStyle(document.querySelector('.sgroup .g-label')).fill), rgb(neutral));
+  const seqSvg = await h.ev(() => buildExportSvg({ theme: 'light', background: 'white', scope: 'all', annots: true }).svg);
+  assert.ok(seqSvg.includes(`fill="${neutral}">OUR PLATFORM</text>`));
+  assert.deepEqual(h.errors, []);
+});
+
 test('match colors, container color and copy/paste style', async () => {
   const h = await open();
   await h.ev(() => { byId('orders').style = { line: 'red', dash: 'dashed', tint: 30 }; byId('inv').style = { line: 'blue' }; byId('pay').style = {}; refresh(true, false); });
