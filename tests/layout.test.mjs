@@ -885,6 +885,38 @@ test('tabs: hostile tab lists are capped and cleaned', () => {
   assert.equal(json(`normalizeBook({ pages: [{ diagram: { nodes: [], edges: [] } }], active: -3 }).active`), 0);
 });
 
+// ---------- saved palettes ----------
+// Palettes live in browser storage (shared across the github.io origin) and travel as files, so both are untrusted.
+test('saved palettes: storage and palette files are cleaned, capped and kept apart by name', () => {
+  const P = json(`normalizePalettes({ active: 1, palettes: [
+    { name: '  Team   standard ', line: ['#1F6FEB', { hex: '#1f6feb', name: 'twice' }, { hex: 'red' }, { hex: '#00aa44', name: '<img src=x onerror=alert(1)>' }, 7, null],
+      box: [{ hex: '#ffeedd', name: 'x'.repeat(300) }], group: 'nope', extra: { evil: true } },
+    { name: 'Team standard', line: Array.from({ length: 50 }, (_, i) => '#0000' + i.toString(16).padStart(2, '0')) },
+    null, 'x', [], { name: '__proto__', box: [{ hex: '#123456', name: 42 }] } ] })`);
+  assert.deepEqual(P.palettes.map(p => p.name), ['Team standard', 'Team standard 2', '__proto__']);
+  assert.deepEqual(P.palettes[0].line, [{ hex: '#1f6feb' }, { hex: '#00aa44', name: '<img src=x onerror=alert(1)>' }], 'hex only, lowercased, first one wins; names are kept as text (escaped when drawn)');
+  assert.equal(P.palettes[0].box[0].name.length, 100);
+  assert.deepEqual([P.palettes[0].group, Object.keys(P.palettes[0]).sort()], [[], ['box', 'group', 'line', 'name']]);
+  assert.equal(P.palettes[1].line.length, 32, 'a list holds at most 32 colors');
+  assert.deepEqual(P.palettes[2].box, [{ hex: '#123456' }]);
+  assert.equal(P.active, 1);
+  assert.equal(json(`Object.prototype.hex === undefined && ({}).line === undefined`), true);
+  for (const bad of ['null', '"x"', '[]', '{ active: 5, palettes: {} }', '{ palettes: [{}], active: 3 }'])
+    assert.equal(json(`normalizePalettes(${bad}).active`), 0, bad);
+  assert.equal(json(`normalizePalettes({ palettes: Array.from({ length: 40 }, (_, i) => ({ name: 'p' + i })) }).palettes.length`), 20);
+
+  // Files: the format is checked, and importing keeps names apart from the palettes already there.
+  for (const [text, msg] of [['not json', /valid JSON/], ['{"format":"snapblade"}', /isn't a Snapblade palette/], ['{"format":"snapblade-palette","version":2,"palettes":[]}', /newer version/],
+    ['{"format":"snapblade-palette","version":1,"palettes":[null]}', /no palettes/]])
+    assert.throws(() => run(`parsePalettes(${JSON.stringify(text)})`), msg);
+  const merged = json(`(() => { const P = normalizePalettes({ palettes: [{ name: 'Team standard' }, { name: 'AWS' }] });
+    const n = mergePalettes(P, parsePalettes(paletteFile([{ name: 'Team standard', line: [{ hex: '#abcdef', name: 'Ours' }] }, { name: 'AWS 2' }])));
+    return { n, active: P.active, names: P.palettes.map(p => p.name), line: P.palettes[2].line }; })()`);
+  assert.deepEqual(merged, { n: 2, active: 2, names: ['Team standard', 'AWS', 'Team standard 2', 'AWS 2'], line: [{ hex: '#abcdef', name: 'Ours' }] });
+  assert.equal(json(`(() => { const P = normalizePalettes({ palettes: Array.from({ length: 19 }, (_, i) => ({ name: 'p' + i })) });
+    return [mergePalettes(P, [newPalette('a'), newPalette('b')]), P.palettes.length]; })()`).join(), '1,20', 'importing stops at 20 palettes');
+});
+
 // ---------- the README keeps up ----------
 // Nothing else checks the README, and it once fell six builds behind. Every Help guide section is a feature or a
 // piece of the app the README has to cover (the browser test "the Help guide mentions every control..." makes a
@@ -892,7 +924,7 @@ test('tabs: hostile tab lists are capped and cleaned', () => {
 // what the README must say about it, or null for sections that aren't features of their own.
 const README_FOR_SECTION = {
   around: /## Getting started/, shapes: /\*\*Containers\.\*\*/, walls: /\*\*Shapes that can't overlap\.\*\*/, connect: /\*\*Connect where you drop\.\*\*/,
-  anchors: /\*\*Self-spacing anchors\.\*\*/, routing: /\*\*Routing that respects your layout\.\*\*/, arrange: /\*\*Arrange\.\*\*/, colors: /\*\*Styling\.\*\*/,
+  anchors: /\*\*Self-spacing anchors\.\*\*/, routing: /\*\*Routing that respects your layout\.\*\*/, arrange: /\*\*Arrange\.\*\*/, colors: /\*\*Styling\.\*\*/, palettes: /\*\*Saved palettes\.\*\*/,
   blocks: /\*\*Title block and legend\.\*\*/, settings: null, seq: /\*\*Sequence diagrams\.\*\*/, tabs: /\*\*Tabs\.\*\*/, files: /\*\*Files\.\*\*/,
   export: /\*\*Export\.\*\*/, ai: /\*\*Diagrams from an AI assistant\.\*\*/, privacy: /## Privacy/,
 };

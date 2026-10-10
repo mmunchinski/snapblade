@@ -272,7 +272,7 @@ test('the diagram panel holds settings only; Help opens from the bar, F1 and ?',
 // from what a reload reads (load()) and from a save and reopen (parseDiagram(serialize())).
 test('every control in every panel survives a reload and a file round trip', { timeout: 180000 }, async () => {
   const h = await open();
-  const SKIP = new Set(['delete', 'deleteAll', 'duplicate', 'help', 'annHide']);   // remove or add shapes, or open a dialog
+  const SKIP = new Set(['delete', 'deleteAll', 'duplicate', 'help', 'palettes', 'annHide']);   // remove or add shapes, or open a dialog
   await contextHelpers(h);
   const controls = () => h.ev(() => [...document.querySelectorAll('#panel [data-act], #panel [data-field], #modeSeg [data-mode]')]
     .filter(el => !el.disabled && el.offsetParent !== null)
@@ -362,6 +362,114 @@ test('colors: presets, hex, RGB, tint, custom and no fill, patterns, connectors,
 
   await h.selectApis(); await h.page.click('#panel .sw[title="Violet"]');
   assert.deepEqual(await h.ev(() => ['orders', 'inv', 'pay'].map(id => byId(id).style.line)), ['violet', 'violet', 'violet']);
+  assert.deepEqual(h.errors, []);
+});
+
+test('saved palettes: + saves line, box and container colors; swatches color the selection; named ones name the legend row', async () => {
+  const h = await open(), { page } = h;
+  const sws = () => h.ev(() => [...panel.querySelectorAll('[data-act="palPick"]')].map(b => b.dataset.val));
+  const pal = () => h.ev(() => JSON.parse(localStorage.getItem('snapblade-palettes')));
+  // No palette yet: + starts one called My colors with the selection's line color as shown.
+  await h.click('inv');
+  assert.equal(await page.textContent('#panel .palrow .palname'), 'Palette');
+  await page.fill('#f-line-hex', '#7a3db8'); await page.click('#panel [data-act="palSave"][data-val="line"]');
+  await page.click('#panel [data-act="palSave"][data-val="box"]');
+  await page.click('#panel [data-act="palSave"][data-val="line"]');
+  assert.match(await page.textContent('#status'), /Already in My colors/);
+  const boxFill = await h.ev(() => fillHexOf(byId('inv')));
+  assert.deepEqual(await pal(), { active: 0, palettes: [{ name: 'My colors', line: [{ hex: '#7a3db8' }], box: [{ hex: boxFill }], group: [] }] });
+  assert.deepEqual(await sws(), ['line:0', 'box:0']);
+  assert.equal(await page.getAttribute('#panel [data-act="palPick"][data-val="line:0"]', 'aria-pressed'), 'true', 'the swatch in use is marked');
+
+  // A container picks from container fills, a connector only from lines.
+  await h.ev(() => { sel = { type: 'node', id: 'app' }; renderPanel(); });
+  assert.deepEqual(await sws(), ['line:0']);
+  await page.fill('#panel #f-line-hex', '#c05621'); await page.click('#panel [data-act="palSave"][data-val="group"]');
+  assert.equal((await pal()).palettes[0].group.length, 1);
+  await h.ev(() => { sel = { type: 'edge', id: 'e3' }; renderPanel(); });
+  assert.deepEqual(await sws(), ['line:0']);
+  await page.click('#panel [data-act="palPick"][data-val="line:0"]');
+  const e3Line = () => h.ev(() => S.edges.find(e => e.id === 'e3').style?.line ?? null);
+  assert.equal(await e3Line(), '#7a3db8');
+  await page.keyboard.press('Control+z');
+  assert.equal(await e3Line(), null, 'picking a swatch is undone like any color change');
+
+  // The Palettes dialog: rename the palette, name a color, add, reorder and remove.
+  await h.clear(); await h.button('Manage palettes');
+  await page.fill('#modal [data-pal-field="name"]', 'Team standard');
+  await page.fill('#modal [data-pal-field="sw-name"][data-list="line"][data-i="0"]', 'Third party');
+  await page.fill('#modal [data-pal-field="add-pick"][data-list="line"]', '#2a9d8f'); await page.click('#modal [data-pal="add"][data-list="line"]');
+  await page.click('#modal [data-pal="down"][data-list="line"][data-i="0"]');
+  await page.fill('#modal [data-pal-field="add-pick"][data-list="box"]', '#ffeedd'); await page.click('#modal [data-pal="add"][data-list="box"]');
+  await page.click('#modal [data-pal="remove"][data-list="box"][data-i="1"]');
+  let P = (await pal()).palettes[0];
+  assert.deepEqual([P.name, P.line, P.box.length], ['Team standard', [{ hex: '#2a9d8f' }, { hex: '#7a3db8', name: 'Third party' }], 1]);
+  await page.click('#modal button:text-is("Done")');
+  assert.equal(await page.inputValue('#f-palActive'), '0');
+
+  // A named swatch names the legend row of what it colors, unless that row already has a meaning.
+  await h.click('pay'); await page.click('#panel [data-act="palPick"][data-val="line:1"]');
+  assert.equal(await page.getAttribute('#panel [data-act="palPick"][data-val="line:1"]', 'title'), 'Third party (#7A3DB8)');
+  assert.equal(await h.ev(() => S.legend.labels['box:#7a3db8||pair']), 'Third party');
+  await h.ev(() => { S.legend.labels['connector:#7a3db8'] = 'Mine'; sel = { type: 'edge', id: 'e3' }; renderPanel(); });
+  await page.click('#panel [data-act="palPick"][data-val="line:1"]');
+  assert.equal(await h.ev(() => S.legend.labels['connector:#7a3db8']), 'Mine');
+  assert.ok((await h.ev(() => legendRows().map(r => r.label))).includes('Third party'));
+
+  // Export, delete (asks once more), import it back; then a second palette and switching between them.
+  await h.clear(); await h.button('Manage palettes');
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#modal [data-pal="export"]')]);
+  assert.equal(dl.suggestedFilename(), 'Team standard.snapblade-palette');
+  const file = readFileSync(await dl.path(), 'utf8');
+  assert.deepEqual(JSON.parse(file).palettes[0].line[1], { hex: '#7a3db8', name: 'Third party' });
+  await page.click('#modal [data-pal="delete"]');
+  assert.equal((await pal()).palettes.length, 1, 'the first click only asks');
+  await page.click('#modal [data-pal="delete"]');
+  assert.deepEqual(await pal(), { active: 0, palettes: [] });
+  const importFile = async (name, text) => {
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('#modal [data-pal="import"]')]);
+    await chooser.setFiles({ name, mimeType: 'application/json', buffer: Buffer.from(text) }); await page.waitForTimeout(100);
+  };
+  await importFile('team.snapblade-palette', file);
+  assert.equal((await pal()).palettes[0].name, 'Team standard');
+  await importFile('team.snapblade-palette', file);
+  assert.deepEqual((await pal()).palettes.map(p => p.name), ['Team standard', 'Team standard 2']);
+  assert.equal((await pal()).active, 1, 'an imported palette becomes the active one');
+  await importFile('broken.snapblade-palette', '{"format":"snapblade"}');
+  assert.match(await page.textContent('#toast'), /isn't a Snapblade palette/);
+  await page.click('#modal [data-pal="new"]');
+  assert.deepEqual(await h.ev(() => [PAL.palettes.length, activePal().name, activePal().line.length]), [3, 'Palette', 0]);
+  await page.click('#modal button:text-is("Done")');
+  await page.selectOption('#f-palActive', '0');
+
+  // Palettes stay in the browser across reloads and diagrams.
+  await page.reload(); await page.waitForTimeout(300);
+  await h.click('orders');
+  assert.equal(await page.textContent('#panel .palrow .palname'), 'Team standard');
+  assert.deepEqual(await sws(), ['line:0', 'line:1', 'box:0']);
+  assert.deepEqual(h.errors, []);
+});
+
+test('saved palettes: a hostile palette file or stored copy cannot run script or break the panel', async () => {
+  const evil = '<img src=x onerror="window.__pwned=1">"\'><svg onload="window.__pwned=1">';
+  const stored = JSON.stringify({ active: '0', palettes: [{ name: evil, line: [{ hex: '#123456', name: evil }, { hex: '"><script>window.__pwned=1</script>' }], box: [{ hex: '#abcdef', name: evil }] }] });
+  const h = await open(), { page } = h;
+  await h.ev(s => { localStorage.setItem('snapblade-palettes', s); }, stored); await page.reload(); await page.waitForTimeout(300);
+  await h.click('inv');
+  assert.equal(await page.textContent('#panel .palrow .palname'), evil);
+  assert.equal(await page.getAttribute('#panel [data-act="palPick"][data-val="line:0"]', 'title'), `${evil} (#123456)`);
+  await page.click('#panel [data-act="palPick"][data-val="box:0"]');
+  await h.clear(); await h.button('Manage palettes');
+  assert.equal(await page.inputValue('#modal [data-pal-field="name"]'), evil);
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('#modal [data-pal="import"]')]);
+  await chooser.setFiles({ name: `${evil}.snapblade-palette`, mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ format: 'snapblade-palette', version: 1,
+    palettes: [{ name: evil, line: [{ hex: '#00ff00', name: evil }], group: [{ hex: '#ff00ff', name: { toString: 1 } }] }, ...Array.from({ length: 40 }, (_, i) => ({ name: 'p' + i }))] })) });
+  await page.waitForTimeout(200); await page.click('#modal button:text-is("Done")');
+  assert.equal(await h.ev(() => PAL.palettes.length), 20);
+  assert.match(await page.textContent('#toast'), /Imported 19 of the 20 palettes/);
+  await h.ev(() => { S.legend.show = true; refresh(true, false); });
+  assert.equal(await h.ev(() => window.__pwned), undefined);
+  assert.equal(await page.locator('#panel img, #panel script, #modal img, #cv img').count(), 0);
   assert.deepEqual(h.errors, []);
 });
 

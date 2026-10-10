@@ -7,7 +7,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-EgoA/RbUwkYq+xJ60cTwNXne6mICOFU2xoQ0McZVUpo=' https://cdn.jsdelivr.net/npm/jspdf@4.2.1/ https://cdn.jsdelivr.net/npm/svg2pdf.js@2.8.1/; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob:; connect-src https://fonts.googleapis.com https://fonts.gstatic.com; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-cwA324n5z7peWu9bfsax6INSSiql3imCkYD+Rp4PtWI=' https://cdn.jsdelivr.net/npm/jspdf@4.2.1/ https://cdn.jsdelivr.net/npm/svg2pdf.js@2.8.1/; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob:; connect-src https://fonts.googleapis.com https://fonts.gstatic.com; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Snapblade</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -166,6 +166,11 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; min-height: 0
 .swatches { display: flex; gap: 5px; flex-wrap: wrap; }
 .sw { width: 24px; height: 22px; border-radius: 5px; cursor: pointer; border: 1.5px solid var(--swl); background: var(--swf); padding: 0; }
 .sw[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 2px; }
+.palrow { display: flex; flex-direction: column; gap: 5px; }
+.palname { font-size: 11.5px; font-weight: 500; color: var(--ink-2); overflow-wrap: anywhere; }
+.sw.add { border: 1.5px dashed var(--ink-3); background: transparent; color: var(--ink-2); font: 600 15px/1 var(--ui); }
+.sw.add:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.sw.add:disabled { opacity: .4; cursor: default; }
 .colorrow { display: grid; grid-template-columns: 34px minmax(0, 1.7fr) repeat(3, minmax(0, 1fr)); gap: 6px; align-items: end; }
 .colorrow input[type=color] { width: 34px; height: 29px; padding: 2px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); cursor: pointer; }
 .colorrow .num input { text-transform: uppercase; padding-inline: 5px; -moz-appearance: textfield; appearance: textfield; }
@@ -355,6 +360,16 @@ dl.keys dd { margin: 0; }
 .modal { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 24px 60px rgba(0, 0, 0, .3); width: min(820px, 100%); max-height: calc(100% - 8px); overflow: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
 .modal.small { width: min(440px, 100%); }
 .modal.help { width: min(720px, 100%); }
+.modal.palettes { width: min(560px, 100%); }
+.modal .field input[type=text] { border: 1px solid var(--line); border-radius: 6px; background: var(--paper); padding: 6px 8px; font-size: 13px; color: var(--ink); width: 100%; }
+.pallist { display: flex; flex-direction: column; gap: 8px; }
+.palent { display: grid; grid-template-columns: 24px minmax(0, 1fr) 84px repeat(3, 28px); gap: 6px; align-items: center; }
+.palent .sw { cursor: default; }
+.palent input { border: 1px solid var(--line); border-radius: 6px; background: var(--paper); padding: 5px 7px; font-size: 13px; color: var(--ink); min-width: 0; }
+.palent input.hex { font: 12px var(--mono); text-transform: uppercase; }
+.palent .mini { padding: 3px 0; }
+.palent .mini:disabled { opacity: .4; cursor: default; }
+.pallist input[type=color] { width: 34px; height: 29px; padding: 2px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); cursor: pointer; }
 .modal.help > .seg { align-self: flex-start; }
 .help-body { display: flex; flex-direction: column; gap: 12px; min-height: 360px; }
 .help-body .mode-card.current { border-color: var(--accent); }
@@ -403,7 +418,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 42</span>
+      Snapblade <span class="tag">playground &middot; build 43</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -480,6 +495,7 @@ dl.keys dd { margin: 0; }
 </div>
 <div class="modal-back" id="modal" hidden><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"></div></div>
 <input type="file" id="fileInput" accept=".snapblade,.json,application/json" hidden>
+<input type="file" id="palInput" accept=".snapblade-palette,.json,application/json" hidden>
 
 <script>
 'use strict';
@@ -494,6 +510,7 @@ const MAX_NODES = 1000, MAX_EDGES = 500, MAX_TEXT = 5000;
 const SIDES = ['top', 'right', 'bottom', 'left'];
 const NORMAL = { top: { x: 0, y: -1 }, right: { x: 1, y: 0 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 } };
 const KEY = 'snapblade-playground-v1', OLD_KEY = 'diogramo-playground-v1', META_KEY = 'snapblade-doc-meta', AUTHOR_KEY = 'snapblade-author', ASIDE_KEY = 'snapblade-set-aside-v1';
+const PAL_KEY = 'snapblade-palettes';   // saved palettes, shared by every diagram in this browser
 let doc = { name: 'Untitled diagram', dirty: false };   // the diagram's name, and whether it has unsaved file changes
 
 let S = null;          // { nodes, edges, settings, title, legend }: the diagram on the open tab (a sequence diagram adds type, parts and rows)
@@ -596,6 +613,71 @@ function migrateStyle(n) {
   const c = n.color; delete n.color;
   if (c === 'ghost') n.style = { dash: 'dashed', fill: 'none' };
   else if (c && c !== 'plain') n.style = { line: c, fill: 'pair' };
+}
+
+/* ---------- saved palettes ----------
+   Colors kept for one-click use: line colors (connectors and the outlines of shapes), box fills and container fills.
+   They live in the browser, not in diagrams: a swatch sets a fixed '#rrggbb', which any diagram already holds.
+   Storage and palette files are untrusted (storage is shared across the github.io origin), so both go through
+   normalizePalettes. */
+const PALETTE_LISTS = [['line', 'Lines'], ['box', 'Box fills'], ['group', 'Container fills']];
+const MAX_PALETTES = 20, MAX_SWATCHES = 32, PALETTE_FORMAT = 'snapblade-palette', PALETTE_EXT = '.snapblade-palette';
+const paletteDefaults = () => ({ active: 0, palettes: [] });
+const newPalette = name => ({ name, line: [], box: [], group: [] });
+// The list a shape's fill picks from: containers and sequence groups use container fills.
+const fillList = o => o.kind === 'group' ? 'group' : 'box';
+const palName = v => strOr(v).replace(/\s+/g, ' ').trim().slice(0, MAX_NAME);
+function cleanSwatches(list) {
+  const out = [], seen = new Set();
+  for (const s of Array.isArray(list) ? list.slice(0, 1000) : []) {
+    const hex = typeof s === 'string' ? s : s?.hex;
+    if (!isHex(hex) || seen.has(hex.toLowerCase())) continue;
+    seen.add(hex.toLowerCase());
+    const name = palName(s?.name);
+    out.push(name ? { hex: hex.toLowerCase(), name } : { hex: hex.toLowerCase() });
+    if (out.length === MAX_SWATCHES) break;
+  }
+  return out;
+}
+// Base, or base 2, base 3... whichever isn't taken yet.
+function freeName(taken, base) {
+  if (!taken.has(base)) return base;
+  const stem = base.replace(/ \d+$/, '').slice(0, MAX_NAME - 4);
+  for (let n = 2; ; n++) if (!taken.has(`${stem} ${n}`)) return `${stem} ${n}`;
+}
+function normalizePalettes(d) {
+  const out = paletteDefaults(), taken = new Set();
+  for (const p of Array.isArray(d?.palettes) ? d.palettes.slice(0, MAX_PALETTES) : []) {
+    if (!p || typeof p !== 'object' || Array.isArray(p)) continue;
+    const q = newPalette(freeName(taken, palName(p.name) || 'Palette'));
+    for (const [k] of PALETTE_LISTS) q[k] = cleanSwatches(p[k]);
+    taken.add(q.name); out.palettes.push(q);
+  }
+  if (Number.isInteger(d?.active) && d.active >= 0 && d.active < out.palettes.length) out.active = d.active;
+  return out;
+}
+// A palette file holds one palette (Export) or several; reading one gives its palettes, cleaned.
+const paletteFile = list => JSON.stringify({ format: PALETTE_FORMAT, version: 1, palettes: list }, null, 2);
+function parsePalettes(text) {
+  let d;
+  try { d = JSON.parse(text); } catch (e) { throw new Error("That file isn't a Snapblade palette (it isn't valid JSON)."); }
+  if (d?.format !== PALETTE_FORMAT) throw new Error("That file isn't a Snapblade palette.");
+  if (d.version > 1) throw new Error('That palette was made by a newer version of Snapblade. Update the app to open it.');
+  const list = normalizePalettes(d).palettes;
+  if (!list.length) throw new Error('That palette file has no palettes in it.');
+  return list;
+}
+// Add palettes to P (names kept apart from the ones there) up to MAX_PALETTES; the first one added becomes active.
+// Returns how many were added.
+function mergePalettes(P, list) {
+  const taken = new Set(P.palettes.map(p => p.name)), start = P.palettes.length;
+  for (const p of list) {
+    if (P.palettes.length >= MAX_PALETTES) break;
+    const q = { ...p, name: freeName(taken, p.name) };
+    taken.add(q.name); P.palettes.push(q);
+  }
+  if (P.palettes.length > start) P.active = start;
+  return P.palettes.length - start;
 }
 
 /* ---------- title block and legend ----------
@@ -3176,6 +3258,7 @@ function seqDiagramPanel() {
     <label class="check"><input id="f-activation" type="checkbox" data-field="activation"${st.activation ? ' checked' : ''}> Activation bars</label>
     <p class="desc">Columns size themselves to their labels and rows are evenly spaced. Drag from one lifeline to another to add a message.</p>
   </section>
+  ${palSection()}
   ${annSection()}`;
 }
 const partSelect = (field, cur, label, none) => `<label class="field"><span>${label}</span><select id="f-${field}" data-field="${field}">${none ? `<option value=""${cur ? '' : ' selected'}>${none}</option>` : ''}${S.parts.map(p => `<option value="${esc(p.id)}"${p.id === cur ? ' selected' : ''}>${esc(oneLine(p.label) || p.id)}</option>`).join('')}</select></label>`;
@@ -3299,6 +3382,7 @@ function diagramPanel() {
     <label class="check"><input id="f-slots" type="checkbox" data-field="showSlots"${st.showSlots ? ' checked' : ''}> Show anchor points</label>
     <label class="check" title="Shapes side by side stay at least ${WALL} px apart. Hold Alt while dragging to overlap them."><input id="f-walls" type="checkbox" data-field="walls"${st.walls ? ' checked' : ''}> Shapes can't overlap</label>
   </section>
+  ${palSection()}
   ${annSection()}`;
 }
 function portCounts(n) {
@@ -3353,6 +3437,7 @@ function syncColorInputs() {
     ['r', 'g', 'b'].forEach((c, i) => set(`f-${kind}-${c}`, rgb[i]));
   }
   panel.querySelectorAll('[data-act="linePreset"]').forEach(b => b.setAttribute('aria-pressed', String((o.style?.line || '') === b.dataset.val)));
+  panel.querySelectorAll('[data-act="palPick"]').forEach(b => b.setAttribute('aria-pressed', String(palPressed(o, ...b.dataset.val.split(':')))));
 }
 function styleSections(targets) {
   const o = targets[0], st = o.style || {}, isEdge = !o.kind;
@@ -3364,6 +3449,7 @@ function styleSections(targets) {
   let h = `<section>
     <p class="eyebrow">Line${targets.length > 1 ? ` · ${targets.length} shapes` : ''}</p>
     <div class="swatches">${['', ...PRESETS].map(swatch).join('')}</div>
+    ${palRow('line', o)}
     ${colorInputs('line', lineHexOf(o))}
     <div class="field"><span>Pattern</span>${seg('dash', DASHES, o.type ? msgDash(o) : st.dash || 'solid')}</div>
   </section>`;
@@ -3375,6 +3461,7 @@ function styleSections(targets) {
   h += `<section>
     <p class="eyebrow">Fill</p>
     ${seg('fillMode', [['pair', 'Paired with line'], ['custom', 'Custom'], ['none', 'None']], mode)}
+    ${palRow(fillList(o), o)}
     ${mode === 'pair' ? (st.line
       ? `<label class="field"><span>Tint strength · ${tintOf(o)}%</span><input id="f-tint" type="range" min="3" max="45" step="1" value="${tintOf(o)}" data-field="tint"></label>
          <p class="desc">The fill is a light tint of the line color, and follows it if the line changes.</p>`
@@ -3384,6 +3471,167 @@ function styleSections(targets) {
   </section>`;
   return h;
 }
+/* ---------- saved palettes (panel and dialog) ---------- */
+let PAL = paletteDefaults();   // this browser's palettes (loadPalettes at start)
+const activePal = () => PAL.palettes[PAL.active] || null;
+function loadPalettes() {
+  try { return normalizePalettes(JSON.parse(localStorage.getItem(PAL_KEY))); } catch (e) { return paletteDefaults(); }
+}
+function savePalettes() {
+  try { localStorage.setItem(PAL_KEY, JSON.stringify(PAL)); }
+  catch (e) { toast("Couldn't keep the palettes in this browser's storage. Export the palette to keep a copy.", true); }
+}
+const palPressed = (o, list, i) => {
+  const s = activePal()?.[list]?.[+i], v = list === 'line' ? o.style?.line : o.style?.fill;
+  return !!s && typeof v === 'string' && v.toLowerCase() === s.hex;
+};
+// The active palette's swatches for one list, under the presets, with + to save the selection's color into it.
+function palRow(list, o) {
+  const p = activePal(), isLine = list === 'line';
+  const ownLine = lineCss(o.style?.line, defLineCss(o));
+  const sws = (p?.[list] || []).map((s, i) => {
+    const ln = isLine ? s.hex : ownLine, fl = isLine ? (o.kind ? `color-mix(in srgb, ${s.hex} 16%, var(--node-bg))` : s.hex) : s.hex;
+    const t = esc(s.name ? `${s.name} (${s.hex.toUpperCase()})` : s.hex.toUpperCase());
+    return `<button type="button" class="sw" data-act="palPick" data-val="${list}:${i}" aria-pressed="${palPressed(o, list, i)}" title="${t}" aria-label="${t}" style="--swl:${ln};--swf:${fl}"></button>`;
+  }).join('');
+  const has = isLine || fillHexOf(o), where = p ? esc(p.name) : 'a new palette';
+  return `<div class="palrow">
+      <span class="palname">${p ? esc(p.name) : 'Palette'}</span>
+      <div class="swatches">${sws}<button type="button" class="sw add" data-act="palSave" data-val="${list}" title="${has ? `Save this color to ${where}` : 'No fill to save'}" aria-label="Save color"${has ? '' : ' disabled'}>+</button></div>
+    </div>`;
+}
+const palSection = () => `<section>
+    <p class="eyebrow">Palettes</p>
+    ${PAL.palettes.length ? `<label class="field"><span>Active palette</span><select id="f-palActive" data-field="palActive">${PAL.palettes.map((p, i) =>
+      `<option value="${i}"${i === PAL.active ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>` : ''}
+    <p class="desc">${PAL.palettes.length ? 'Its colors sit under the presets wherever you pick a line or fill color.'
+      : 'Keep the colors you use again and again: select a shape and press + beside the Line or Fill presets, or set palettes up here.'}</p>
+    <div class="row"><button class="btn" type="button" data-act="palettes">Manage palettes</button></div>
+  </section>`;
+// A palette swatch was clicked, or + saves the selection's color. A named swatch also names the legend row
+// of what it colors, if that row has no meaning typed in yet (stored in the diagram, so exports carry it).
+function palAct(act, val) {
+  if (act === 'palPick') {
+    const [list, i] = val.split(':'), s = activePal()?.[list]?.[+i], targets = styleTargets();
+    if (!s || !targets.length) return;
+    pushUndo(); setStyle(list === 'line' ? { line: s.hex } : { fill: s.hex });
+    if (s.name) for (const t of targets) { const k = styleKey(t); if (isStyled(t) && !(S.legend.labels[k] || '').trim()) S.legend.labels[k] = s.name; }
+    refresh(true, true); return;
+  }
+  const o = styleTargets()[0], hex = o && (val === 'line' ? lineHexOf(o) : fillHexOf(o));
+  if (!hex) return;
+  if (!activePal()) {
+    if (PAL.palettes.length >= MAX_PALETTES) return;
+    PAL.palettes.push(newPalette(freeName(new Set(PAL.palettes.map(p => p.name)), 'My colors'))); PAL.active = PAL.palettes.length - 1;
+  }
+  const p = activePal(), L = p[val], what = PALETTE_LISTS.find(l => l[0] === val)[1].toLowerCase();
+  if (L.some(s => s.hex === hex)) { statusFlash(`Already in ${p.name}`); return; }
+  if (L.length >= MAX_SWATCHES) { toast(`A palette holds at most ${MAX_SWATCHES} ${what}.`, true); return; }
+  L.push({ hex }); savePalettes(); renderPanel(); statusFlash(`Saved ${hex.toUpperCase()} to ${p.name}`);
+}
+
+// The Palettes dialog edits PAL in place and redraws itself; nothing in it is part of the diagram or its undo.
+let palConfirm = false;   // Delete palette was pressed once: ask before deleting
+const LIST_HINTS = { line: 'Connector lines and the outlines of boxes and containers.', box: 'Fills for boxes, participants and notes.', group: 'Fills for containers and participant groups.' };
+function paletteDialogHtml() {
+  const p = activePal(), mini = (pal, l, i, text, label, dis) => `<button class="mini" type="button" data-pal="${pal}" data-list="${l}" data-i="${i}" title="${label}" aria-label="${label}"${dis ? ' disabled' : ''}>${text}</button>`;
+  const lists = p ? PALETTE_LISTS.map(([l, title]) => `<section class="pallist">
+      <p class="eyebrow">${title} · ${p[l].length}</p>
+      <p class="desc">${LIST_HINTS[l]}</p>
+      ${p[l].map((s, i) => `<div class="palent">
+        <span class="sw" style="--swl:${l === 'line' ? s.hex : 'var(--node-stroke)'};--swf:${l === 'line' ? `color-mix(in srgb, ${s.hex} 16%, var(--node-bg))` : s.hex}"></span>
+        <input type="text" data-pal-field="sw-name" data-list="${l}" data-i="${i}" value="${esc(s.name || '')}" placeholder="Name (optional)" maxlength="${MAX_NAME}" aria-label="Name of ${s.hex.toUpperCase()}">
+        <input type="text" class="hex" data-pal-field="sw-hex" data-list="${l}" data-i="${i}" value="${s.hex.toUpperCase()}" maxlength="7" spellcheck="false" aria-label="Hex">
+        ${mini('up', l, i, '&uarr;', 'Move up', !i)}${mini('down', l, i, '&darr;', 'Move down', i === p[l].length - 1)}${mini('remove', l, i, '&times;', 'Remove')}
+      </div>`).join('')}
+      <div class="row"><input type="color" data-pal-field="add-pick" data-list="${l}" value="#5b7fa6" aria-label="New color for ${title.toLowerCase()}">
+        <button class="btn" type="button" data-pal="add" data-list="${l}"${p[l].length >= MAX_SWATCHES ? ' disabled' : ''}>Add color</button></div>
+    </section>`).join('') : '';
+  const full = PAL.palettes.length >= MAX_PALETTES;
+  return `<h2 id="modalTitle">Palettes</h2>
+    <p>Kept in this browser for every diagram. A swatch sets a fixed color, the same in the light and dark themes. Named colors name their legend row.</p>
+    ${p ? `<div class="grid2">
+      <label class="field"><span>Palette</span><select data-pal-field="active">${PAL.palettes.map((q, i) => `<option value="${i}"${i === PAL.active ? ' selected' : ''}>${esc(q.name)}</option>`).join('')}</select></label>
+      <label class="field"><span>Name</span><input type="text" data-pal-field="name" value="${esc(p.name)}" maxlength="${MAX_NAME}"></label>
+    </div>` : '<p>No palettes yet. Start one, or import a palette file someone shared.</p>'}
+    <div class="row">
+      <button class="btn" type="button" data-pal="new"${full ? ' disabled' : ''}>New palette</button>
+      <button class="btn" type="button" data-pal="import"${full ? ' disabled' : ''}>Import&hellip;</button>
+      ${p ? `<button class="btn" type="button" data-pal="export">Export</button>
+      <button class="btn danger" type="button" data-pal="delete">${palConfirm ? `Delete “${esc(p.name)}”? Click again` : 'Delete palette'}</button>` : ''}
+    </div>
+    ${lists}
+    <div class="actions"><button class="btn primary" type="button" data-choice="cancel">Done</button></div>`;
+}
+const redrawPalettes = () => { const box = document.querySelector('#modal .modal.palettes'); if (box) box.innerHTML = paletteDialogHtml(); };
+async function openPalettes() {
+  palConfirm = false;
+  await ask(paletteDialogHtml(), 'palettes');
+  renderPanel();
+}
+function paletteAct(b) {
+  if (b.disabled) return;
+  const a = b.dataset.pal, p = activePal(), L = p?.[b.dataset.list], i = +b.dataset.i;
+  if (a !== 'delete') palConfirm = false;
+  if (a === 'new') { PAL.palettes.push(newPalette(freeName(new Set(PAL.palettes.map(q => q.name)), 'Palette'))); PAL.active = PAL.palettes.length - 1; }
+  if (a === 'import') { document.getElementById('palInput').click(); return; }
+  if (a === 'export') { exportPalette(); return; }
+  if (a === 'delete') {
+    if (!palConfirm) { palConfirm = true; redrawPalettes(); return; }
+    palConfirm = false; PAL.palettes.splice(PAL.active, 1); PAL.active = Math.max(0, Math.min(PAL.active, PAL.palettes.length - 1));
+  }
+  if (a === 'add') {
+    const hex = document.querySelector(`#modal [data-pal-field="add-pick"][data-list="${b.dataset.list}"]`).value.toLowerCase();
+    if (!isHex(hex) || L.length >= MAX_SWATCHES) return;
+    if (L.some(s => s.hex === hex)) { toast(`${hex.toUpperCase()} is already in ${p.name}.`); return; }
+    L.push({ hex });
+  }
+  if (a === 'remove') L.splice(i, 1);
+  if ((a === 'up' && i > 0) || (a === 'down' && i < L.length - 1)) { const j = a === 'up' ? i - 1 : i + 1; [L[i], L[j]] = [L[j], L[i]]; }
+  savePalettes(); redrawPalettes(); renderPanel();
+}
+// Typing in the dialog saves as you go; the dialog redraws only when the list itself changes.
+function paletteField(t) {
+  const f = t.dataset.palField, p = activePal();
+  if (f === 'add-pick') return;
+  if (f === 'active') { PAL.active = +t.value; palConfirm = false; savePalettes(); redrawPalettes(); renderPanel(); return; }
+  if (!p) return;
+  if (f === 'name') {
+    const name = palName(t.value), taken = new Set(PAL.palettes.filter(q => q !== p).map(q => q.name));
+    if (!name || taken.has(name)) { t.setCustomValidity(name ? 'Another palette has that name.' : 'A palette needs a name.'); t.reportValidity(); return; }
+    t.setCustomValidity(''); p.name = name;
+    const opt = document.querySelector(`#modal [data-pal-field="active"] option[value="${PAL.active}"]`); if (opt) opt.textContent = name;
+  }
+  const s = p[t.dataset.list]?.[+t.dataset.i];
+  if (f === 'sw-name' && s) { const name = palName(t.value); if (name) s.name = name; else delete s.name; }
+  if (f === 'sw-hex' && s) {
+    let hex = t.value.trim(); if (!hex.startsWith('#')) hex = '#' + hex; hex = hex.toLowerCase();
+    if (!isHex(hex)) return;
+    if (p[t.dataset.list].some(q => q !== s && q.hex === hex)) { t.setCustomValidity('That color is already in this list.'); t.reportValidity(); return; }
+    t.setCustomValidity(''); s.hex = hex;
+    const sw = t.parentElement.querySelector('.sw'), line = t.dataset.list === 'line';
+    sw.style.setProperty('--swl', line ? hex : 'var(--node-stroke)'); sw.style.setProperty('--swf', line ? `color-mix(in srgb, ${hex} 16%, var(--node-bg))` : hex);
+  }
+  savePalettes(); renderPanel();
+}
+function exportPalette() {
+  const p = activePal(); if (!p) return;
+  if (framed) { toast('Saving files is blocked inside this preview. Use the app at mmunchinski.github.io/snapblade.', true); return; }
+  const name = (p.name.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'palette') + PALETTE_EXT;
+  download(new Blob([paletteFile([p])], { type: 'application/json' }), name);
+  toast(`Exported ${name}`);
+}
+function importPalettes(text, filename) {
+  let list;
+  try { list = parsePalettes(text); } catch (e) { toast(e.message, true); return false; }
+  const n = mergePalettes(PAL, list);
+  if (!n) { toast(`This browser already holds ${MAX_PALETTES} palettes, the most it keeps. Delete one first.`, true); return false; }
+  palConfirm = false; savePalettes(); redrawPalettes(); renderPanel();
+  toast(n < list.length ? `Imported ${n} of the ${list.length} palettes in ${filename}: ${MAX_PALETTES} is the most this browser keeps.`
+    : `Imported ${n === 1 ? `“${activePal().name}”` : `${n} palettes`} from ${filename}`, n < list.length);
+  return true;
+}
+
 const sizeButtons = scope => `<div class="row">
     <button class="btn" type="button" data-act="size" data-scope="${scope}" data-val="w">Same width</button>
     <button class="btn" type="button" data-act="size" data-scope="${scope}" data-val="h">Same height</button>
@@ -3530,6 +3778,7 @@ function onField(t) {
   if (f === 'radius') { st.radius = +t.value; t.previousElementSibling.textContent = `Corner radius · ${st.radius} px`; render(); save(); return; }
   if (f === 'showSlots') { st.showSlots = t.checked; render(); save(); return; }
   if (f === 'walls') { st.walls = t.checked; save(); return; }
+  if (f === 'palActive') { PAL.active = +t.value; savePalettes(); renderPanel(); return; }
   if (f === 'autonumber' || f === 'footbox' || f === 'activation') { st[f] = t.checked; render(); save(); return; }
   if (f === 'showTitle' || f === 'showLegend') {
     pushUndo();
@@ -3606,6 +3855,8 @@ function onAct(b) {
   if (act === 'grid') { st.grid = +val; refresh(true, true); return; }
   if (act === 'defLabelPos') { st.labelPos = val; refresh(true, true); return; }
   if (act === 'help') { openHelp(); return; }
+  if (act === 'palettes') { openPalettes(); return; }
+  if (act === 'palPick' || act === 'palSave') { palAct(act, val); return; }
   if (act === 'delete') { deleteSel(); return; }
   if (act === 'selectAnn') { select({ type: 'annot', id: val }); render(); return; }
   if (act === 'annPos' || act === 'annToday' || act === 'annHide' || act === 'legToggle') {
@@ -4346,6 +4597,13 @@ function guideHtml() {
       <li><b>Pattern</b>: ${b(labels(DASHES))}.</li>
       <li><b>Fill</b>: <b>Paired with line</b> (a tint of the line color; <b>Tint strength</b> sets how strong), <b>Custom</b> (any color: Pick fill color, Hex or RGB) or <b>None</b>.</li>
       <li><b>Copy style</b> and <b>Paste style</b> (Ctrl+Shift+C and Ctrl+Shift+V) move colors and patterns between shapes and connectors. With several shapes selected, <b>Match colors</b> gives them the first pick's <b>Same line</b>, <b>Same fill</b> or <b>Same colors</b>.</li></ul>`],
+    ['palettes', 'Saved palettes', `<p>A palette keeps the colors you use again and again, so diagrams match from one file to the next. It has three lists: ${or(PALETTE_LISTS.map(l => `<b>${l[1]}</b>`))}. Line colors are for connectors and for the outlines of boxes and containers.</p><ul>
+      <li>The active palette's colors sit under the presets, below its name, in the Line and Fill sections. Click one to use it. Shapes get box fills, containers and participant groups get container fills.</li>
+      <li>The <b>+</b> at the end of the row (<b>Save color</b>) adds the selection's color, as it's shown, to the active palette. The first one starts a palette called My colors.</li>
+      <li>Under <b>Palettes</b> in the diagram settings, <b>Active palette</b> switches between palettes and <b>Manage palettes</b> opens the Palettes dialog. There you can pick a <b>Palette</b>, change its <b>Name</b>, give each color a name, change its <b>Hex</b>, move it with <b>Move up</b> and <b>Move down</b>, <b>Remove</b> it, or pick a new one and press <b>Add color</b>. <b>New palette</b> starts an empty one, and <b>Delete palette</b> asks once more before deleting.</li>
+      <li>A color with a name also names its legend row, when that row has no meaning typed in yet. The name goes into the diagram, so it shows anywhere the file is opened.</li>
+      <li>Palettes are kept in this browser, for every diagram and tab, and aren't part of any file. <b>Export</b> saves the palette as a <code>${PALETTE_EXT}</code> file to share with your team, and <b>Import</b> adds the palettes from one. This browser keeps up to ${MAX_PALETTES} palettes of ${MAX_SWATCHES} colors per list.</li>
+      <li>Palette colors are fixed: unlike the presets, they look the same in the light and dark themes.</li></ul>`],
     ['blocks', 'Title block and legend', `<ul>
       <li>Under <b>Title block &amp; legend</b> in the diagram settings, tick <b>Title block</b> or <b>Legend</b>; <b>Edit</b> opens its settings (or click the block).</li>
       <li>The title block has a <b>Title</b> (the diagram's name if empty), <b>Version</b>, <b>Date</b> (<b>Set date to today</b>) and <b>Author</b>, which is remembered for new diagrams. Empty fields are left out.</li>
@@ -4975,6 +5233,9 @@ function init() {
     setAside(); openBook(fresh()); doc = { name: 'Untitled diagram', dirty: false }; syncTypeUi(); layoutAll(false); fit();
     toast("The diagram saved in this browser couldn't be drawn. It was set aside, and the sample loaded instead.", true);
   }
+  PAL = loadPalettes();
+  // Another window of the app saved its palettes: show them here too.
+  window.addEventListener('storage', ev => { if (ev.key === PAL_KEY) { PAL = loadPalettes(); renderPanel(); redrawPalettes(); } });
   syncModeButtons(); syncTypeUi(); renderPanel(); renderTabs(); updateDocUi();
 
   // Tabs
@@ -5014,11 +5275,15 @@ function init() {
   document.getElementById('exportBtn').addEventListener('click', openExport);
   const fileInput = document.getElementById('fileInput');
   fileInput.addEventListener('change', async () => { const f = fileInput.files[0]; fileInput.value = ''; if (f) loadDiagram(await f.text(), f.name, null); });
+  const palInput = document.getElementById('palInput');
+  palInput.addEventListener('change', async () => { const f = palInput.files[0]; palInput.value = ''; if (f) importPalettes(await f.text(), f.name); });
   const modal = document.getElementById('modal');
+  modal.addEventListener('input', ev => { if (ev.target.dataset.palField) paletteField(ev.target); });
   modal.addEventListener('click', ev => {
     if (ev.target === modal) return closeModal('cancel');
     const ex = ev.target.closest('[data-ex]'); if (ex) return exportOption(ex);
     const hb = ev.target.closest('[data-help]'); if (hb) return helpTabSwitch(hb);
+    const pb = ev.target.closest('[data-pal]'); if (pb) return paletteAct(pb);
     if (ev.target.closest('[data-copy-spec]')) return copySpec();
     const b = ev.target.closest('[data-choice]'); if (b) closeModal(b.dataset.choice);
   });
