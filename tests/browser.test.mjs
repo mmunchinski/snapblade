@@ -446,6 +446,52 @@ test('save downloads a .snapblade file; reopening restores it; unsaved changes a
   assert.deepEqual(h.errors, []);
 });
 
+// Every change is copied into browser storage. When the browser refuses (storage full or blocked), the user is
+// told once, not on every edit; once storing works again, the next failure is reported again.
+test('when the browser cannot keep the latest changes, a message says so once', async () => {
+  const h = await open(), { page } = h;
+  const toastAfterEdit = label => h.ev(label => {
+    const t = document.getElementById('toast'); t.hidden = true;
+    byId('users').label = label; refresh(true, true);
+    return t.hidden ? '' : t.textContent;
+  }, label);
+  const refuse = on => h.ev(on => {
+    if (!window.__setItem) window.__setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = on ? function () { throw new DOMException('The quota has been exceeded.', 'QuotaExceededError'); } : window.__setItem;
+  }, on);
+  assert.equal(await toastAfterEdit('Stored fine'), '', 'no message while storing works');
+  await refuse(true);
+  assert.match(await toastAfterEdit('Edited after the store filled up'), /couldn't keep your latest changes.*File\s>\sSave/);
+  assert.equal(await page.isVisible('#toast.err'), true, 'shown as an error');
+  assert.equal(await toastAfterEdit('Another edit'), '', 'not repeated on every edit');
+  await refuse(false);
+  assert.equal(await toastAfterEdit('Storing works again'), '');
+  assert.equal(JSON.parse(await h.ev(() => localStorage.getItem('snapblade-playground-v1'))).pages[0].diagram.nodes.find(n => n.id === 'users').label, 'Storing works again');
+  await refuse(true);
+  assert.match(await toastAfterEdit('Full again'), /couldn't keep your latest changes/, 'a new failure after storing worked is reported again');
+  assert.deepEqual(h.errors, []);
+});
+
+// The name and unsaved flag are stored beside the diagram ("snapblade-doc-meta"). Storage is shared with every site
+// under the same github.io origin, so this entry is untrusted too: a name that isn't text used to break Save and Export.
+test('the stored name and unsaved flag come back on reload; damaged ones fall back instead of breaking Save', async () => {
+  const h = await open({ init: noFilePickers }), { page } = h;
+  const reloadWith = async meta => { await h.ev(m => localStorage.setItem('snapblade-doc-meta', m), meta); await page.reload(); await page.waitForTimeout(300); };
+  await reloadWith('{"name":"Order platform","dirty":true}');
+  assert.deepEqual(await h.ev(() => [doc.name, doc.dirty]), ['Order platform', true]);
+  assert.equal(await page.isVisible('#dirtyDot'), true);
+  for (const meta of ['{"name":42}', '{"name":{"a":1}}', '{"name":["x"],"dirty":"yes"}', '{"name":""}', 'null', 'not json']) {
+    await reloadWith(meta);
+    assert.deepEqual(await h.ev(() => [doc.name, doc.dirty]), ['Untitled diagram', false], `stored as ${meta}`);
+    const [dl] = await Promise.all([page.waitForEvent('download'), h.ev(() => saveFile(false))]);
+    assert.equal(dl.suggestedFilename(), 'Untitled diagram.snapblade', `Save, with the name stored as ${meta}`);
+    await page.click('#exportBtn'); await page.waitForTimeout(300);
+    assert.match(await page.textContent('#exInfo'), /^Untitled diagram\.png/, `Export, with the name stored as ${meta}`);
+    await page.keyboard.press('Escape');
+  }
+  assert.deepEqual(h.errors, []);
+});
+
 test('a file that is not a diagram is rejected without touching the current one', async () => {
   const h = await open({ init: noFilePickers }), { page } = h;
   const tmp = await import('node:os').then(os => os.tmpdir()), bad = `${tmp}/not-a-diagram.snapblade`;
@@ -530,6 +576,77 @@ test('ids that repeat or match built-in names cannot hang or break the app', { t
   assert.deepEqual(h.errors, []);
 });
 
+// Seconds from pressing reload until the page answers again: how long the tab is frozen on every later visit.
+async function reloadSeconds(page) {
+  const t = Date.now();
+  await page.reload({ timeout: 0 });
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0))));
+  return (Date.now() - t) / 1000;
+}
+// What a reload may take: ten times what it takes with the sample diagram, plus a second.
+const reloadBudget = async page => 10 * Math.min(await reloadSeconds(page), await reloadSeconds(page)) + 1;
+
+// Before build 42, ordering a bundle recounted every crossing in it for each trial swap: this 34 KB file took
+// 10 s to open, became the saved copy, and froze every reload for about 20 s and every mouse move for 5 s.
+test('a small file with hundreds of connectors cannot freeze every later page load', { timeout: 300000 }, async () => {
+  const h = await open(), { page } = h;
+  const budget = await reloadBudget(page);
+  let s = 12345; const rnd = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const nodes = Array.from({ length: 60 }, (_, i) => box('n' + i, { x: (i % 8) * 180, y: Math.floor(i / 8) * 120 })), edges = [];
+  for (let i = 0; edges.length < 300; i++) { const a = Math.floor(rnd() * 60), b = Math.floor(rnd() * 60); if (a !== b) edges.push(link('e' + i, 'n' + a, 'n' + b)); }
+  await h.ev(text => loadDiagram(text, 'connectors.snapblade'), JSON.stringify({ format: 'snapblade', version: 1, diagram: { nodes, edges } }));
+  assert.equal(await h.ev(() => S.edges.length), 300);
+  const frozen = await reloadSeconds(page);
+  assert.ok(frozen <= budget, `with 300 connectors each reload froze the tab for ${frozen.toFixed(1)} s (limit here: ${budget.toFixed(1)} s)`);
+  assert.deepEqual(h.errors, []);
+});
+
+// Before build 42 box diagrams had no limits: 20,000 boxes took 15 s to open, became the saved copy, and cost 8 s per redraw.
+test('a file over the limits opens with the first 1,000 shapes and 500 connectors, says what was left out, and reloads stay quick', { timeout: 300000 }, async () => {
+  const h = await open(), { page } = h;
+  const budget = await reloadBudget(page);
+  const nodes = Array.from({ length: 20000 }, (_, i) => box('n' + i, { x: (i % 60) * 180, y: Math.floor(i / 60) * 120 }));
+  const edges = Array.from({ length: 800 }, (_, i) => link('e' + i, 'n' + i, 'n' + (i + 1)));
+  await h.ev(text => loadDiagram(text, 'big.snapblade'), JSON.stringify({ format: 'snapblade', version: 1, diagram: { nodes, edges } }));
+  assert.deepEqual(await h.ev(() => [S.nodes.length, S.edges.length]), [1000, 500]);
+  assert.match(await page.textContent('#toast'), /^Opened big\.snapblade, but .*19,000 shapes.*300 connectors/);
+  const frozen = await reloadSeconds(page);
+  assert.ok(frozen <= budget, `after opening a file with 20,000 boxes, each reload froze the tab for ${frozen.toFixed(1)} s (limit here: ${budget.toFixed(1)} s)`);
+  assert.deepEqual(h.errors, []);
+});
+
+test('at the limits, + Box, paste, duplicate and new connectors are refused with a message', { timeout: 120000 }, async () => {
+  const h = await open(), { page } = h;
+  const toast = () => h.ev(() => { const t = document.getElementById('toast'); const s = t.hidden ? '' : t.textContent; t.hidden = true; return s; });
+  // Fill the sample up to 500 connectors with pairs of small boxes far below it, each pair joined by one connector.
+  await h.ev(() => {
+    for (let i = 0; S.edges.length < 500; i++) {
+      const a = { id: 'fa' + i, kind: 'box', label: '', x: (i % 40) * 100, y: 2000 + Math.floor(i / 40) * 200, w: 40, h: 30, parent: null };
+      S.nodes.push(a, { ...a, id: 'fb' + i, y: a.y + 80 }); S.edges.push({ id: 'fe' + i, from: { node: a.id, side: 'auto' }, to: { node: 'fb' + i, side: 'auto' }, arrow: 'end' });
+    }
+    refresh(true, true);
+  });
+  await page.mouse.move(...Object.values(await h.at('users')));
+  const handle = await page.locator('[data-role="connect"][data-id="users"][data-side="bottom"] circle').first().boundingBox();
+  await h.drag({ x: handle.x + handle.width / 2, y: handle.y + handle.height / 2 }, await h.toScreen(600, 510)); await page.waitForTimeout(100);
+  assert.equal(await h.ev(() => S.edges.length), 500);
+  assert.match(await toast(), /at most 500 connectors/);
+  // Now up to 1,000 shapes.
+  await h.ev(() => { for (let i = 0; S.nodes.length < 1000; i++) S.nodes.push({ id: 'fc' + i, kind: 'box', label: '', x: (i % 40) * 100, y: 6000, w: 40, h: 30, parent: null }); refresh(true, true); });
+  await page.click('#addBox'); await page.waitForTimeout(50);
+  assert.deepEqual([await h.ev(() => S.nodes.length), await toast()], [1000, toastText(1000)]);
+  await h.click('odb'); await page.keyboard.press('Control+c'); await page.keyboard.press('Control+v'); await page.waitForTimeout(50);
+  assert.deepEqual([await h.ev(() => S.nodes.length), await toast()], [1000, toastText(1000)]);
+  await page.keyboard.press('Control+d'); await page.waitForTimeout(50);
+  assert.deepEqual([await h.ev(() => S.nodes.length), await toast()], [1000, toastText(1000)]);
+  // Below the limit again, everything works.
+  await h.ev(() => { S.nodes = S.nodes.filter(n => !n.id.startsWith('fc')); refresh(true, true); });
+  await page.keyboard.press('Control+v'); await page.waitForTimeout(50);
+  assert.equal(await h.ev(() => S.nodes.filter(n => n.label === 'Orders DB').length), 2);
+  assert.deepEqual(h.errors, []);
+});
+const toastText = shapes => `A diagram holds at most ${shapes.toLocaleString('en-US')} shapes. Add a tab (+ at the bottom) for more.`;
+
 // Stand-in for a diagram this build can't draw: measuring the connector label "BOOM" throws.
 const cannotDraw = () => { const m = CanvasRenderingContext2D.prototype.measureText;
   CanvasRenderingContext2D.prototype.measureText = function (t) { if (t === 'BOOM') throw new Error('cannot draw this'); return m.call(this, t); }; };
@@ -610,6 +727,66 @@ test('SVG export is clean and standalone', async () => {
   for (const bad of ['var(', 'foreignObject', 'data-role', 'url(#gp)']) assert.ok(!svg.includes(bad), `should not contain ${bad}`);
   assert.ok(svg.includes('>Load balancer</text>'), 'labels are real text');
   assert.equal((svg.match(/ Z" fill=/g) || []).length, 10, 'one arrowhead per connector');
+});
+
+// Text pasted from a terminal or a log can carry control characters. They are invisible on the canvas, but XML
+// forbids them, so they used to make the SVG ill-formed and PNG export fail with "Could not render the image."
+test('control characters and half characters in labels cannot break SVG or PNG export', async () => {
+  const h = await open();
+  for (const [name, ch] of [['U+0000', '\u0000'], ['U+0001', '\u0001'], ['U+001B', '\u001b'], ['U+FFFE', '￾'], ['half an emoji', '\ud83d']]) {
+    const out = await h.ev(async ch => {
+      byId('users').label = `a${ch}b`; S.edges[0].label = `c${ch}d`; S.title.show = true; S.title.title = `t${ch}`; refresh(true, true);
+      const svg = buildExportSvg({ theme: 'light', background: 'white', scope: 'all', fontCss: '' }).svg;
+      const wellFormed = !new DOMParser().parseFromString(svg, 'image/svg+xml').querySelector('parsererror');
+      const png = await exportBlob({ ...exportOpts, format: 'png', scope: 'all', tabs: 'current' }).then(r => r.blob?.size > 0, e => e.message);
+      return { kept: byId('users').label === `a${ch}b`, wellFormed, png };
+    }, ch);
+    assert.deepEqual(out, { kept: true, wellFormed: true, png: true }, `a label containing ${name}`);
+  }
+  assert.deepEqual(h.errors, []);
+});
+
+// The page builds its markup as strings and relies on esc(); its Content-Security-Policy (build 42) makes one missed
+// esc() harmless. The page's own work must draw no complaint from it, and markup arriving with a handler must not run.
+test('the page works under its own Content-Security-Policy, and an injected handler does not run', async () => {
+  const h = await open({ init: () => { window.__blocked = []; document.addEventListener('securitypolicyviolation', e => window.__blocked.push(`${e.violatedDirective}: ${e.blockedURI || 'inline'}`)); } });
+  const own = await h.ev(async () => {
+    const { blob } = await exportBlob({ ...exportOpts, format: 'png', scope: 'all', tabs: 'current' });
+    openHelp(); await new Promise(r => setTimeout(r, 50)); closeModal('cancel');
+    return { shapes: document.querySelectorAll('#cv [data-role="node"]').length, png: blob?.size > 0, blocked: [...new Set(window.__blocked)] };
+  });
+  assert.deepEqual(own, { shapes: 13, png: true, blocked: [] }, 'drawing, exporting and Help trip nothing');
+  await h.ev(() => { const d = document.createElement('div'); d.innerHTML = '<img src="x" onerror="window.__ran = 1"><svg><image href="x" onerror="window.__ran = 1"/></svg>'; document.body.appendChild(d); });
+  await h.page.waitForTimeout(300);
+  assert.equal(await h.ev(() => window.__ran ?? null), null, 'markup with an inline handler ran');
+  assert.ok((await h.ev(() => window.__blocked)).some(b => b.startsWith('script-src')), 'the policy reported what it blocked');
+  assert.deepEqual(h.errors, []);
+});
+
+// Exports read the theme's colors from the page's CSS, and anything able to add CSS (the Google Fonts stylesheet
+// is the one outside file loaded on every visit) can set those to any text. Every one must pass parseColor().
+test('a theme color set to markup by outside CSS never reaches an export', async () => {
+  const h = await open(), { page } = h;
+  const vars = ['paper', 'node-bg', 'node-stroke', 'group-bg', 'group-stroke', 'edge', 'ink', 'ink-2', 'note-bg', 'note-stroke', ...['slate', 'blue', 'teal', 'green', 'amber', 'orange', 'red', 'violet'].map(p => 'p-' + p)];
+  const markup = `x"/><image href="x" onerror="window.__pwn=1"/><rect fill="x`;
+  await page.addStyleTag({ content: `:root, :root[data-theme="dark"], :root[data-theme="light"] { ${vars.map(v => `--${v}: ${markup} !important;`).join(' ')} }` });
+  for (const seq of [false, true]) {
+    if (seq) await h.ev(() => loadSample(true));
+    const { bad, ran } = await h.ev(async () => {
+      const bad = [];
+      for (const theme of ['light', 'dark']) for (const background of ['canvas', 'white', 'none']) for (const pdf of [false, true]) {
+        const svg = buildExportSvg({ theme, background, scope: 'all', pdf, fontCss: '' }).svg;
+        if (/<image|onerror/i.test(svg)) bad.push(`${theme} theme, ${background} background, ${pdf ? 'PDF' : 'SVG and PNG'}`);
+        // The PDF path parses the export as HTML before converting it (svgToPdf).
+        const host = document.createElement('div'); host.innerHTML = svg; document.body.appendChild(host);
+        await new Promise(r => setTimeout(r, 40)); host.remove();
+      }
+      return { bad, ran: window.__pwn ?? null };
+    });
+    assert.deepEqual(bad, [], `${seq ? 'sequence' : 'box'} diagram: exports carrying markup from a CSS value`);
+    assert.equal(ran, null, `${seq ? 'sequence' : 'box'} diagram: a handler from a CSS value ran in the page`);
+  }
+  assert.deepEqual(h.errors, []);
 });
 
 test('PNG export is the size the dialog promises; dark theme and selection-only work', async () => {
@@ -785,6 +962,19 @@ test('connecting: an edge band pins that side and lights it up; the middle is au
   assert.deepEqual(await h.ev(id => S.edges.find(e => e.id === id).to, id), { node: 'inv', side: 'auto' }, 'dropped in the middle: back to auto');
   await page.keyboard.press('Control+z');
   assert.deepEqual(await h.ev(id => S.edges.find(e => e.id === id).to, id), { node: 'inv', side: 'top' });
+  assert.deepEqual(h.errors, []);
+});
+
+test('every text field holds at most 5,000 characters, in every panel and in the editor on the canvas', async () => {
+  const h = await open(); await contextHelpers(h);
+  const short = [];
+  for (const [name, setup] of CONTEXTS) {
+    const fields = await h.ev(`(() => { ${setup}; renderPanel(); render();
+      return [...panel.querySelectorAll('textarea, input[type="text"]')].map(f => [f.id || f.dataset.field, f.maxLength]); })()`);
+    for (const [id, max] of fields) if (max !== 5000) short.push(`${name}: ${id} (${max})`);
+  }
+  assert.deepEqual(short, []);
+  assert.equal(await h.ev(() => editor.maxLength), 5000);
   assert.deepEqual(h.errors, []);
 });
 

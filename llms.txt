@@ -13,7 +13,7 @@ One JSON object and nothing else (no comments, no trailing commas), in a single 
 
     {"format": "snapblade", "version": 1, "diagram": {"nodes": [...], "edges": [...], "settings": {...}, "title": {...}, "legend": {...}}}
 
-That is a box diagram, where only `nodes` and `edges` are required. A sequence diagram puts `"type": "sequence"`, `parts` and `rows` in `diagram` instead of `nodes` and `edges`. For several diagrams in one file, use version 2 with a `pages` list. Anything missing gets its default. Anything not described here, or not one of the listed values, is dropped or reset to its default when the file is opened.
+That is a box diagram, where only `nodes` and `edges` are required. A sequence diagram puts `"type": "sequence"`, `parts` and `rows` in `diagram` instead of `nodes` and `edges`. For several diagrams in one file, use version 2 with a `pages` list. Anything missing gets its default. Anything not described here, or not one of the listed values, is dropped or reset to its default when the file is opened. A box diagram holds at most 1000 shapes and 500 connectors, and any text (a label, a title block field) at most 5000 characters: a file with more opens with the first ones, and the rest is left out.
 
 ## Coordinates (box diagrams)
 

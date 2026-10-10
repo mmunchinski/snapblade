@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { loadCore } from './lib/core.mjs';
+import { POLICY_TAG, policyFor } from './lib/csp.mjs';
 
 const run = loadCore();
 const json = code => JSON.parse(run(`JSON.stringify(${code})`));
@@ -55,6 +56,19 @@ test('dragging a container through every height never produces crossings', () =>
   let total = 0;
   for (let y = 0; y <= 700; y += 10) { run(`twoColumns(${y})`); total += json('crossCount(Object.values(routesNow().R))'); }
   assert.equal(total, 0);
+});
+
+test('busy bundles: counting only the swapped connectors\' crossings picks the same order as recounting them all', () => {
+  // Random diagrams dense enough for bundles of 7 to 30 lines, where tidy() orders by swapping neighbours
+  // (the seeds left out only take longer, they find nothing new).
+  const cases = [2, 3, 4, 6, 8, 9, 10, 11, 13, 15, 16, 21, 22, 23, 24].map(seed => [seed, 12 + seed % 30, 20 + (seed * 7) % 50, 3 + seed % 6, seed % 2 ? 40 : 0]);
+  const differ = json(`${JSON.stringify(cases)}.filter(([seed, b, c, cols, jit]) => {
+    randomDiagram(seed, b, c, cols, jit);
+    const R = untidied(), copy = () => { const o = dict(); for (const id in R) o[id] = R[id].map(p => ({ ...p })); return o; };
+    const fast = copy(), full = copy(); tidy(fast); tidyFullRecount(full);
+    return JSON.stringify(fast) !== JSON.stringify(full);
+  }).map(c => c.join('/'))`);
+  assert.deepEqual(differ, [], 'diagrams (seed/boxes/connectors/columns/jitter) whose routes differ from a full recount');
 });
 
 test('the busiest side keeps even spacing wherever its partners move', () => {
@@ -172,6 +186,37 @@ test('normalize bounds positions and sizes, and takes only strings as colors', (
   // Shapes as far apart as a file can put them: the connector between them still gets its label.
   run(`S = normalize(${JSON.stringify({ nodes: [box('a', { x: -1e308 }), box('b', { x: 1e308 })], edges: [link('e', 'a', 'b', { label: 'far' })] })})`);
   assert.ok(json(`(() => { const { R } = routesNow(); return placeLabel(S.edges[0], R.e, [], []); })()`));
+});
+
+test('a label made of spaces costs no more to put on one line than one made of letters', () => {
+  assert.deepEqual(json(`['a \\n\\n b', 'a  b', 'a\\t\\r\\nb ', '\\n', ' x '].map(oneLine)`), ['a b', 'a  b', 'a b ', ' ', ' x ']);
+  const ms = s => json(`(() => { const t = performance.now(); oneLine(${JSON.stringify(s)}); return performance.now() - t; })()`);
+  const letters = ms('x'.repeat(100000)), spaces = ms(' '.repeat(100000) + 'x');
+  assert.ok(spaces <= 10 * letters + 50, `100,000 spaces took ${Math.round(spaces)} ms; the same length in letters took ${Math.round(letters)} ms`);
+});
+
+test('escaped text holds only characters an SVG file may contain; tabs and line breaks stay', () => {
+  // XML 1.0 allows tab, line feed, carriage return and U+0020 up; not U+FFFE, U+FFFF or half of a surrogate pair.
+  const bad = '\u0000\u0001\u0008\u000b\u000c\u000e\u001b\u001f￾￿';
+  assert.equal(json(`esc(${JSON.stringify(`a${bad}b`)})`), 'ab');
+  assert.equal(json(`esc('a\\tb\\nc\\rd <&"> é 😀')`), 'a\tb\nc\rd &lt;&amp;&quot;&gt; é 😀');
+  assert.equal(json(`esc('x\\ud83dy\\ude00z')`), 'x�y�z', 'half a character becomes the replacement mark');
+});
+
+test('a box diagram holds at most 1,000 shapes, 500 connectors and 5,000 characters per text; what a file had beyond that is counted', () => {
+  const long = 'x'.repeat(6000);
+  const nodes = Array.from({ length: 1200 }, (_, i) => box('n' + i, i ? {} : { label: long }));
+  const edges = Array.from({ length: 600 }, (_, i) => link('e' + i, 'n' + (i % 50), 'n' + (i % 50 + 1), i ? {} : { label: long }));
+  edges.unshift(link('gone', 'n0', 'n1100'));   // to a shape past the limit: dropped with it, not counted again
+  run(`overLimit = dict(); S = normalize(${JSON.stringify({ nodes, edges, title: { title: long, author: long }, legend: { heading: long, labels: { k: long } } })})`);
+  assert.deepEqual(json('[S.nodes.length, S.nodes[0].id, S.nodes.at(-1).id, S.edges.length, S.edges[0].id, S.edges.at(-1).id]'), [1000, 'n0', 'n999', 500, 'e0', 'e499'], 'the first ones are kept');
+  assert.deepEqual(json('[S.nodes[0].label, S.edges[0].label, S.title.title, S.title.author, S.legend.heading, S.legend.labels.k].map(t => t.length)'), [5000, 5000, 5000, 5000, 5000, 5000]);
+  assert.deepEqual(json('overLimit'), { shapes: 200, connectors: 100, text: 6 });
+  // Sequence diagrams: participant and row limits are counted the same way, and so is long text.
+  const parts = Array.from({ length: 105 }, (_, i) => ({ id: 'p' + i, label: i ? 'P' : long }));
+  run(`overLimit = dict(); S = normalize(${JSON.stringify({ type: 'sequence', parts, rows: Array.from({ length: 1010 }, (_, i) => ({ id: 'r' + i, from: 'p0', to: 'p1' })) })})`);
+  assert.deepEqual(json('[S.parts.length, S.rows.length, S.parts[0].label.length]'), [100, 1000, 5000]);
+  assert.deepEqual(json('overLimit'), { participants: 5, rows: 10, text: 1 });
 });
 
 // ---------- round trip ----------
@@ -413,6 +458,13 @@ test('attaching an end pins the dropped side or sets auto, and glues a Visio-sty
 });
 
 // ---------- instructions for AI agents (llms.txt) ----------
+test('the page\'s Content-Security-Policy allows its own script (run npm run docs after changing the script)', () => {
+  // A stale hash makes the browser refuse the page's script: the app would load blank.
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.ok(html.indexOf('Content-Security-Policy') < html.indexOf('<link'), 'the policy comes first in <head>, before anything it governs');
+  assert.equal(html.match(POLICY_TAG)?.[1], policyFor(html));
+});
+
 test('llms.txt is the current agent instructions (run npm run docs after changing them)', () => {
   const file = readFileSync(new URL('../llms.txt', import.meta.url), 'utf8');
   assert.ok(file === json('agentSpec()'), 'llms.txt is out of date: run npm run docs');

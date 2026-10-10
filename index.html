@@ -7,6 +7,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-EgoA/RbUwkYq+xJ60cTwNXne6mICOFU2xoQ0McZVUpo=' https://cdn.jsdelivr.net/npm/jspdf@4.2.1/ https://cdn.jsdelivr.net/npm/svg2pdf.js@2.8.1/; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src blob:; connect-src https://fonts.googleapis.com https://fonts.gstatic.com; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Snapblade</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -402,7 +403,7 @@ dl.keys dd { margin: 0; }
         <path d="M11 17.5 L14 8.5 M16 17.5 L19 8.5" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
         <path d="M2 17.5 L7 8.5 H9.5 L6.5 17.5 Z" fill="var(--port)"/>
       </svg>
-      Snapblade <span class="tag">playground &middot; build 41</span>
+      Snapblade <span class="tag">playground &middot; build 42</span>
     </div>
     <div class="doc">
       <input id="docName" class="docname" value="Untitled diagram" aria-label="Diagram name" spellcheck="false" autocomplete="off">
@@ -487,6 +488,9 @@ dl.keys dd { margin: 0; }
    ===================================================================== */
 const HEADER = 30, STUB = 20, MIN_GAP = 12, MIN_W = 40, MIN_H = 30;
 const MAX_POS = 1e6, MAX_SIZE = 1e5, MAX_PAD = 1000;   // bounds on positions, sizes, and container padding and gaps
+// The most a box diagram holds, and the longest text: enough for any real diagram, small enough that a crafted file
+// can't make every redraw take seconds (owner's choice, build 42). Files are cut to these; editing stops at them.
+const MAX_NODES = 1000, MAX_EDGES = 500, MAX_TEXT = 5000;
 const SIDES = ['top', 'right', 'bottom', 'left'];
 const NORMAL = { top: { x: 0, y: -1 }, right: { x: 1, y: 0 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 } };
 const KEY = 'snapblade-playground-v1', OLD_KEY = 'diogramo-playground-v1', META_KEY = 'snapblade-doc-meta', AUTHOR_KEY = 'snapblade-author', ASIDE_KEY = 'snapblade-set-aside-v1';
@@ -1124,19 +1128,30 @@ function routeSmart(e, p1, p2, base) {
   return simplify([p1, ...pts, p2]);
 }
 
-// Count proper crossings between orthogonal polylines (touching endpoints don't count).
-function crossCount(polys) {
+// Count proper crossings between two orthogonal polylines (touching endpoints don't count).
+function crossPair(a, b) {
   let c = 0;
-  const segs = polys.map(pts => pts.slice(1).map((q, i) => [pts[i], q]));
-  for (let u = 0; u < segs.length; u++) for (let v = u + 1; v < segs.length; v++) {
-    for (const [a1, a2] of segs[u]) for (const [b1, b2] of segs[v]) {
-      const ah = Math.abs(a1.y - a2.y) < 0.01, bh = Math.abs(b1.y - b2.y) < 0.01;
-      if (ah === bh) continue;
-      const [h1, h2, v1, v2] = ah ? [a1, a2, b1, b2] : [b1, b2, a1, a2];
-      const x = v1.x, y = h1.y;
+  for (let i = 1; i < a.length; i++) {
+    const p = a[i - 1], q = a[i], ph = Math.abs(p.y - q.y) < 0.01;
+    for (let j = 1; j < b.length; j++) {
+      const r = b[j - 1], t = b[j];
+      if ((Math.abs(r.y - t.y) < 0.01) === ph) continue;
+      const h1 = ph ? p : r, h2 = ph ? q : t, v1 = ph ? r : p, v2 = ph ? t : q, x = v1.x, y = h1.y;
       if (x > Math.min(h1.x, h2.x) + 0.01 && x < Math.max(h1.x, h2.x) - 0.01 && y > Math.min(v1.y, v2.y) + 0.01 && y < Math.max(v1.y, v2.y) - 0.01) c++;
     }
   }
+  return c;
+}
+// ...and among a set of polylines.
+function crossCount(polys) {
+  let c = 0;
+  for (let u = 0; u < polys.length; u++) for (let v = u + 1; v < polys.length; v++) c += crossPair(polys[u], polys[v]);
+  return c;
+}
+// Crossings between the given connectors and the rest of `all` (ids), each pair counted once.
+function crossesOf(ids, R, all) {
+  let c = 0;
+  for (const id of ids) for (const o of all) if (o !== id && !(ids.includes(o) && o < id)) c += crossPair(R[id], R[o]);
   return c;
 }
 function* permutations(arr) {
@@ -1205,13 +1220,17 @@ function tidy(R) {
         for (const perm of permutations(cl)) { apply(perm); const x = crossCount(polys); if (x < best) { best = x; bestOrder = perm; } if (!x) break; }
       } else {
         // Too many to try every order: swap neighbours while it helps.
+        // A swap moves only the two swapped segments, so only crossings involving their connectors can change:
+        // count those before and after instead of recounting the bundle (same result, build 42; a layout test compares).
+        const ids = [...new Set(cl.map(s => s.id))];
         let order = [...cl]; apply(order); best = crossCount(polys);
         for (let improved = true, guard = 0; improved && guard < 50; guard++) {
           improved = false;
           for (let t = 0; t < k - 1; t++) {
+            const moved = [...new Set([order[t].id, order[t + 1].id])], before = crossesOf(moved, R, ids);
             [order[t], order[t + 1]] = [order[t + 1], order[t]]; apply(order);
-            const x = crossCount(polys);
-            if (x < best) { best = x; improved = true; } else { [order[t], order[t + 1]] = [order[t + 1], order[t]]; }
+            const x = best - before + crossesOf(moved, R, ids);
+            if (x < best) { best = x; improved = true; } else { [order[t], order[t + 1]] = [order[t + 1], order[t]]; apply(order); }
           }
         }
         bestOrder = order;
@@ -2089,16 +2108,26 @@ let spaceMode = 'keep', spaceGap = 40;   // Arrange spacing: keep, even or fixed
 let clip = null, pasteN = 0;             // copied shapes, and how many times they've been pasted
 let seqNext = null;                      // after labeling a new message with Enter: { from, after } for the next one
 
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// Also leaves out what an SVG (XML) file can't hold: control characters other than tab and line breaks, U+FFFE/U+FFFF,
+// and half of a surrogate pair (shown as U+FFFD). They're invisible on the canvas but broke SVG and PNG export.
+const esc = s => String(s).toWellFormed().replace(/[\0-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]/g, '')
+  .replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const snap = v => { const g = S.settings.grid; return Math.round(v / g) * g; };
-const oneLine = s => String(s).replace(/\s*\n\s*/g, ' ');
+// Each run of whitespace is matched once: /\s*\n\s*/ rescanned a long run of spaces from every position in it.
+const oneLine = s => String(s).replace(/\s+/g, m => m.includes('\n') ? ' ' : m);
 const cap = s => s[0].toUpperCase() + s.slice(1);
 
 // Every change is kept in this browser as you work. Separately, `doc.dirty` tracks whether
 // the diagram has changes that haven't been saved to a file.
+// If the browser refuses (storage full or blocked), say so once; after storing works again, a new failure is reported again.
+let storeFailed = false;
 function save(markDirty = true) {
   if (markDirty && doc) setDirty(true);
-  try { localStorage.setItem(KEY, JSON.stringify(bookData())); localStorage.setItem(META_KEY, JSON.stringify(doc)); } catch (e) { /* storage unavailable */ }
+  try { localStorage.setItem(KEY, JSON.stringify(bookData())); localStorage.setItem(META_KEY, JSON.stringify(doc)); storeFailed = false; }
+  catch (e) {
+    if (!storeFailed) toast("This browser couldn't keep your latest changes (its storage is full or blocked). Use File\u00a0>\u00a0Save to keep them in a file.", true);
+    storeFailed = true;
+  }
 }
 // Check and repair a diagram from storage or a file; null if it isn't one.
 // Files are untrusted and parts of them reach the canvas markup, so every field is rebuilt
@@ -2112,6 +2141,11 @@ const numIn = (v, def, lo, hi) => Number.isFinite(v) ? Math.min(hi, Math.max(lo,
 // The first shape or connector with an id keeps it; later ones with the same id are dropped.
 const firstById = list => { const seen = new Set(); return list.filter(o => !seen.has(o.id) && seen.add(o.id)); };
 const strOr = (v, def = '') => typeof v === 'string' ? v : def;
+// What the file being read had beyond the limits, by kind (shapes, connectors, participants, rows, text), for the
+// message when it opens. parseBook() starts it afresh.
+let overLimit = dict();
+const cutTo = (list, max, kind) => { if (list.length > max) overLimit[kind] = (overLimit[kind] || 0) + list.length - max; return list.slice(0, max); };
+const textOr = (v, def = '') => { const t = strOr(v, def); if (t.length <= MAX_TEXT) return t; overLimit.text = (overLimit.text || 0) + 1; return t.slice(0, MAX_TEXT); };
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 // The values each control offers, as [value, label]. The panels draw their buttons from these lists and
 // normalize() accepts exactly these values, so a new option is added here and nowhere else.
@@ -2139,7 +2173,7 @@ function cleanStyle(st) {
 }
 function cleanNode(n) {
   migrateStyle(n);
-  const out = { id: n.id, kind: oneOf(n.kind, ['box', 'group'], 'box'), label: strOr(n.label),
+  const out = { id: n.id, kind: oneOf(n.kind, ['box', 'group'], 'box'), label: textOr(n.label),
     x: numIn(n.x, 0, -MAX_POS, MAX_POS), y: numIn(n.y, 0, -MAX_POS, MAX_POS), w: numIn(n.w, 120, 1, MAX_SIZE), h: numIn(n.h, 60, 1, MAX_SIZE),
     parent: isId(n.parent) ? n.parent : null };
   if (out.kind === 'group') Object.assign(out, { layout: oneOf(n.layout, valuesOf(LAYOUTS), 'free'),
@@ -2150,7 +2184,7 @@ function cleanNode(n) {
 function cleanEdge(e) {
   const end = p => ({ node: p.node, side: oneOf(p.side, SIDE_OPTS, 'auto') });
   const out = { id: e.id, from: end(e.from), to: end(e.to), arrow: oneOf(e.arrow, valuesOf(ARROWS), 'end') };
-  if (typeof e.label === 'string') out.label = e.label;
+  if (typeof e.label === 'string') out.label = textOr(e.label);
   if (LABEL_POS.includes(e.labelPos)) out.labelPos = e.labelPos;
   if (e.style) out.style = cleanStyle(e.style);
   const pin = p => isObj(p) && SIDES.includes(p.side) && Number.isFinite(p.frac) ? { side: p.side, frac: Math.min(1, Math.max(0, p.frac)) } : null;
@@ -2163,27 +2197,27 @@ function cleanSeq(s) {
   const list = v => Array.isArray(v) ? v.filter(o => isObj(o) && isId(o.id)) : [];
   const withStyle = (o, from) => { if (from.style) o.style = cleanStyle(from.style); return o; };
   const withHead = (o, from) => { const h = oneOf(from.head, valuesOf(HEADS), 'box'); if (h !== 'box') o.head = h; return o; };   // a box is the default, left out
-  const parts = firstById(list(s.parts)).slice(0, MAX_PARTS).map(p => withStyle(withHead({ id: p.id, kind: 'participant', label: strOr(p.label) }, p), p));
+  const parts = cutTo(firstById(list(s.parts)), MAX_PARTS, 'participants').map(p => withStyle(withHead({ id: p.id, kind: 'participant', label: textOr(p.label) }, p), p));
   const ids = new Set(parts.map(p => p.id)), has = v => isId(v) && ids.has(v);
-  const rows = firstById(list(s.rows).filter(r => !ids.has(r.id))).flatMap(r => {
-    if (r.kind === 'frame') return [{ id: r.id, kind: 'frame', type: oneOf(r.type, valuesOf(FRAME_TYPES), 'alt'), label: strOr(r.label) }];
-    if (r.kind === 'else') return [{ id: r.id, kind: 'else', label: strOr(r.label) }];
+  const rows = cutTo(firstById(list(s.rows).filter(r => !ids.has(r.id))).flatMap(r => {
+    if (r.kind === 'frame') return [{ id: r.id, kind: 'frame', type: oneOf(r.type, valuesOf(FRAME_TYPES), 'alt'), label: textOr(r.label) }];
+    if (r.kind === 'else') return [{ id: r.id, kind: 'else', label: textOr(r.label) }];
     if (r.kind === 'end') return [{ id: r.id, kind: 'end' }];
-    if (isBreak(r)) return [{ id: r.id, kind: r.kind, label: strOr(r.label) }];
+    if (isBreak(r)) return [{ id: r.id, kind: r.kind, label: textOr(r.label) }];
     if (r.kind === 'note') {
       const side = oneOf(r.side, valuesOf(NOTE_SIDES), 'right');
       const on = [...new Set(Array.isArray(r.on) ? r.on.filter(has) : [])].slice(0, side === 'over' ? 2 : 1);
-      return on.length ? [withStyle({ id: r.id, kind: 'note', side, on, label: strOr(r.label) }, r)] : [];
+      return on.length ? [withStyle({ id: r.id, kind: 'note', side, on, label: textOr(r.label) }, r)] : [];
     }
-    return has(r.from) && has(r.to) ? [withStyle({ id: r.id, from: r.from, to: r.to, type: oneOf(r.type, valuesOf(MSG_TYPES), 'sync'), label: strOr(r.label) }, r)] : [];
-  }).slice(0, MAX_ROWS);
+    return has(r.from) && has(r.to) ? [withStyle({ id: r.id, from: r.from, to: r.to, type: oneOf(r.type, valuesOf(MSG_TYPES), 'sync'), label: textOr(r.label) }, r)] : [];
+  }), MAX_ROWS, 'rows');
   // Groups: a run of neighbouring participants each, a participant in one group at most.
   const at = dict(); parts.forEach((p, i) => { at[p.id] = i; });
   const used = new Set([...ids, ...rows.map(r => r.id)]), taken = new Set();
   const groups = firstById(list(s.groups).filter(g => !used.has(g.id))).slice(0, MAX_PARTS).flatMap(g => {
     const members = longestRun([...new Set(Array.isArray(g.parts) ? g.parts.filter(id => has(id) && !taken.has(id)) : [])], at);
     members.forEach(id => taken.add(id));
-    return members.length ? [withStyle({ id: g.id, kind: 'group', label: strOr(g.label), parts: members }, g)] : [];
+    return members.length ? [withStyle({ id: g.id, kind: 'group', label: textOr(g.label), parts: members }, g)] : [];
   });
   return { type: 'sequence', nodes: [], edges: [], parts, rows: nestFrames(rows, ids), groups };
 }
@@ -2226,13 +2260,13 @@ function normalize(s) {
     autonumber: typeof st.autonumber === 'boolean' ? st.autonumber : def.autonumber, footbox: typeof st.footbox === 'boolean' ? st.footbox : def.footbox,
     activation: typeof st.activation === 'boolean' ? st.activation : def.activation };
   const ti = isObj(s.title) ? s.title : {}, tdef = titleDefaults();
-  const title = { show: ti.show === true, title: strOr(ti.title), version: strOr(ti.version), date: strOr(ti.date), author: strOr(ti.author), pos: oneOf(ti.pos, CORNER_IDS, tdef.pos) };
+  const title = { show: ti.show === true, title: textOr(ti.title), version: textOr(ti.version), date: textOr(ti.date), author: textOr(ti.author), pos: oneOf(ti.pos, CORNER_IDS, tdef.pos) };
   const lg = isObj(s.legend) ? s.legend : {}, ldef = legendDefaults();
-  const legend = { show: lg.show === true, heading: strOr(lg.heading, ldef.heading), pos: oneOf(lg.pos, CORNER_IDS, ldef.pos),
-    labels: Object.fromEntries(Object.entries(isObj(lg.labels) ? lg.labels : {}).filter(([, v]) => typeof v === 'string')),
+  const legend = { show: lg.show === true, heading: textOr(lg.heading, ldef.heading), pos: oneOf(lg.pos, CORNER_IDS, ldef.pos),
+    labels: Object.fromEntries(Object.entries(isObj(lg.labels) ? lg.labels : {}).filter(([, v]) => typeof v === 'string').map(([k, v]) => [k, textOr(v)])),
     hidden: Array.isArray(lg.hidden) ? lg.hidden.filter(k => typeof k === 'string') : [] };
   if (seq) return { ...cleanSeq(s), settings, title, legend };
-  const nodes = firstById(s.nodes.filter(n => isObj(n) && isId(n.id))).map(cleanNode);
+  const nodes = cutTo(firstById(s.nodes.filter(n => isObj(n) && isId(n.id))), MAX_NODES, 'shapes').map(cleanNode);
   const byIdIn = new Map(nodes.map(n => [n.id, n]));
   // A missing parent, or a loop of containers inside each other, puts the shape back on the canvas.
   for (const n of nodes) if (!byIdIn.has(n.parent)) n.parent = null;
@@ -2243,7 +2277,7 @@ function normalize(s) {
       seen.add(c.parent);
     }
   }
-  const edges = firstById(s.edges.filter(e => isObj(e) && isId(e.id) && isObj(e.from) && isObj(e.to) && byIdIn.has(e.from.node) && byIdIn.has(e.to.node))).map(cleanEdge);
+  const edges = cutTo(firstById(s.edges.filter(e => isObj(e) && isId(e.id) && isObj(e.from) && isObj(e.to) && byIdIn.has(e.from.node) && byIdIn.has(e.to.node))), MAX_EDGES, 'connectors').map(cleanEdge);
   return { nodes, edges, settings, title, legend };
 }
 /* Tabs: a file holds one or more diagrams, each with a name. Older files and saved copies hold a single diagram
@@ -2326,7 +2360,7 @@ One JSON object and nothing else (no comments, no trailing commas), in a single 
 
     {"format": "snapblade", "version": 1, "diagram": {"nodes": [...], "edges": [...], "settings": {...}, "title": {...}, "legend": {...}}}
 
-That is a box diagram, where only \`nodes\` and \`edges\` are required. A sequence diagram puts \`"type": "sequence"\`, \`parts\` and \`rows\` in \`diagram\` instead of \`nodes\` and \`edges\`. For several diagrams in one file, use version 2 with a \`pages\` list. Anything missing gets its default. Anything not described here, or not one of the listed values, is dropped or reset to its default when the file is opened.
+That is a box diagram, where only \`nodes\` and \`edges\` are required. A sequence diagram puts \`"type": "sequence"\`, \`parts\` and \`rows\` in \`diagram\` instead of \`nodes\` and \`edges\`. For several diagrams in one file, use version 2 with a \`pages\` list. Anything missing gets its default. Anything not described here, or not one of the listed values, is dropped or reset to its default when the file is opened. A box diagram holds at most ${MAX_NODES} shapes and ${MAX_EDGES} connectors, and any text (a label, a title block field) at most ${MAX_TEXT} characters: a file with more opens with the first ones, and the rest is left out.
 
 ## Coordinates (box diagrams)
 
@@ -2578,8 +2612,15 @@ function copySel() {
   pasteN = 0;
   return true;
 }
+// Editing stops at the box diagram limits: true, with a message, when adding these would go past one.
+function overflows(shapes, links = 0) {
+  const what = S.nodes.length + shapes > MAX_NODES ? `${MAX_NODES.toLocaleString('en-US')} shapes`
+    : S.edges.length + links > MAX_EDGES ? `${MAX_EDGES.toLocaleString('en-US')} connectors` : null;
+  if (what) toast(`A diagram holds at most ${what}. Add a tab (+ at the bottom) for more.`, true);
+  return !!what;
+}
 function paste() {
-  if (!clip || isSeq()) return;
+  if (!clip || isSeq() || overflows(clip.nodes.length, clip.edges.length)) return;
   pushUndo();
   pasteN++;
   // With walls, copies start on the original and drop to the first free spot below it; without, they step down and right.
@@ -3078,6 +3119,7 @@ function renderPanel() {
   else if (sel?.type === 'annot') h = sel.id === 'title' ? titlePanel() : legendPanel();
   else h = diagramPanel();
   panel.innerHTML = h;
+  for (const f of panel.querySelectorAll('textarea, input[type="text"]')) f.maxLength = MAX_TEXT;
 }
 const cornerPicker = pos => `<div class="corners">${CORNERS.map(([v, l]) =>
   `<button type="button" data-act="annPos" data-val="${v}" aria-pressed="${pos === v}"><span class="cicon ${v}"></span>${l}</button>`).join('')}</div>`;
@@ -3655,6 +3697,7 @@ function viewCenter() {
   return { x: (r.width / 2 - view.x) / view.k, y: (r.height / 2 - view.y) / view.k };
 }
 function addNode(kind, at) {
+  if (overflows(1)) return;
   pushUndo();
   const isG = kind === 'group', w = isG ? 240 : 140, h = isG ? 160 : 60;
   let parent = null, p = at || viewCenter();
@@ -3974,7 +4017,7 @@ function onUp(ev) {
   } else if (d.kind === 'resize') { refresh(true, true); return; }
   else if (d.kind === 'connect') {
     const t = dropTargetFor(d, p);
-    if (t) {
+    if (t && !overflows(0, 1)) {
       pushUndo();
       const e = newEdge(nid('e'), d.from, d.side, t, p);
       S.edges.push(e);
@@ -4127,7 +4170,7 @@ function serialize() {
     pages: b.pages.map(p => ({ name: p.name, diagram: diagramOf(p.diagram) })) }, null, 2);
 }
 function parseBook(text) {
-  let d;
+  let d; overLimit = dict();
   try { d = JSON.parse(text); } catch (e) { throw new Error("That file isn't a Snapblade diagram (it isn't valid JSON)."); }
   if (d?.format === 'snapblade' && d.version > 2) throw new Error('That file was made by a newer version of Snapblade. Update the app to open it.');
   const b = normalizeBook(d?.format === 'snapblade' ? (Array.isArray(d.pages) ? d : d.diagram) : d);
@@ -4176,8 +4219,18 @@ function loadDiagram(text, filename, handle) {
   fileHandle = handle || null;
   doc = { name: String(filename || 'Untitled diagram').replace(/\.(snapblade|json)$/i, ''), dirty: false };
   syncModeButtons(); save(false); updateDocUi(); renderTabs(); fit();
-  toast(`Opened ${filename}`);
+  const over = overLimitText();
+  over ? toast(`Opened ${filename}, but it was more than a diagram can hold: ${over}.`, true) : toast(`Opened ${filename}`);
   return true;
+}
+// What the file just read had beyond the limits, in words; '' when nothing was left out.
+function overLimitText() {
+  const n = v => v.toLocaleString('en-US'), words = (v, w) => `${n(v)} ${w}${v === 1 ? '' : 's'}`, left = [];
+  for (const [k, w, max] of [['shapes', 'shape', MAX_NODES], ['connectors', 'connector', MAX_EDGES], ['participants', 'participant', MAX_PARTS], ['rows', 'row', MAX_ROWS]])
+    if (overLimit[k]) left.push(`${words(overLimit[k], w)} past the first ${n(max)}`);
+  const said = left.length ? [`left out ${left.join(', ')}`] : [];
+  if (overLimit.text) said.push(`shortened ${words(overLimit.text, 'text')} to ${n(MAX_TEXT)} characters`);
+  return said.join(', and ');
 }
 async function openFile() {
   if (!(await confirmDiscard())) return;
@@ -4322,7 +4375,7 @@ function guideHtml() {
       <li><b>Delete tab</b> (the × on the open tab) asks first when the tab has something on it, because undo can't bring a tab back.</li>
       <li>Copy and paste work between tabs. Saving saves every tab, and the file opens at the tab you were on.</li></ul>`],
     ['files', 'Files', `<ul>
-      <li>Everything is kept in this browser as you work. The <b>File</b> menu has <b>New diagram</b>, <b>New sequence diagram</b>, <b>Open</b> (Ctrl+O), <b>Save</b> (Ctrl+S) and <b>Save as</b> (Ctrl+Shift+S), for <code>.snapblade</code> files. A file holds all of its tabs. You can also drop a file onto the canvas.</li>
+      <li>Everything is kept in this browser as you work; if the browser can't keep it (its storage is full or blocked), a message says so once, and Save still works. A diagram holds at most ${MAX_NODES.toLocaleString('en-US')} shapes and ${MAX_EDGES} connectors, and a text at most ${MAX_TEXT.toLocaleString('en-US')} characters; a file with more opens with the first ones and says what was left out. The <b>File</b> menu has <b>New diagram</b>, <b>New sequence diagram</b>, <b>Open</b> (Ctrl+O), <b>Save</b> (Ctrl+S) and <b>Save as</b> (Ctrl+Shift+S), for <code>.snapblade</code> files. A file holds all of its tabs. You can also drop a file onto the canvas.</li>
       <li>In Chrome and Edge, Save writes back to the same file; other browsers download it. A dot next to the name means changes not yet saved to a file. Click the name to rename the diagram.</li></ul>`],
     ['export', 'Export', `<p><b>Export</b> makes a picture of the diagram, with a preview.</p><ul>
       <li><b>Format</b>: ${b(labels(EXPORT_FORMATS))}. <b>Theme</b>: ${b(labels(EXPORT_THEMES))}. <b>Background</b>: ${b(labels(EXPORT_BACKGROUNDS))}.</li>
@@ -4679,7 +4732,7 @@ function buildExportSvg(o) {
   let { x1, y1, x2, y2 } = B;
   for (const b of blocks) { x1 = Math.min(x1, b.x); y1 = Math.min(y1, b.y); x2 = Math.max(x2, b.x + b.w); y2 = Math.max(y2, b.y + b.h); }
   const pad = 32, ox = Math.floor(x1 - pad), oy = Math.floor(y1 - pad), W = Math.ceil(x2 - x1 + 2 * pad), H = Math.ceil(y2 - y1 + 2 * pad);
-  const bg = o.background === 'canvas' ? T.paper : o.background === 'white' ? '#ffffff' : null;
+  const bg = o.background === 'canvas' ? parseColor(T.paper).hex : o.background === 'white' ? '#ffffff' : null;
   const labelBg = bg || parseColor(T['node-bg']).hex;
   const r2 = v => Math.round(v * 100) / 100;
   const dash = st => st?.dash && st.dash !== 'solid' ? ` stroke-dasharray="${DASH[st.dash]}"` : '';
@@ -4911,10 +4964,11 @@ async function copyExport(o) {
 
 function init() {
   svg = document.getElementById('cv'); stage = document.getElementById('stage'); panel = document.getElementById('panel');
-  statusEl = document.getElementById('status'); editor = document.getElementById('editor');
+  statusEl = document.getElementById('status'); editor = document.getElementById('editor'); editor.maxLength = MAX_TEXT;
   const fresh = () => ({ pages: [{ name: 'Page 1', diagram: sample() }], active: 0 });
   openBook(loadBook() || fresh());
-  try { doc = { ...doc, ...JSON.parse(localStorage.getItem(META_KEY)) }; } catch (e) { /* keep defaults */ }
+  // Untrusted like the diagram (storage is shared across the github.io origin): take only a text name and a true flag.
+  try { const m = JSON.parse(localStorage.getItem(META_KEY)); if (m) doc = { name: strOr(m.name).trim() || doc.name, dirty: m.dirty === true }; } catch (e) { /* keep defaults */ }
   // First draw. A saved diagram that can't be drawn must not lock the app: set it aside and start from the sample.
   try { syncTypeUi(); layoutAll(false); fit(); render(); }
   catch (e) {

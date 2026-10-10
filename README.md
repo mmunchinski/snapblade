@@ -67,7 +67,7 @@ npm test                          # layout tests (Node) + interaction tests (hea
 
 ## Privacy
 
-Nothing you draw leaves your browser. Your work is kept in the browser's local storage, and files are only saved where you save them. The only network requests are downloads: the page itself, its fonts from Google Fonts (Instrument Sans and JetBrains Mono, on every visit), and, the first time you export a PDF, two open-source libraries ([jsPDF](https://github.com/parallax/jsPDF) and [svg2pdf.js](https://github.com/yWorks/svg2pdf.js)) from jsDelivr, checked against pinned hashes. SVG and PNG exports embed Instrument Sans so they look the same everywhere. If the fonts can't load, the app falls back to system fonts.
+Nothing you draw leaves your browser. Your work is kept in the browser's local storage, and files are only saved where you save them. The only network requests are downloads: the page itself, its fonts from Google Fonts (Instrument Sans and JetBrains Mono, on every visit), and, the first time you export a PDF, two open-source libraries ([jsPDF](https://github.com/parallax/jsPDF) and [svg2pdf.js](https://github.com/yWorks/svg2pdf.js)) from jsDelivr, checked against pinned hashes. SVG and PNG exports embed Instrument Sans so they look the same everywhere. If the fonts can't load, the app falls back to system fonts. The page's Content-Security-Policy has the browser enforce all of this: it loads from and connects to no other server, and runs no script but the page's own and those two libraries.
 
 ## License
 
